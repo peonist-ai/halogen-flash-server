@@ -17,7 +17,7 @@ else has published for this model on this hardware:
 
 | | precision | prefill | decode | **total** |
 |---|---|---|---|---|
-| **halogen-flash 0.1.0** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
+| **halogen-flash 0.1.1** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
 | [EngramHalo.cpp](https://github.com/Aristo94/EngramHalo.cpp) | 3.71 bpw | 103.7 s | 14.3 s | 118.0 s |
 | [ROCmFP4](https://huggingface.co/kingjones777/Qwen3.8-Flash-Next-ROCmFP4-STRIX-GGUF) | 5.51 bpw | 104.7 s | 13.2 s | 117.9 s |
 | [CIRU-IU4](https://huggingface.co/jcbtc/Qwen3.8-Flash-CIRU-STRIX-IU4) | 5.96 bpw | 143.7 s | 11.0 s | 154.7 s |
@@ -50,7 +50,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.1.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.1.1
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -70,7 +70,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.1.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.1.1
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -133,7 +133,7 @@ decode is greedy at temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
 2-3% more time-to-first-token, because the draft head prefills too.
 
-| | halogen-flash 0.1.0 |
+| | halogen-flash 0.1.1 |
 |---|---|
 | prefill @ 8,192 | **~1,175 tok/s** (TTFT 7.0 s) |
 | prefill @ 32,768 | **~1,309 tok/s** (TTFT 25.0 s) |
@@ -423,13 +423,13 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.0 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.0 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.1 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.1 sweep -p 8192,32768 -n 128
 ```
 
 ---
 
-## What 0.1.0 is not
+## What this release is not
 
 - **Static N-slot serving, not continuous batching.** Slots are allocated at
   startup; a request waits for a free slot rather than joining a rolling

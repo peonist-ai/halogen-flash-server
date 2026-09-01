@@ -1,6 +1,50 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+A bug-fix release. **The engine is unchanged**: no kernel, no checkpoint, no
+format change, and the binary builds from identical source, so every
+performance and quality number below still stands and **your weights do not
+need re-downloading**. The image carries no weights and the mount layout is the
+same, so upgrading is a container pull and nothing else.
+
+### Fixed
+
+- **A default request could come back empty.** `max_tokens` defaulted to 512
+  while the chat template defaults `reasoning_effort` to `xhigh`, and reasoning
+  tokens count against the budget. A request that ran out before the model
+  finished thinking returned `finish_reason: "length"` with an **empty
+  `content`** and the whole reply in `reasoning_content`, which most OpenAI
+  clients do not display. On ten ordinary prompts, three were truncated and
+  "write a Python function that merges overlapping intervals" came back
+  completely blank. The default is now **8192**; eight of eight prompts that
+  finish at all finish inside 2048.
+- **`max_completion_tokens` and `max_output_tokens` were silently ignored.**
+  They were not declared, so a client using the current OpenAI Chat Completions
+  field name had it dropped without an error and got the default no matter what
+  it asked for. The budget was reachable only under the deprecated
+  `max_tokens`. All three names are now accepted and mean the same thing. Send
+  one, or send several as long as they agree; two different values is a 400
+  rather than a guess.
+
+### Changed
+
+- `HALOGEN_MAX_TOKENS_CAP` **16384 to 65536**, so a long reasoning problem is
+  not cut off by server policy. `HALOGEN_QUEUE_TIMEOUT` **2400 to 3600** with
+  it: the two are coupled, and a cap that outlasts the timeout makes one long
+  request 503 everyone queued behind it.
+- `/health` now reports `max_tokens_default` and `token_budget_aliases`, so a
+  client can read which spellings this server accepts instead of guessing.
+
+### If you saw poor output on 0.1.0
+
+Check `finish_reason` on a reply that looked wrong. `"length"` with an empty or
+truncated `content` was this bug, and it was not your configuration. Either pull
+0.1.1, or stay on 0.1.0 and pass `"max_tokens": 8192` explicitly, which is the
+only spelling 0.1.0 reads.
+
+## 0.1.0
+
 
 First release of halogen-flash-server. Container image only; the engine is
 closed source. Weights are published separately and are two files.
