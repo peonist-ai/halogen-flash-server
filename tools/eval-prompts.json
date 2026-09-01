@@ -1,0 +1,13 @@
+{
+  "_comment": "drafter-eval prompt set. Five request shapes taken from the serving ledger, two each. Keep this file STABLE, changing it makes runs across drafter releases incomparable; add new prompts under new names instead of editing existing ones. The endpoint's own defaults apply (thinking on, effort xhigh), which is the point: live output is mostly reasoning tokens, and that is the register corpus anchors miss entirely.",
+  "code_a": "Write a Python function that merges two sorted lists into one sorted list. Include a docstring.",
+  "code_b": "Write a Python function parse_duration(s) that turns strings like 1h30m into seconds. Include a docstring and type hints.",
+  "proof_a": "Prove that the square root of 2 is irrational.",
+  "proof_b": "Prove that there are infinitely many prime numbers.",
+  "proc_a": "List the steps to set up SSH key authentication on a new Linux server.",
+  "proc_b": "Give me a numbered procedure for safely replacing a failed drive in a RAID 5 array.",
+  "chat_a": "hey, how is your day going? I am procrastinating on laundry",
+  "chat_b": "what do you think about people who put pineapple on pizza?",
+  "prose_a": "Explain in a couple of paragraphs why unified memory changes the performance tradeoffs for LLM inference on an APU.",
+  "prose_b": "Describe, in prose, what makes speculative decoding effective and when it stops helping."
+}

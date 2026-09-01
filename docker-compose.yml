@@ -1,0 +1,93 @@
+# docker-compose.yml: halogen-flash-server, two-container topology.
+#
+# ONE IMAGE, TWO ROLES. The release image's entrypoint takes `engine` or `api`
+# as its argument, so both services below are the same build and cannot drift
+# apart.
+#
+# Two services because they have nothing in common at RESTART time: the engine
+# needs the GPU and re-reads the weights; the front-end needs a tokenizer and
+# starts in a second. Splitting them means a front-end change redeploys without
+# a model reload. If you do not need that, the single container is simpler:
+#
+#   podman run --rm -it --device /dev/kfd --device /dev/dri \
+#     --group-add keep-groups --security-opt seccomp=unconfined \
+#     --ipc=host --ulimit memlock=-1:-1 \
+#     -v /path/to/halogen-models:/models:ro \
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.1.0
+#
+# ONE VOLUME IS ENOUGH. The weights repo ships the tokenizer inside it, and
+# both services below read it from there. Set HALOGEN_MODELS to the directory
+# `hf download` wrote and nothing else is required.
+#
+# The engine port is deliberately NOT published, because the token protocol has
+# no auth. Only the API is reachable, and it is the only edge.
+#
+# `keep-groups` in group_add is a PODMAN extension, so this file is written for
+# podman-compose. Under docker compose, replace it with
+# `group_add: ["video", "render"]`.
+#
+# Usage:
+#   HALOGEN_MODELS=~/halogen-models podman-compose up -d
+#   podman-compose restart api          # cheap: no model reload
+#   podman-compose logs -f engine       # watch the load, it takes minutes
+services:
+  engine:
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.1.0
+    command: ["engine"]
+    environment:
+      # Separate netns from the api service, so the engine must listen on all
+      # interfaces WITHIN the compose network. It stays unpublished to the host.
+      HALOGEN_BIND: 0.0.0.0
+      # NOTHING ELSE IS SET HERE ON PURPOSE. The image already carries the
+      # shipped defaults (1 KV slot, 262,144 context, prompt cache mode 2,
+      # prefill chunk 32,768, the quality sidecar, the tuned GEMM plan). A copy
+      # of a default in a second file is a copy that goes stale: when the image
+      # changes, this file would silently override it with last release's
+      # value. Override here only what you actually mean to change, and see
+      # docs/FLAGS.md for what each one costs.
+      #
+      # `slots x ctx` is ONE memory budget at ~26 KiB per position per slot:
+      # 1 x 262,144 fits, 4 x 262,144 is a measured out-of-memory.
+    volumes:
+      # The directory `hf download` wrote. It holds the checkpoint, the quality
+      # sidecar the engine picks up automatically, and tokenizer/.
+      - ${HALOGEN_MODELS:?set HALOGEN_MODELS to the directory hf download wrote}:/models:ro
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt: [seccomp:unconfined]
+    ipc: host
+    ulimits:
+      memlock: -1
+    group_add: [keep-groups]
+    # THE API MUST NOT START UNTIL THIS ANSWERS. Reading the weights takes
+    # minutes, and `depends_on` alone waits only for the container to START.
+    # Without this the front-end connects, is refused, and exits at boot:
+    #   ConnectionRefusedError: [Errno 111] Connect call failed
+    # then crash-loops under `restart` until the engine happens to be ready.
+    # start_period is what buys the load time: failures during it do not count.
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8730' 2>/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20m
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.1.0
+    command: ["api"]
+    depends_on:
+      engine:
+        condition: service_healthy
+    environment:
+      HALOGEN_ENGINE: engine:8730
+    volumes:
+      # Read-only, and only so the front-end can find tokenizer/ in the same
+      # directory. Set HALOGEN_TOKENIZER instead if your tokenizer lives
+      # elsewhere; it must be a FLAT directory, because HuggingFace cache
+      # snapshots are symlinks into a sibling blobs/ that dangle in a container.
+      - ${HALOGEN_MODELS:?set HALOGEN_MODELS to the directory hf download wrote}:/models:ro
+    ports:
+      - "8731:8731"          # the only published port
+    restart: unless-stopped
