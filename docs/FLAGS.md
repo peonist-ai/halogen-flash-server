@@ -42,8 +42,8 @@ Both are marked, and both were measured before being offered.
 
 | flag | default | meaning |
 |---|---|---|
-| `HALOGEN_MAX_TOKENS_CAP` | `16384` | Largest `max_tokens` a request may ask for. Exceeding it is a **400**, never a silent truncation: a truncated response and a model that stopped on its own both end with `finish_reason: "length"`, so a client cannot tell them apart. **Coupled to `HALOGEN_QUEUE_TIMEOUT`**, see the README. |
-| `HALOGEN_QUEUE_TIMEOUT` | `2400` | Seconds a queued request waits before `503 engine_busy`. Must exceed the time a full-length request takes, or a long request 503s everyone behind it. |
+| `HALOGEN_MAX_TOKENS_CAP` | `65536` | Largest `max_tokens` a request may ask for. Exceeding it is a **400**, never a silent truncation: a truncated response and a model that stopped on its own both end with `finish_reason: "length"`, so a client cannot tell them apart. **Coupled to `HALOGEN_QUEUE_TIMEOUT`**, see the README. |
+| `HALOGEN_QUEUE_TIMEOUT` | `3600` | Seconds a queued request waits before `503 engine_busy`. Must exceed the time a full-length request takes, or a long request 503s everyone behind it. |
 | `HALOGEN_DRAFTER_DEFAULT` | `1` | Which drafter a request that names none gets: `1` the model's own MTP head (speculative, and **byte-identical** to serial greedy, since it only proposes), `0` batched serial. A speculating request holds its slot alone, so on a busy server `0` admits more concurrency at lower per-stream speed. Overridable per request with `"drafter": "serial" | "mtp"`. |
 
 ## Context and concurrency

@@ -87,12 +87,39 @@ feature: it needs a sampler kernel and the speculative-sampling accept/reject
 path, or speculation would be lost above temperature 0, and speculation is
 where the decode numbers above come from.
 
-**Set `max_tokens` generously.** This model thinks before it answers, and
-reasoning tokens count against the budget. A request that runs out mid-thought
-returns `finish_reason: "length"` with empty `content` and the partial thinking
-in `reasoning_content`. That is the server reporting honestly rather than
-failing, but 300 tokens is not enough for a question worth asking. Use 1,000 or
-more, or pass `"reasoning_effort": "minimal"`.
+**The token budget covers thinking, not just the answer.** This model reasons
+before it replies and those tokens count against the budget, so a budget that
+runs out mid-thought does not shorten the answer, it removes it: the reply comes
+back with `finish_reason: "length"`, an empty `content`, and the partial
+reasoning in `reasoning_content`, which most OpenAI clients do not display.
+
+The default is **8192**, which finished every ordinary prompt we measured with
+room to spare. Send more when you want more, up to `HALOGEN_MAX_TOKENS_CAP`
+(**65536** by default); above the cap you get a 400 rather than a silent
+truncation, so ask for what you need and the server will tell you if it is too
+much. Hard reasoning problems can genuinely exceed 8192: pass a larger budget,
+or `"reasoning_effort": "low"` to make the model think less. Accepted efforts
+are `minimal`, `low`, `medium`, `high` and `xhigh`; the model's own default is
+`xhigh`.
+
+**Any of three field names works**, and they mean the same thing here:
+`max_completion_tokens` (current OpenAI Chat Completions), `max_output_tokens`
+(OpenAI Responses), or `max_tokens` (deprecated upstream, still widely sent).
+Send one, or send several as long as they agree; two different values is a 400
+rather than a guess about which you meant. `/health` lists all three under
+`token_budget_aliases` and reports the current default as `max_tokens_default`.
+
+```json
+{
+  "model": "halogen-qwen3.8-flash-next",
+  "messages": [{"role": "user", "content": "..."}],
+  "max_completion_tokens": 16384,
+  "reasoning_effort": "low"
+}
+```
+
+If a reply looks empty or cut off, read `finish_reason` first: `"stop"` means
+you have the whole answer, `"length"` means you ran out of budget.
 
 ---
 
