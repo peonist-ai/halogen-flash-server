@@ -70,8 +70,51 @@ BIND="${HALOGEN_BIND:-127.0.0.1}"
 # what makes the native context affordable at all.
 ENG_SLOTS="${HALOGEN_KV_SLOTS:-1}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
+# PAST THE NATIVE CONTEXT THE DEFAULTS CHANGE, AND THIS SAYS SO. Measured on
+# a 128 GB machine: the engine's device-side budget stops at ~47 GiB with
+# the weights pinned, and 1,048,576 of KV is ~25 GiB of it, so the per-call
+# prefill arena (16.7 GiB at max-tok 32,768) has to halve, and the prompt
+# cache's snapshot (26.6 GiB of host memory at 1M) does not fit beside it.
+# The image BAKES HALOGEN_MAX_TOK=32768 and HALOGEN_PROMPT_CACHE=2 into its
+# environment, so "unset" cannot mean "the user did not choose": past the
+# native context the arena is capped at 16384 and the cache's snapshot
+# goes to a file, whatever the environment says, and both are printed.
+# (Measured: 24,576 ALLOCATES at 1M with 2.3 GiB to spare, but a full 1M
+# prefill then thrashes, because the limit counts touched pages, while 16,384
+# prefills 1M at 750 tok/s. The first cut keyed on -z and the 1M image
+# start failed at the same 47 GiB as before.)
 ENG_MAX_TOK="${HALOGEN_MAX_TOK:-32768}"
+if [ "$ENG_CTX" -gt 262144 ]; then
+  if [ "$ENG_MAX_TOK" -gt 16384 ]; then
+    echo "halogen: context $ENG_CTX is past the native 262144: HALOGEN_MAX_TOK $ENG_MAX_TOK is capped at 16384 here (a larger prefill arena leaves a 1M KV cache no room to stay resident)."
+    ENG_MAX_TOK=16384
+  fi
+  if [ "${HALOGEN_PROMPT_CACHE:-2}" != "0" ] && [ "${HALOGEN_CACHE_INPLACE:-1}" = "0" ] && [ -z "${HALOGEN_CACHE_FILE:-}" ]; then
+    # With HALOGEN_CACHE_INPLACE=0 the snapshot copies the whole KV, which
+    # does not fit in host RAM beside a 1M KV cache (26.6 GiB), so it goes
+    # to a FILE: the same bytes, at the drive's rate. Mount fast storage at
+    # the path, or point HALOGEN_CACHE_FILE somewhere. The default keeps the
+    # KV in place and its snapshot is ~115 MiB at any depth.
+    export HALOGEN_CACHE_FILE=/var/tmp/halogen-cache.snapshot
+    echo "halogen: context $ENG_CTX is past the native 262144 with HALOGEN_CACHE_INPLACE=0: the prompt cache snapshot goes to HALOGEN_CACHE_FILE=$HALOGEN_CACHE_FILE (up to 26.6 GiB at 1M; mount fast storage there, or set the path)."
+  fi
+fi
 [ "$ENG_MAX_TOK" -gt "$ENG_CTX" ] && ENG_MAX_TOK="$ENG_CTX"
+
+# CONTEXTS PAST THE NATIVE 262,144 NEED THE ROPE FACTOR, AND IT IS A DECISION.
+# The model's own card extends it to 1M by static YaRN (HALOGEN_ROPE_YARN=4;
+# 2 for 524,288), which rescales every position's RoPE, short prompts
+# included. The engine refuses the combination too; this says it before the
+# model loads. Sizing note: the KV cache is ~26 KiB per position per slot,
+# and the prompt cache (on by default) keeps a second copy of it.
+ROPE_YARN="${HALOGEN_ROPE_YARN:-}"
+if [ "$ENG_CTX" -gt 262144 ] && [ -z "$ROPE_YARN" ]; then
+  echo "halogen: HALOGEN_CTX=$ENG_CTX is past the native 262144. Contexts up to"        "1048576 need HALOGEN_ROPE_YARN=<factor> (4 for 1M, 2 for 524288), the"        "model's documented static YaRN, which changes its numerics at every"        "position. Set it deliberately, or lower HALOGEN_CTX." >&2
+  exit 2
+fi
+if [ -n "$ROPE_YARN" ] && [ "$ENG_CTX" -le 262144 ]; then
+  echo "halogen: WARNING: HALOGEN_ROPE_YARN=$ROPE_YARN with HALOGEN_CTX=$ENG_CTX at or"        "under the native 262144. Static YaRN rescales every position; the model"        "card advises it only when the context needs it." >&2
+fi
 
 # A KV budget the user can read BEFORE the allocator refuses. Without this the
 # only symptom of an over-subscribed `slots x ctx` is
@@ -80,11 +123,15 @@ ENG_MAX_TOK="${HALOGEN_MAX_TOK:-32768}"
 kv_budget_note() {
   local kv_gib avail_gib
   kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" 'BEGIN{printf "%.1f", s*c*26624/1073741824}')
+  # The prompt cache (HALOGEN_PROMPT_CACHE, default on) keeps the KV in
+  # place and holds ~115 MiB of O(1) state; with HALOGEN_CACHE_INPLACE=0 it
+  # holds a second copy of one slot's state and the budget is kv + one slot.
+  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" 'BEGIN{printf "%.1f", (on==0 || f!="")?0:(ip!="0"?0.2:c*26624/1073741824)}')
   avail_gib=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?")
   echo "halogen: KV budget ${ENG_SLOTS} slot(s) x ${ENG_CTX} ctx = ${kv_gib} GiB" \
-       "(~26 KiB/position/slot), on top of ~68 GiB of weights and ~11 GiB of" \
-       "scratch. MemAvailable now ${avail_gib} GiB."
-  awk -v kv="$kv_gib" -v av="$avail_gib" 'BEGIN{ if (av != "?" && kv+80 > av)
+       "(~26 KiB/position/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of ~68 GiB" \
+       "of weights and ~11 GiB of scratch. MemAvailable now ${avail_gib} GiB."
+  awk -v kv="$kv_gib" -v cg="$cache_gib" -v av="$avail_gib" 'BEGIN{ if (av != "?" && kv+cg+80 > av)
     print "halogen: WARNING: that budget is close to or over what this host has free.\n  If startup ends in \"HIP … out of memory\", lower HALOGEN_KV_SLOTS or HALOGEN_CTX;\n  their PRODUCT is the constraint. 4 slots at the native context does not fit in 128 GB." > "/dev/stderr" }'
 }
 

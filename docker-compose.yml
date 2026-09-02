@@ -48,6 +48,12 @@ services:
       #
       # `slots x ctx` is ONE memory budget at ~26 KiB per position per slot:
       # 1 x 262,144 fits, 4 x 262,144 is a measured out-of-memory.
+      #
+      # Contexts past the native 262,144 (up to 1,048,576) need the model's
+      # static YaRN factor as well, and are a different model configuration:
+      # see the README's "1M context" section before uncommenting these.
+      # HALOGEN_ROPE_YARN: "4"
+      # HALOGEN_CTX: "1048576"
     volumes:
       # The directory `hf download` wrote. It holds the checkpoint, the quality
       # sidecar the engine picks up automatically, and tokenizer/.

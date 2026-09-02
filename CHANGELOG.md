@@ -17,6 +17,28 @@
   with a 400: `top_logprobs`, `logprobs` with `stream: true`, `n > 1`. A value
   outside a parameter's defined range is refused, not clamped.
 - `/health` reports the sampling parameters the running build supports.
+- **1M context, opt-in.** `HALOGEN_ROPE_YARN=4` with `HALOGEN_CTX=1048576`
+  enables the model card's static YaRN; unset, nothing changes. It rescales
+  every position and costs about 0.5% perplexity at 1k-32k and some
+  speculative acceptance at depth; the README's *1M context* section has the
+  measurements, the memory configuration it needs, and the retrieval scores
+  above 32k, which are the first this project has published. Contexts past
+  262,144 are refused without the factor.
+- **The prompt cache keeps the attention state in place** and saves only
+  the small position-free part of a conversation's state (about 110 MB at
+  any context), so saving and resuming cost well under a second at every
+  context; a follow-up turn at 1M reaches its first token in about half a
+  second on the test machine. Answers are byte-identical to the previous
+  form, which `HALOGEN_CACHE_INPLACE=0` keeps for comparison.
+  `HALOGEN_CACHE_FILE` can still put the snapshot on a file.
+- **The prompt cache now hits on multi-turn chats whose client omits
+  `reasoning_content` from the history**, which is what OpenAI-style
+  clients do. It used to snapshot at the very end of the prompt, inside
+  the assistant opener the template rewrites on the next turn, so every
+  turn of such a conversation re-read the whole prefix. The snapshot now
+  lands at the end of the history; a follow-up turn on a 25,000-token
+  system prompt takes about 1 s to first token instead of 21 s.
+- `/health` reports `rope_scaling`.
 
 ### Changed
 

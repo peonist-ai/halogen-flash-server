@@ -409,6 +409,41 @@ prefill call, which sizes a ~4 GB scratch arena. Longer prompts are prefilled
 in pieces. Do not raise it to the native context. That allocation does not
 fit, and the server will not start.
 
+### 1M context: opt-in, and a different configuration
+
+The model card extends the native 262,144 to 1M by static YaRN (factor 4),
+and this server implements it. It is off unless you ask:
+
+```
+HALOGEN_ROPE_YARN=4 HALOGEN_CTX=1048576
+```
+
+Unset, nothing changes. Set, it is a different model configuration, not a
+cache setting: every position's RoPE is rescaled, short prompts included, and
+the card advises it only when the context needs it. What it costs, measured
+on the same machine as the table above:
+
+- **Quality at 1k-32k:** perplexity +0.4-0.6% on three corpora (most of it
+  above 8k positions); the 240-case retrieval battery reads 236/240 against
+  238/240 unscaled, with the chat register at 100% at every depth in both.
+- **Speculative decode at 8k-30k context** accepts 5-15 points fewer drafts,
+  about 10% slower than unscaled.
+- **Above 32k:** needle retrieval, chat register, three needles at three
+  positions: 9/9 at 262,144 unscaled, 9/9 at 262,144 scaled,
+  9/9 at 1,000,000.
+- **Memory:** a 1M KV cache is ~25 GB, which on a 128 GB machine leaves no
+  room for the default prefill arena. Past the native context the server
+  therefore caps `HALOGEN_MAX_TOK` at 16384 (prefill about 9% slower) and
+  prints it. A 1,000,000-token prompt prefills in 22-24 minutes (~700-770
+  tok/s) and decodes at 19 tok/s serial, 25 with the default speculative
+  drafter. The conversation then continues at ordinary speed: the prompt
+  cache keeps the attention state in place and saves only its small
+  position-free part, so a follow-up turn at 1,000,000 tokens reached its
+  first token in 0.55 s on the test machine (0.45 s at 262,144), against
+  22-24 minutes cold. A 262,144-token prompt decodes at ~28. The context
+  must leave room for the generation: a prompt at exactly the context is
+  refused.
+
 ### Served throughput, end to end over HTTP
 
 The numbers above are the engine's own prefill bench. Through the full stack of
