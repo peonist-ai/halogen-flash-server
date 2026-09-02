@@ -225,8 +225,8 @@ start_api() {
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "${HALOGEN_ENGINE:-127.0.0.1:$ENG_PORT}" \
     --host 0.0.0.0 --port "$API_PORT" \
-    --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-16384}" \
-    --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-2400}"
+    --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
+    --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}"
 }
 
 case "${1:-all}" in
@@ -257,8 +257,8 @@ all)
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "127.0.0.1:$ENG_PORT" \
     --host 0.0.0.0 --port "$API_PORT" \
-    --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-16384}" \
-    --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-2400}" &
+    --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
+    --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" &
   API_PID=$!
 
   # Either process exiting must take the container down. A live API in front
@@ -300,8 +300,8 @@ bench|sweep)
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "127.0.0.1:$ENG_PORT" \
     --host 127.0.0.1 --port "$API_PORT" \
-    --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-16384}" \
-    --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-2400}" 2>&1 | tee "$BENCH_LOG" &
+    --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
+    --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" 2>&1 | tee "$BENCH_LOG" &
   API_PID=$!
 
   # python, not curl: the slim base has no curl and a bench that silently

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- **Sampling.** `temperature`, `top_p`, `top_k`, `min_p`, `seed`,
+  `presence_penalty`, `frequency_penalty`, `logit_bias` and `logprobs` on
+  `/v1/chat/completions` and `/v1/completions`. `temperature` absent or 0 is
+  greedy decode and unchanged. Above 0, the request samples from the filtered
+  distribution on the drafter it would otherwise get, so speculative decoding
+  stays on: the accept/reject rule emits exactly the requested distribution.
+  `top_k`, `top_p` and `min_p` compose as an intersection. Penalties count
+  generated tokens. A `seed` reproduces a request on the same drafter and
+  server configuration; a sampled speculative run and a sampled serial run
+  agree in distribution, not token for token. Not implemented and refused
+  with a 400: `top_logprobs`, `logprobs` with `stream: true`, `n > 1`. A value
+  outside a parameter's defined range is refused, not clamped.
+- `/health` reports the sampling parameters the running build supports.
+
+### Changed
+
+- Greedy decode is about 1% faster on every path. Token output is unchanged.
+
 ## 0.1.1
 
 A bug-fix release. **The engine is unchanged**: no kernel, no checkpoint, no

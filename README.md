@@ -17,7 +17,7 @@ else has published for this model on this hardware:
 
 | | precision | prefill | decode | **total** |
 |---|---|---|---|---|
-| **halogen-flash 0.1.1** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
+| **halogen-flash 0.2.0** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
 | [EngramHalo.cpp](https://github.com/Aristo94/EngramHalo.cpp) | 3.71 bpw | 103.7 s | 14.3 s | 118.0 s |
 | [ROCmFP4](https://huggingface.co/kingjones777/Qwen3.8-Flash-Next-ROCmFP4-STRIX-GGUF) | 5.51 bpw | 104.7 s | 13.2 s | 117.9 s |
 | [CIRU-IU4](https://huggingface.co/jcbtc/Qwen3.8-Flash-CIRU-STRIX-IU4) | 5.96 bpw | 143.7 s | 11.0 s | 154.7 s |
@@ -41,8 +41,9 @@ competitor its best plausible speculative decode and the totals still land
 around 110 s against our 31.1 s. The prefill column is the one carrying the
 claim, and it has no such ambiguity.
 
-Output is byte-identical to serial greedy decode. Speculation here is a pure
-speed optimization, verified on every release, not a quality trade.
+At temperature 0, output is byte-identical to serial greedy decode.
+Speculation here is a pure speed optimization, verified on every release, not
+a quality trade.
 
 ```bash
 podman run --rm -p 8731:8731 \
@@ -50,7 +51,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.1.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.2.0
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -70,22 +71,21 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.1.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.2.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
 On Docker rather than Podman, replace `--group-add keep-groups` with
 `--group-add video --group-add render`: `keep-groups` is a Podman extension.
 
-**This build decodes greedy. There is no sampler.** `temperature` above 0,
-along with `top_p`, `top_k`, `min_p`, `seed`, the penalties, `logit_bias` and
-`logprobs`, is **rejected with a 400** rather than quietly served greedy,
-because a client cannot tell those apart from the response. Omit `temperature`
-or send `temperature: 0`. Many clients set a temperature by default, so this is
-the first thing to check if every request fails. Sampling is a post-0.1.0
-feature: it needs a sampler kernel and the speculative-sampling accept/reject
-path, or speculation would be lost above temperature 0, and speculation is
-where the decode numbers above come from.
+**Sampling.** `temperature`, `top_p`, `top_k`, `min_p`, `seed`,
+`presence_penalty`, `frequency_penalty`, `logit_bias` and `logprobs` are
+supported. `temperature` absent or 0 is greedy decode. Above 0, the request
+samples from the filtered distribution on the same drafter it would otherwise
+get, so speculation stays on. A `seed` reproduces a request on the same server
+configuration. `top_logprobs`, `logprobs` with `stream: true` and `n > 1` are
+not implemented and are refused with a 400, as is any value outside its defined
+range, rather than clamped. `/health` lists what the running build supports.
 
 **The token budget covers thinking, not just the answer.** This model reasons
 before it replies and those tokens count against the budget, so a budget that
@@ -133,7 +133,7 @@ decode is greedy at temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
 2-3% more time-to-first-token, because the draft head prefills too.
 
-| | halogen-flash 0.1.1 |
+| | halogen-flash 0.2.0 |
 |---|---|
 | prefill @ 8,192 | **~1,175 tok/s** (TTFT 7.0 s) |
 | prefill @ 32,768 | **~1,309 tok/s** (TTFT 25.0 s) |
@@ -250,9 +250,11 @@ model finds a fact it was given, not that its reasoning holds at depth.
 **Identity properties, gated on every build.** The first two hold whatever
 your configuration; the third depends on one setting.
 
-- Speculative decoding emits **byte-identical tokens** to serial greedy
-  decode. The draft head only proposes; a token is emitted only if the full
-  model would have produced it. It is speed with no quality cost.
+- At temperature 0, speculative decoding emits **byte-identical tokens** to
+  serial greedy decode. The draft head only proposes; a token is emitted only
+  if the full model would have produced it. It is speed with no quality cost.
+  When sampling, the accept/reject rule emits exactly the requested
+  distribution; a seed reproduces a request on the same drafter.
 - A request batched alongside others emits **byte-identical tokens** to the
   same request run alone.
 - A prompt-cache hit answers **byte-identically** to a cold run of the same
@@ -423,8 +425,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.1 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.1 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.2.0 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.2.0 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -433,13 +435,10 @@ podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.1.1 sweep -p 8192,32768
 
 - **Static N-slot serving, not continuous batching.** Slots are allocated at
   startup; a request waits for a free slot rather than joining a rolling
-  batch. Continuous batching is 0.2.
+  batch. Continuous batching is planned.
 - **Speculation runs a slot alone.** A speculating request does not share the
   batch, so concurrent requests queue behind it. Speculation inside a batch is
-  0.2.
-- **Greedy only in the engine.** No sampler: the engine does a forward pass and
-  an argmax. A request asking for sampling is refused rather than quietly
-  served greedy.
+  planned.
 - **One GPU, one model family.** gfx1151 only. The build hard-rejects other
   architectures.
 
