@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.1
+
+### Fixed
+
+- **0.3.0 could fail to start with "out of memory" on machines where 0.2.0
+  ran.** The default KV pool was three times the context (786,432 positions,
+  about 42 GB on the device), sized on a machine whose ceiling is about 47 GB.
+  A machine with a lower ceiling refused, and the two settings a reader would
+  reach for first do not fix it: `HALOGEN_KV_SLOTS` has not been a memory
+  setting since 0.3 (the slots share one pool and cost about 115 MB each), and
+  `HALOGEN_CTX` bounds a request rather than the allocation.
+- **The default pool is now twice the context** (524,288 positions, about
+  35 GB): two full-length conversations resident, or four at 131k. Set
+  `HALOGEN_KV_POOL_POSITIONS=786432` for three where the machine has room.
+- **The server now measures the device budget at startup and lowers the pool
+  itself** when the configured one will not fit, printing the pool it settled
+  on. It only ever lowers, never below `HALOGEN_CTX`, and it changes nothing
+  about what any conversation computes. `HALOGEN_KV_POOL_FIT=0` turns it off.
+- **The out-of-memory message now names the settings that fix it**, and says
+  which one does not.
+
+### Changed
+
+- The README's settings table described `HALOGEN_KV_SLOTS` as the memory
+  budget, which was true before 0.3 and not after. Corrected, and the README
+  has a section on what to do when the server will not start.
+
 ## 0.3.0
 
 ### Added

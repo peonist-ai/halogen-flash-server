@@ -327,8 +327,9 @@ Full list in [`docs/FLAGS.md`](docs/FLAGS.md). The ones that matter:
 | `HALOGEN_API_PORT` | `8731` | The published port. Change it *and* the `-p` mapping together: `-e HALOGEN_API_PORT=9000 -p 9000:9000`. |
 | `HALOGEN_PORT` | `8730` | The engine's own port, inside the container. **The engine protocol has no authentication**; keep it unpublished. |
 | `HALOGEN_BIND` | `127.0.0.1` | Engine bind address. Loopback when engine and API share a container; `0.0.0.0` only for the split topology, where it stays unpublished. |
-| `HALOGEN_CTX` | `262144` | Context admitted, the model's full native context. Costs ~26 KiB per position per slot. |
-| `HALOGEN_KV_SLOTS` | `1` | Concurrent resident sequences. **`slots x ctx` is the memory budget**, see below. |
+| `HALOGEN_CTX` | `262144` | The most one request may use, the model's full native context. Since 0.3 this bounds a **request**, not the allocation. |
+| `HALOGEN_KV_POOL_POSITIONS` | `2 x HALOGEN_CTX` | **The memory knob.** Positions resident across all conversations, about 29.5 KiB each. [See below](#context-and-memory-one-kv-pool-several-conversations). |
+| `HALOGEN_KV_SLOTS` | `4` | Conversations generating at once. A slot costs about 115 MB of its own state; **it is not the memory knob** since 0.3, the pool above is. |
 | `HALOGEN_PROMPT_CACHE` | `2` | Session prefix reuse. On by default. `1` for byte-identical repeat answers, `0` for off. [See below](#choosing-a-cache-mode). |
 | `HALOGEN_MATMUL_TUNING_FILE` | **baked into the image** | A tuned GEMM plan, on by default, at no measured quality cost. The published prefill numbers include it. |
 | `HALOGEN_CK_OVERLAY` | **the quality sidecar** | You get quality by default. `…overlay-speed.hgn` trades the calibration for about 2% decode, `none` runs the bare checkpoint. [See above](#precision-what-you-get-and-how-to-trade-it). |
@@ -390,7 +391,7 @@ faster and stricter.
 ### Context and memory: one KV pool, several conversations
 
 The server admits the model's **full native 262,144-token context** per
-request by default, keeps **three full-length conversations resident**, and
+request by default, keeps **two full-length conversations resident**, and
 generates for **four at once**. Two settings
 that used to be one: `HALOGEN_CTX` is the most a single request may use, and
 `HALOGEN_KV_POOL_POSITIONS` is how many attention positions are resident
@@ -402,8 +403,8 @@ position including its scratch. Measured on a 128 GB machine:
 | pool | holds at once | device memory | measured |
 |---|---|---|---|
 | 262,144 | one full conversation, or four at 65k | 27.8 GB | 0.2.0's layout |
-| 524,288 | two full conversations, or four at 131k | 35.0 GB | starts, serves |
-| **786,432 (default)** | **three full conversations, or four at 196k** | **42.2 GB** | **three 250k conversations resident and generating, memory flat** |
+| **524,288 (default)** | **two full conversations, or four at 131k** | **35.0 GB** | **starts and serves; the 0.3.1 default** |
+| 786,432 | three full conversations, or four at 196k | 42.2 GB | three 250k conversations resident and generating, memory flat. **0.3.0's default, and too close to the ceiling on some machines** |
 | 1,048,576 | four full conversations, or eight at 131k | ~41 GB with `HALOGEN_MAX_TOK=16384` | the 1M configuration's layout; ~49 GB at the default arena, which does not start |
 
 A request reserves its prompt plus `max_tokens` positions when it is admitted
@@ -418,8 +419,9 @@ One cost the pool does carry. A larger pool leaves less RAM for the model's
 file cache, so the first prompt after a restart can take longer to read in
 (measured: a 32,000-token prompt took up to twice its usual 25 s right after a
 fresh start, and its usual time once it had been seen). The default trades some
-of that for a third resident conversation; `HALOGEN_KV_POOL_POSITIONS=524288`
-or `262144` trades back.
+of that for a second resident conversation; `HALOGEN_KV_POOL_POSITIONS=262144`
+trades back, and `786432` buys a third conversation where the machine has the
+headroom for it.
 
 **Speed by concurrency.** Measured at the engine's own protocol on the
 published image at its defaults (the 8-stream row with `HALOGEN_KV_SLOTS=8`):
@@ -525,6 +527,39 @@ podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.3.0 sweep -p 8192,32768
 ```
 
 ---
+
+### If the server will not start: "out of memory"
+
+A start that ends in
+
+```
+dmalloc: FAILED requesting 0.750 GiB after 39.703 GiB in 647 allocations (out of memory)
+HIP /src/halogen/src/flash_ops.h:122: out of memory
+```
+
+means the KV pool did not fit on this machine. **`HALOGEN_KV_SLOTS` will not
+fix it** and is the first thing most people try: since 0.3 the slots share one
+pool and each costs only about 115 MB, so one slot allocates as much as four.
+The knob is the pool:
+
+```
+-e HALOGEN_KV_POOL_POSITIONS=262144
+```
+
+That is 27.8 GB, the same layout 0.2.0 ran, and it still serves four
+conversations at once. `524288` is 35.0 GB and is the default. If it still
+will not start, halve the prefill arena as well with `-e HALOGEN_MAX_TOK=16384`,
+which costs about 9% of prefill speed.
+
+Device memory here is system memory, and the ceiling is set by the kernel's
+resident-memory limit rather than by anything a driver reports: measured at
+about 47 GB on a 128 GB machine, and lower on machines carrying more besides
+this server. From 0.3.1 the server measures that budget at startup and lowers
+the pool itself when the configured one will not fit, printing what it chose;
+`HALOGEN_KV_POOL_FIT=0` turns that off and allocates exactly what was asked
+for. `HALOGEN_DMALLOC_LOG=1` prints every allocation over 64 MB with a running
+total, which is this configuration's memory budget measured rather than
+estimated.
 
 ## What this release is not
 

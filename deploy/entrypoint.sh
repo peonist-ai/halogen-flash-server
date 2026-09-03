@@ -77,19 +77,31 @@ ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
 # 0.3: THE POOL IS SIZED SEPARATELY FROM THE CONTEXT. HALOGEN_KV_POOL_POSITIONS
 # is how many attention positions are resident across all conversations;
-# HALOGEN_CTX is the most one request may use. Unset, the pool is THREE
-# TIMES the context, capped at 1,048,576: three full-length conversations
-# at once, 42.2 GiB at the native context, measured with all three resident
-# and decoding (memory flat, no eviction). The device budget is the limit
+# HALOGEN_CTX is the most one request may use. Unset, the pool is TWICE the
+# context, capped at 1,048,576: two full-length conversations at once, or
+# four at 131k, 35.0 GiB at the native context. (0.3.0 defaulted to three,
+# 42.2 GiB; 0.3.1 lowered it after that failed to start on a machine whose
+# device ceiling was about 40 GiB.) The device budget is the limit
 # (~46 GiB on a 128 GB machine): each 262,144 positions cost ~7.2 GiB, and
 # the prefill arena (HALOGEN_MAX_TOK) 16.7 GiB at 32,768 or 8.4 GiB at
 # 16,384, which is what makes a 1M-position pool fit. The pool also takes
 # RAM the page cache would otherwise hold for the n-gram table, so a cold
 # prompt whose rows are not cached pays disk reads; a smaller pool leaves
 # more cache.
+#
+# 0.3.1: THE DEFAULT IS TWO CONTEXTS, NOT THREE. 0.3.0 shipped three
+# (786,432 positions, 42.2 GiB) against a device ceiling measured at ~47 GiB
+# on the one machine it was sized on: 4.8 GiB of headroom on a sample of one.
+# A tester's machine refused at ~40.4 GiB and 0.3.0 would not start there at
+# all, while 0.2.0 (this pool at 262,144) ran fine. Two contexts is 35.0 GiB,
+# holds two full-length conversations or four at 131k, and leaves room on a
+# machine that is not this project's box. Three is one line away for anyone
+# who has measured their own headroom. The engine also fits the pool downward
+# at startup now (HALOGEN_KV_POOL_FIT), so this default is the starting point
+# rather than the last line of defence.
 ENG_POOL="${HALOGEN_KV_POOL_POSITIONS:-}"
 if [ -z "$ENG_POOL" ]; then
-  ENG_POOL=$(( ENG_CTX * 3 ))
+  ENG_POOL=$(( ENG_CTX * 2 ))
   [ "$ENG_POOL" -gt 1048576 ] && ENG_POOL=1048576
   [ "$ENG_POOL" -lt "$ENG_CTX" ] && ENG_POOL="$ENG_CTX"
 fi
