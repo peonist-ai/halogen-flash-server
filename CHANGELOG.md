@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+
+- **A streamed reply and a non-streamed reply to the same prompt came back
+  slightly different.** Asking with `"stream": true` returned the answer with
+  a leading blank line that the non-streamed form did not have, and the
+  reasoning text differed by leading or trailing whitespace. The model was
+  generating exactly the same tokens either way; the two response builders
+  disagreed about tidying them, and only one of them was trimming. Measured
+  across five prompts on 0.4.0, all five differed.
+
+  One case was more than cosmetic: on a turn where the model called a tool and
+  said nothing else, the non-streamed `content` was `""` and the streamed
+  `content` was a blank line, so a client testing "did the model say anything
+  as well as calling the tool" got different answers depending only on how it
+  had asked. If you have a workaround that trims the streamed content or tests
+  it loosely, you can drop it.
+
+  This affected `/v1/chat/completions`. `/v1/responses` was fixed before 0.4.0
+  shipped and is unchanged.
+
+- **`/v1/completions` returned a 500 on every request, in every release from
+  0.2.0 to 0.4.0.** The endpoint was listed in this README and reported by
+  `/health` the whole time. Internally it read a set of sampling settings that
+  had been added to the chat endpoint's request model and never to this one, so
+  the very first thing it touched raised an error and the request came back as
+  an opaque "internal error". It now works, greedy and sampled, and rejects
+  out-of-range values the same way the chat endpoint does.
+
+  If you tried this route on an earlier release and concluded the server was
+  broken, it was, and only for this route. `/v1/chat/completions` and
+  `/v1/responses` were unaffected.
+
+- **The release gate now tests every route the server advertises.** It reads
+  the endpoint list out of `/health` and exercises each one, so a route cannot
+  be published and left untested, which is exactly how the bug above survived
+  five releases. A route with no test fails the gate rather than passing
+  quietly.
+
 ## 0.4.0
 
 ### Added
