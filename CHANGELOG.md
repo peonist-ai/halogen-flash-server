@@ -29,6 +29,13 @@
 
 ### Changed
 
+- **The server says less at startup.** It still reports what it is serving:
+  the precision it loaded, the KV pool it sized and why, the slots, the cache
+  mode and the address it is listening on. It no longer narrates how its
+  kernels are arranged, which was detail no deployer acts on.
+  `HALOGEN_VERBOSE=1` and `HALOGEN_DMALLOC_LOG=1` are the two settings worth
+  turning on when a start goes wrong, and both are documented in the settings
+  reference.
 - The README's settings table described `HALOGEN_KV_SLOTS` as the memory
   budget, which was true before 0.3 and not after. Corrected, and the README
   has a section on what to do when the server will not start.
