@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- **Several conversations at the full context.** The slots share one pool of
+  attention positions instead of each owning a copy, so a slot costs about
+  115 MB, and the pool is sized on its own (`HALOGEN_KV_POOL_POSITIONS`,
+  default three times the context: three full 262k conversations at once,
+  about 42 GB, measured with all three resident and generating; 1,048,576
+  positions fit with `HALOGEN_MAX_TOK=16384`). The pool takes RAM from the
+  page cache that serves the n-gram table, so a prompt whose rows are not
+  cached reads them from disk first; the README's memory section has the
+  measurement and the setting that trades back.
+  The default is now `HALOGEN_KV_SLOTS=4`. A request reserves its prompt plus
+  `max_tokens` positions and waits in arrival order when the pool is full.
+  Each stream stays byte-identical to the same request run alone; four
+  streams together produce about 76 tokens per second in total against 34
+  for one, and a conversation's speed follows its own length, not the pool.
+- **A prompt read in beside running conversations does not freeze them for
+  its whole length.** It is read in pieces the size of the prefill call
+  (`HALOGEN_MAX_TOK`, 32,768) with a generation step for the others between
+  pieces, which keeps its answer byte-identical to running alone: a 131k
+  prompt pauses the others three times for about 28 s instead of once for
+  105 s. `HALOGEN_ADMIT_CHUNK=8192` makes the pause about 8 s for a 32k prompt
+  at about 5 s on its own first token, trading the identity property for that
+  prompt. A prompt that arrives when nothing else is running is read in one
+  call as before.
+- **The speculative drafter no longer holds other requests back.** It
+  speculates while its conversation is the only one generating and joins the
+  batch when another is active, resuming when alone again. The default drafter
+  is unchanged.
+- **The prompt cache keeps eight entries** (`HALOGEN_CACHE_ENTRIES`, least
+  recently used out), two per conversation: at the end of the system prompt
+  and at the end of the history. Conversations taking turns each resume from
+  their own state (turn two at 25,000 tokens: about 0.5 s to the first token,
+  where one entry gave 22 s), and requests sharing a system prompt and asking
+  different things resume from it, whether they arrive together or in turn.
+- `HALOGEN_KV_POOL=0` restores the previous per-slot layout for comparison.
+
+### Changed
+
+- `HALOGEN_KV_SLOTS` defaults to 4 (was 1). `/health` reports the count as
+  before.
+
 ## 0.2.0
 
 ### Added

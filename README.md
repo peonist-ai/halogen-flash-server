@@ -17,7 +17,7 @@ else has published for this model on this hardware:
 
 | | precision | prefill | decode | **total** |
 |---|---|---|---|---|
-| **halogen-flash 0.2.0** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
+| **halogen-flash 0.3.0** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
 | [EngramHalo.cpp](https://github.com/Aristo94/EngramHalo.cpp) | 3.71 bpw | 103.7 s | 14.3 s | 118.0 s |
 | [ROCmFP4](https://huggingface.co/kingjones777/Qwen3.8-Flash-Next-ROCmFP4-STRIX-GGUF) | 5.51 bpw | 104.7 s | 13.2 s | 117.9 s |
 | [CIRU-IU4](https://huggingface.co/jcbtc/Qwen3.8-Flash-CIRU-STRIX-IU4) | 5.96 bpw | 143.7 s | 11.0 s | 154.7 s |
@@ -51,7 +51,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.2.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.3.0
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -71,7 +71,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.2.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.3.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -131,9 +131,12 @@ checkpoint and its quality sidecar, in the image's default configuration:
 full 262,144 context, prompt cache on, tuned GEMM plan loaded. Prefill is a cold single-call prefill of real text;
 decode is greedy at temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
-2-3% more time-to-first-token, because the draft head prefills too.
+2-3% more time-to-first-token, because the draft head prefills too. The prefill
+and decode rows are 0.2.0's measurements: 0.3.0 changed the scheduler and the
+memory layout, not the kernels, and a same-session check of the two images at
+the engine's protocol read the same decode rates within 1 tok/s.
 
-| | halogen-flash 0.2.0 |
+| | halogen-flash 0.3.0 |
 |---|---|
 | prefill @ 8,192 | **~1,175 tok/s** (TTFT 7.0 s) |
 | prefill @ 32,768 | **~1,309 tok/s** (TTFT 25.0 s) |
@@ -384,25 +387,81 @@ those questions can resume from. The default saves its place at the end of each
 request and cannot rewind, so it misses. If that is your workload, `1` is both
 faster and stricter.
 
-### Context and memory: `slots x ctx` is one budget
+### Context and memory: one KV pool, several conversations
 
-The server admits the model's **full native 262,144-token context** by default.
-KV costs about **26 KiB per position per slot**, so the slot count and the
-context multiply. Measured on a 128 GB machine:
+The server admits the model's **full native 262,144-token context** per
+request by default, keeps **three full-length conversations resident**, and
+generates for **four at once**. Two settings
+that used to be one: `HALOGEN_CTX` is the most a single request may use, and
+`HALOGEN_KV_POOL_POSITIONS` is how many attention positions are resident
+across all conversations. The four slots share that pool rather than each
+owning a copy, so a slot adds only about 115 MB of its own state and the pool
+is what has to fit on the device. Attention state costs about 28 KiB per
+position including its scratch. Measured on a 128 GB machine:
 
-| slots | context | KV | starts? |
+| pool | holds at once | device memory | measured |
 |---|---|---|---|
-| 1 | 262,144 | 6.5 GB | **yes**, the default |
-| 2 | 262,144 | 13 GB | yes |
-| 4 | 262,144 | 26 GB | **no, out of memory** |
-| 4 | 32,768 | 3.3 GB | yes |
+| 262,144 | one full conversation, or four at 65k | 27.8 GB | 0.2.0's layout |
+| 524,288 | two full conversations, or four at 131k | 35.0 GB | starts, serves |
+| **786,432 (default)** | **three full conversations, or four at 196k** | **42.2 GB** | **three 250k conversations resident and generating, memory flat** |
+| 1,048,576 | four full conversations, or eight at 131k | ~41 GB with `HALOGEN_MAX_TOK=16384` | the 1M configuration's layout; ~49 GB at the default arena, which does not start |
 
-**One slot is the default and is not a downgrade.** The default drafter is the
-model's own speculative head, which drives its slot alone and blocks admission
-while it runs, so extra slots buy nothing unless your clients ask for
-`"drafter": "serial"`. If you want concurrency, raise `HALOGEN_KV_SLOTS` and
-lower `HALOGEN_CTX` together. The server prints the budget at startup and warns
-before the allocator refuses.
+A request reserves its prompt plus `max_tokens` positions when it is admitted
+(the chat default budget is 8,192 tokens, so a 30,000-token conversation
+reserves about 38,000) and waits in arrival order when the pool cannot hold it
+yet. Each stream's tokens are byte-identical to the same request run alone.
+Generation speed follows a conversation's own length, not the pool: a short
+chat in a 1M-position pool runs at short-chat speed, and three conversations
+at 250k each generate at about 17 tokens per second apiece.
+
+One cost the pool does carry. A larger pool leaves less RAM for the model's
+file cache, so the first prompt after a restart can take longer to read in
+(measured: a 32,000-token prompt took up to twice its usual 25 s right after a
+fresh start, and its usual time once it had been seen). The default trades some
+of that for a third resident conversation; `HALOGEN_KV_POOL_POSITIONS=524288`
+or `262144` trades back.
+
+**Speed by concurrency.** Measured at the engine's own protocol on the
+published image at its defaults (the 8-stream row with `HALOGEN_KV_SLOTS=8`):
+1,500-token prompts of prose, 600 tokens generated each, greedy, rates over
+the window in which every stream is generating. The one-stream rows are the
+same measurement, so the rows compare; the reproducible one-stream figure is
+the built-in `bench` below.
+
+| streams generating | total tokens/s | per stream | byte-identical to alone |
+|---|---|---|---|
+| 1, speculative (the default) | 41.3 | 41.3 | yes |
+| 1, serial | 36.5 | 36.5 | |
+| 2 | 55.2 | 27.5 to 27.6 | 2 of 2 |
+| 4 | 74.8 | 18.6 to 18.7 | 4 of 4 |
+| 8 | 87.8 | 10.9 to 11.0 | 8 of 8 |
+
+**Slots are a latency policy, not a memory decision.** Raising
+`HALOGEN_KV_SLOTS` past four trades what each client sees for admitting more
+clients at once instead of queueing them; past eight the total stops growing.
+Four is the default because it keeps per-stream speed where the numbers in
+this document were measured.
+
+Two other things the scheduler does for you. A prompt that arrives while other
+conversations are generating is read in pieces with a generation step for the
+others between pieces. The piece is the prefill call size (`HALOGEN_MAX_TOK`,
+32,768 tokens), which is exactly how the same prompt is split when it runs
+alone, so its answer stays byte-identical: a 131k prompt pauses the others
+three times for about 28 s each instead of once for 105 s. `HALOGEN_MAX_TOK=16384`
+halves the pause for everyone at about 8% slower prefill. `HALOGEN_ADMIT_CHUNK=8192`
+makes the pause about 8 s and costs the admitted prompt about 5 s on its first
+token, and that prompt's answer then depends on the load when it arrived, which
+is the one setting here that gives up the identity property. And the speculative
+drafter, which is the default, speculates while it is the only conversation
+generating and joins the batch as soon as another one is active, so it never
+holds the others back.
+
+The prompt cache keeps eight entries (`HALOGEN_CACHE_ENTRIES`), two per
+conversation: one at the end of its system prompt and one at the end of its
+history. Conversations taking turns each resume from their own state, and
+requests that share a system prompt and ask different things, together or in
+turn, resume from it as well. The server prints the memory budget at startup
+and warns before the allocator refuses.
 
 `HALOGEN_MAX_TOK` (default 32,768, capped at the context) is the widest single
 prefill call, which sizes a ~4 GB scratch arena. Longer prompts are prefilled
@@ -449,10 +508,11 @@ on the same machine as the table above:
 The numbers above are the engine's own prefill bench. Through the full stack of
 chat template, tokenizer, HTTP and SSE, the image's own `sweep` mode measures
 **812 tok/s at pp2048 and 1,041 at pp8192**, and `bench` over ten real prompt
-shapes measures **43.0 tok/s mean with speculation** (min 38.6 on prose, max
-48.3 on procedural text; 1.64 tokens committed per round). Acceptance depends
-on how predictable the text is, so quote the mean with the prompt set named,
-never a single shape.
+shapes measures **43.6 tok/s mean with speculation** on the 0.3.0 image (min
+38.5 on chat, max 48.1 on procedural text; 1.63 tokens committed per round;
+the 0.2.0 image read 44.4 in the same session, inside the run-to-run spread).
+Acceptance depends on how predictable the text is, so quote the mean with the
+prompt set named, never a single shape.
 
 That run also re-checks the identity property on live traffic: **every drafter
 produced byte-identical output on every case.**
@@ -460,20 +520,22 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.2.0 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.2.0 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.3.0 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.3.0 sweep -p 8192,32768 -n 128
 ```
 
 ---
 
 ## What this release is not
 
-- **Static N-slot serving, not continuous batching.** Slots are allocated at
-  startup; a request waits for a free slot rather than joining a rolling
-  batch. Continuous batching is planned.
-- **Speculation runs a slot alone.** A speculating request does not share the
-  batch, so concurrent requests queue behind it. Speculation inside a batch is
-  planned.
+- **Four conversations, not forty.** The slot count is fixed at startup
+  (`HALOGEN_KV_SLOTS`, up to 64) and a request waits for a free slot and for
+  room in the pool; there is no preemption and no paging. Throughput past four
+  streams grows slowly.
+- **Speculation is for a conversation on its own.** With two or more
+  conversations generating, every stream takes a batched step; the drafter
+  resumes when a stream is alone again. Speculating inside a batch was measured
+  to pay only for exactly two code-heavy streams and is not built.
 - **One GPU, one model family.** gfx1151 only. The build hard-rejects other
   architectures.
 

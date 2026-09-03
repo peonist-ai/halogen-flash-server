@@ -56,20 +56,43 @@ BIND="${HALOGEN_BIND:-127.0.0.1}"
 #   2 x 262,144     6.5 GiB          starts, 80.6 GiB left
 #   4 x 262,144     6.5 GiB          **HIP out of memory**
 #
-# KV costs ~26 KiB per position per slot, so the product `slots x ctx` is what
-# has to fit. SLOTS DEFAULTS TO 1 and that is not a downgrade: the default
-# drafter is the MTP loop, which drives its slot alone and blocks admission
-# while it runs, so extra slots buy nothing unless requests ask for
-# `"drafter": "serial"`. Raise slots and lower ctx together if you want
-# concurrency.
+# KV costs ~26 KiB per position per slot, so the product `slots x ctx` was
+# what had to fit. Since 0.3 THE SLOTS SHARE ONE KV POOL of `ctx` positions
+# (HALOGEN_KV_POOL=1, the default), and a slot costs only its ~115 MiB of
+# O(1) state, so 4 x 262,144 is ~28.1 GiB (measured) and STARTS. A request
+# reserves prompt + max_tokens positions of the pool and waits when it does
+# not fit; four conversations decode together, each byte-identical to the
+# one it would have had alone; the speculative drafter speculates while it
+# is the only active stream and takes batched rows otherwise; a prompt that
+# arrives beside active streams is admitted in HALOGEN_ADMIT_CHUNK pieces
+# so it does not freeze them. SLOTS DEFAULTS TO 4. HALOGEN_KV_POOL=0 is the
+# pre-0.3 form, where the table above applies.
 #
 # MAX-TOK IS CAPPED AT 32,768 AND MUST NOT FOLLOW THE CONTEXT. It sizes the
 # single-call prefill arena (4.32 GiB of tier-1 scratch at 32,768 alone), and
 # asking for a 262,144-wide call is an immediate out-of-memory, measured at
 # 131k. Prompts longer than max-tok are prefilled in max-tok pieces, which is
 # what makes the native context affordable at all.
-ENG_SLOTS="${HALOGEN_KV_SLOTS:-1}"
+ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
+# 0.3: THE POOL IS SIZED SEPARATELY FROM THE CONTEXT. HALOGEN_KV_POOL_POSITIONS
+# is how many attention positions are resident across all conversations;
+# HALOGEN_CTX is the most one request may use. Unset, the pool is THREE
+# TIMES the context, capped at 1,048,576: three full-length conversations
+# at once, 42.2 GiB at the native context, measured with all three resident
+# and decoding (memory flat, no eviction). The device budget is the limit
+# (~46 GiB on a 128 GB machine): each 262,144 positions cost ~7.2 GiB, and
+# the prefill arena (HALOGEN_MAX_TOK) 16.7 GiB at 32,768 or 8.4 GiB at
+# 16,384, which is what makes a 1M-position pool fit. The pool also takes
+# RAM the page cache would otherwise hold for the n-gram table, so a cold
+# prompt whose rows are not cached pays disk reads; a smaller pool leaves
+# more cache.
+ENG_POOL="${HALOGEN_KV_POOL_POSITIONS:-}"
+if [ -z "$ENG_POOL" ]; then
+  ENG_POOL=$(( ENG_CTX * 3 ))
+  [ "$ENG_POOL" -gt 1048576 ] && ENG_POOL=1048576
+  [ "$ENG_POOL" -lt "$ENG_CTX" ] && ENG_POOL="$ENG_CTX"
+fi
 # PAST THE NATIVE CONTEXT THE DEFAULTS CHANGE, AND THIS SAYS SO. Measured on
 # a 128 GB machine: the engine's device-side budget stops at ~47 GiB with
 # the weights pinned, and 1,048,576 of KV is ~25 GiB of it, so the per-call
@@ -122,17 +145,25 @@ fi
 # shape where the message names the mechanism and not the cause.
 kv_budget_note() {
   local kv_gib avail_gib
-  kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" 'BEGIN{printf "%.1f", s*c*26624/1073741824}')
+  # 0.3: one pool of ctx positions plus ~115 MiB of O(1) state per slot;
+  # HALOGEN_KV_POOL=0 is the private-KV-per-slot form, slots x ctx.
+  kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" 'BEGIN{printf "%.1f", (pool=="0"?s*c*26624:p*29500+s*120586240)/1073741824}')
   # The prompt cache (HALOGEN_PROMPT_CACHE, default on) keeps the KV in
   # place and holds ~115 MiB of O(1) state; with HALOGEN_CACHE_INPLACE=0 it
   # holds a second copy of one slot's state and the budget is kv + one slot.
   cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" 'BEGIN{printf "%.1f", (on==0 || f!="")?0:(ip!="0"?0.2:c*26624/1073741824)}')
   avail_gib=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?")
-  echo "halogen: KV budget ${ENG_SLOTS} slot(s) x ${ENG_CTX} ctx = ${kv_gib} GiB" \
-       "(~26 KiB/position/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of ~68 GiB" \
-       "of weights and ~11 GiB of scratch. MemAvailable now ${avail_gib} GiB."
+  if [ "${HALOGEN_KV_POOL:-1}" = "0" ]; then
+    echo "halogen: KV budget ${ENG_SLOTS} slot(s) x ${ENG_CTX} ctx = ${kv_gib} GiB" \
+         "(~26 KiB/position/slot, HALOGEN_KV_POOL=0) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of ~68 GiB" \
+         "of weights and ~11 GiB of scratch. MemAvailable now ${avail_gib} GiB."
+  else
+    echo "halogen: KV budget ${ENG_SLOTS} slot(s) over one ${ENG_POOL}-position pool (each request up to ${ENG_CTX}) = ${kv_gib} GiB" \
+         "(~28 KiB/position incl. block scratch + ~115 MiB/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of ~68 GiB" \
+         "of weights and ~11 GiB of scratch. MemAvailable now ${avail_gib} GiB."
+  fi
   awk -v kv="$kv_gib" -v cg="$cache_gib" -v av="$avail_gib" 'BEGIN{ if (av != "?" && kv+cg+80 > av)
-    print "halogen: WARNING: that budget is close to or over what this host has free.\n  If startup ends in \"HIP … out of memory\", lower HALOGEN_KV_SLOTS or HALOGEN_CTX;\n  their PRODUCT is the constraint. 4 slots at the native context does not fit in 128 GB." > "/dev/stderr" }'
+    print "halogen: WARNING: that budget is close to or over what this host has free.\n  If startup ends in \"HIP … out of memory\", lower HALOGEN_KV_POOL_POSITIONS (the pool) or HALOGEN_MAX_TOK (the prefill arena);\n  a 1,048,576-position pool fits only with HALOGEN_MAX_TOK=16384." > "/dev/stderr" }'
 }
 
 # OPTIONAL model download. OFF unless HALOGEN_DOWNLOAD names a repo.
@@ -257,7 +288,7 @@ start_engine() {
   need_ckpt
   exec /usr/local/bin/flash_serve \
     --ck "$HALOGEN_CHECKPOINT" --port "$ENG_PORT" --bind "$BIND" \
-    --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK"
+    --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL"
 }
 
 start_api() {
@@ -283,7 +314,7 @@ all)
   need_ckpt; need_tokenizer
   /usr/local/bin/flash_serve --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
-      --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" &
+      --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
   trap 'kill -TERM "$ENGINE_PID" 2>/dev/null || true' TERM INT
 
@@ -326,7 +357,7 @@ bench|sweep)
 
   /usr/local/bin/flash_serve --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
-      --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" \
+      --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" \
       > /tmp/halogen-engine.log 2>&1 &
   ENGINE_PID=$!
   trap 'kill -TERM "$ENGINE_PID" 2>/dev/null || true' TERM INT EXIT

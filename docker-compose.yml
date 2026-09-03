@@ -13,7 +13,7 @@
 #     --group-add keep-groups --security-opt seccomp=unconfined \
 #     --ipc=host --ulimit memlock=-1:-1 \
 #     -v /path/to/halogen-models:/models:ro \
-#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.2.0
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.3.0
 #
 # ONE VOLUME IS ENOUGH. The weights repo ships the tokenizer inside it, and
 # both services below read it from there. Set HALOGEN_MODELS to the directory
@@ -32,7 +32,7 @@
 #   podman-compose logs -f engine       # watch the load, it takes minutes
 services:
   engine:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.2.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.3.0
     command: ["engine"]
     environment:
       # Separate netns from the api service, so the engine must listen on all
@@ -46,8 +46,8 @@ services:
       # value. Override here only what you actually mean to change, and see
       # docs/FLAGS.md for what each one costs.
       #
-      # `slots x ctx` is ONE memory budget at ~26 KiB per position per slot:
-      # 1 x 262,144 fits, 4 x 262,144 is a measured out-of-memory.
+      # The slots share one KV pool of HALOGEN_CTX positions (~26 KiB each)
+      # plus ~115 MiB per slot; 4 x 262,144 is ~28 GiB and is the default.
       #
       # Contexts past the native 262,144 (up to 1,048,576) need the model's
       # static YaRN factor as well, and are a different model configuration:
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.2.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.3.0
     command: ["api"]
     depends_on:
       engine:
