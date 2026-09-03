@@ -551,6 +551,24 @@ conversations at once. `524288` is 35.0 GB and is the default. If it still
 will not start, halve the prefill arena as well with `-e HALOGEN_MAX_TOK=16384`,
 which costs about 9% of prefill speed.
 
+### If the server starts but crawls on long prompts
+
+A server that starts, answers short prompts, and then collapses to a few
+tokens per second on a long one, with the disk busy and the process stuck in
+uninterruptible sleep, is short of file cache rather than short of memory.
+The model keeps a large lookup table on disk and reads it through the page
+cache instead of holding it in RAM, so RAM the KV pool takes is RAM that
+table loses, and a longer prompt touches more of it. The same setting fixes
+it:
+
+```
+-e HALOGEN_KV_POOL_POSITIONS=262144
+```
+
+`HALOGEN_HOST_RESERVE_GIB` (default 20) is how much RAM the server leaves
+free for that cache when it sizes the pool at startup; raising it makes the
+server choose a smaller pool on its own.
+
 Device memory here is system memory, and the ceiling is set by the kernel's
 resident-memory limit rather than by anything a driver reports: measured at
 about 47 GB on a 128 GB machine, and lower on machines carrying more besides

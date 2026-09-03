@@ -20,6 +20,12 @@
   about what any conversation computes. `HALOGEN_KV_POOL_FIT=0` turns it off.
 - **The out-of-memory message now names the settings that fix it**, and says
   which one does not.
+- **A server that started and then crawled on long prompts** with the disk
+  busy was the same oversized default wearing a second symptom. The model
+  reads a large lookup table through the file cache rather than holding it in
+  RAM, so RAM the pool takes is RAM that table loses, and a longer prompt
+  touches more of it. The startup sizing now accounts for it, and
+  `HALOGEN_HOST_RESERVE_GIB` (default 20) is how much it leaves free.
 
 ### Changed
 
