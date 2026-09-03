@@ -13,7 +13,7 @@
 #     --group-add keep-groups --security-opt seccomp=unconfined \
 #     --ipc=host --ulimit memlock=-1:-1 \
 #     -v /path/to/halogen-models:/models:ro \
-#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.3.0
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.4.1
 #
 # ONE VOLUME IS ENOUGH. The weights repo ships the tokenizer inside it, and
 # both services below read it from there. Set HALOGEN_MODELS to the directory
@@ -32,7 +32,7 @@
 #   podman-compose logs -f engine       # watch the load, it takes minutes
 services:
   engine:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.3.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.4.1
     command: ["engine"]
     environment:
       # Separate netns from the api service, so the engine must listen on all
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.3.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.4.1
     command: ["api"]
     depends_on:
       engine:
