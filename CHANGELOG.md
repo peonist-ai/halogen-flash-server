@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.3.2
+
+### Fixed
+
+- **A machine that took longer than 30 minutes to load could not start the
+  server at all.** In the default `all` mode the container waited exactly 30
+  minutes for the engine, then started the API against an engine that was
+  still loading, and the API's failure to connect took the whole container
+  down reporting that a component had exited. The engine underneath was
+  working normally. There is no correct fixed limit here, because load time is
+  your disk and your driver rather than anything the server controls, so it
+  now waits for as long as the load takes and watches the engine process
+  instead: if the engine actually dies, you are told immediately. Set
+  `HALOGEN_ENGINE_WAIT_S` to a number of seconds if you would rather the
+  container fail than wait; on expiry it says the engine was still loading and
+  exits, rather than starting a front-end that cannot work.
+- **A warning printed after the engine came up went nowhere.** The readiness
+  check redirected the startup script's own error output to `/dev/null` for
+  the life of the container, so every later message was discarded, including
+  the one naming which component had exited. Fixed.
+- **A failure to load the quality sidecar said only "invalid argument".** It
+  now says how much of the model had loaded, that the limit is the GPU
+  driver's rather than a problem with your file, and what to check first.
+
+### Added
+
+- **The server now says which startup step it is on and how long it has
+  taken**, including a layer counter while it prepares weights. A first start
+  reads about 68 GB off disk and can take minutes on a slow or busy machine;
+  until now that time was completely silent, which made a slow start
+  indistinguishable from a hung one. `HALOGEN_STARTUP_PROGRESS=0` turns it
+  off. If you report a slow start, a log with these lines in it is the most
+  useful thing to attach.
+
+For reference, on the development machine (Ryzen AI Max+ 395, 125 GB, weights
+on NVMe, all defaults) a start takes about 9 seconds with the model already in
+the file cache and about 18 seconds otherwise. A first start after boot is
+bounded by reading 68 GB off your disk.
+
 ## 0.3.1
 
 ### Fixed

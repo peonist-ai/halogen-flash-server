@@ -307,6 +307,64 @@ need_tokenizer() {
     exit 1; }
 }
 
+# WAIT FOR THE ENGINE'S PORT. Bounded only if the operator asks.
+#
+# This was `for _ in $(seq 1 900); do ...; sleep 2; done` with NO branch for
+# exhaustion. At exactly 1800 s it fell out of the loop, started the front-end
+# against a port nothing was listening on, the front-end exited with
+# ConnectionRefusedError, and `wait -n` took the whole container down saying
+# "a component exited". A user whose machine needs longer than 30 minutes to
+# load therefore saw five identical deaths that read as "the server does not
+# start", with the engine still loading normally underneath, and worked around
+# it by running the two roles as separate containers.
+#
+# There is no correct fixed bound. Load time is disk read time plus the
+# driver's, and both are the host's property, not ours. So the default is to
+# wait, and what is watched is the engine PROCESS: if it dies, this returns at
+# once, which is the failure that genuinely needs reporting. A heartbeat says
+# the wait is a wait and not a hang.
+#
+# HALOGEN_ENGINE_WAIT_S bounds it in seconds for an orchestrator that would
+# rather a container failed than waited. When that bound expires this says so
+# and returns non-zero; it never starts a front-end that cannot work.
+wait_for_engine() {
+  local port="$1" pid="$2" log="${3:-}"
+  local limit="${HALOGEN_ENGINE_WAIT_S:-0}" t=0 beat=0
+  while :; do
+    # THE PROBE RUNS IN A SUBSHELL, and that is not style. `exec` with no
+    # command applies its redirections to the CURRENT shell permanently, so
+    # the old `if exec 3<>/dev/tcp/... 2>/dev/null` sent this script's stderr
+    # to /dev/null for the life of the container the moment the engine came
+    # up. Verified: an `echo >&2` after a successful probe produces nothing.
+    # Every warning the entrypoint had left to give was silently discarded,
+    # "a component exited; shutting down" among them, which is the one line
+    # that would have told the 0.3.1 reporter what killed their container.
+    # A subshell also drops the descriptor for us; this is a liveness probe
+    # and has nothing to read.
+    if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+      echo "halogen: engine listening after ${t}s"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "halogen: the engine exited after ${t}s without listening." >&2
+      [ -n "$log" ] && [ -f "$log" ] && tail -30 "$log" >&2
+      return 1
+    fi
+    if [ "$limit" -gt 0 ] && [ "$t" -ge "$limit" ]; then
+      echo "halogen: HALOGEN_ENGINE_WAIT_S=${limit} expired after ${t}s and the engine is STILL LOADING (pid $pid is alive)." >&2
+      echo "  Nothing is wrong with it yet. Raise or unset HALOGEN_ENGINE_WAIT_S to keep waiting;" >&2
+      echo "  0 or unset means wait as long as the load takes." >&2
+      [ -n "$log" ] && [ -f "$log" ] && tail -30 "$log" >&2
+      return 1
+    fi
+    sleep 2; t=$((t + 2)); beat=$((beat + 2))
+    if [ "$beat" -ge 60 ]; then
+      beat=0
+      echo "halogen: still loading, ${t}s elapsed (the engine is alive; the startup lines above name the step)"
+    fi
+  done
+}
+
 start_engine() {
   need_ckpt
   exec /usr/local/bin/flash_serve \
@@ -346,13 +404,11 @@ all)
   # it is not already in page cache, measured longer than any fixed sleep is
   # willing to wait, which is why this polls instead of sleeping.
   echo "halogen: waiting for engine on $ENG_PORT (cold load can take minutes)"
-  for _ in $(seq 1 900); do
-    if exec 3<>"/dev/tcp/127.0.0.1/$ENG_PORT" 2>/dev/null; then
-      exec 3>&-; echo "halogen: engine listening"; break
-    fi
-    kill -0 "$ENGINE_PID" 2>/dev/null || { echo "halogen: engine died during load" >&2; wait "$ENGINE_PID"; exit 1; }
-    sleep 2
-  done
+  if ! wait_for_engine "$ENG_PORT" "$ENGINE_PID"; then
+    kill -TERM "$ENGINE_PID" 2>/dev/null || true
+    wait "$ENGINE_PID" 2>/dev/null || true
+    exit 1
+  fi
 
   python3 /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
@@ -386,13 +442,7 @@ bench|sweep)
   trap 'kill -TERM "$ENGINE_PID" 2>/dev/null || true' TERM INT EXIT
 
   echo "halogen bench: loading model (cold load can take minutes)"
-  for _ in $(seq 1 900); do
-    if exec 3<>"/dev/tcp/127.0.0.1/$ENG_PORT" 2>/dev/null; then
-      exec 3>&-; break
-    fi
-    kill -0 "$ENGINE_PID" 2>/dev/null || { echo "engine died during load:" >&2; tail -20 /tmp/halogen-engine.log >&2; exit 1; }
-    sleep 2
-  done
+  wait_for_engine "$ENG_PORT" "$ENGINE_PID" /tmp/halogen-engine.log || exit 1
 
   # The api's stdout is TEED, not just redirected: the ledger lines the bench
   # scrapes for commit/round and prefill only exist in this stream, and a
@@ -407,12 +457,23 @@ bench|sweep)
 
   # python, not curl: the slim base has no curl and a bench that silently
   # skipped its readiness wait would just fail the first request instead.
+  API_UP=0
   for _ in $(seq 1 150); do
     python3 -c "import urllib.request,sys
 try: urllib.request.urlopen('http://127.0.0.1:$API_PORT/health', timeout=3); sys.exit(0)
-except Exception: sys.exit(1)" 2>/dev/null && break
+except Exception: sys.exit(1)" 2>/dev/null && { API_UP=1; break; }
+    kill -0 "$API_PID" 2>/dev/null || break
     sleep 2
   done
+  # Same defect as the engine wait, one layer up: this used to fall through
+  # silently and the bench then failed on its first request, which reads as a
+  # broken benchmark rather than a front-end that never came up.
+  if [ "$API_UP" -eq 0 ]; then
+    echo "halogen bench: the front-end never answered /health on $API_PORT after 300s." >&2
+    tail -30 "$BENCH_LOG" >&2 || true
+    kill -TERM "$API_PID" "$ENGINE_PID" 2>/dev/null || true
+    exit 1
+  fi
 
   if [ "$MODE" = sweep ]; then
     python3 /halogen/tools/halogen-bench.py \
