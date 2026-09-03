@@ -87,6 +87,43 @@ configuration. `top_logprobs`, `logprobs` with `stream: true` and `n > 1` are
 not implemented and are refused with a 400, as is any value outside its defined
 range, rather than clamped. `/health` lists what the running build supports.
 
+### Codex and the Responses API
+
+The server also speaks the **OpenAI Responses API** at `POST /v1/responses`, so
+clients that dropped Chat Completions can use it directly. The OpenAI Codex CLI
+is the reason it exists: point it at this server and it works, including tool
+calls.
+
+```toml
+# ~/.codex/config.toml
+model = "halogen-qwen3.8-flash-next"
+model_provider = "halogen"
+
+[model_providers.halogen]
+name = "halogen"
+base_url = "http://<your-server>:8731/v1"
+wire_api = "responses"
+requires_openai_auth = false
+```
+
+Streaming and non-streaming both work, `function_call` and
+`function_call_output` round trip, and `tools` entries that are not functions
+(`web_search`, and the `namespace` wrapper, whose nested functions are used)
+are ignored rather than rejected. `instructions` and any `developer` turns are
+folded into the system prompt.
+
+Two things it does not do. **Reasoning is not returned**: the model thinks
+before it answers, but the Responses API carries reasoning as an encrypted item
+the client hands back on the next turn, and this server does not store
+anything, so a reasoning summary would be invented rather than real. The answer
+is unaffected. **There is no response store**, so `previous_response_id`,
+retrieving a response by id, and cancelling one are not available; send the
+history with each request, which is what Codex does.
+
+Verified against the Codex CLI driving real tasks end to end, and separately
+against the official `openai` Python SDK, which parses every event into its own
+typed models.
+
 **The token budget covers thinking, not just the answer.** This model reasons
 before it replies and those tokens count against the budget, so a budget that
 runs out mid-thought does not shorten the answer, it removes it: the reply comes
@@ -595,6 +632,9 @@ docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
   conversations generating, every stream takes a batched step; the drafter
   resumes when a stream is alone again. Speculating inside a batch was measured
   to pay only for exactly two code-heavy streams and is not built.
+- **No response store.** `/v1/responses` generates and streams; it does not
+  keep responses, so `previous_response_id`, retrieval by id and cancellation
+  are not available, and reasoning is not returned to the client.
 - **One GPU, one model family.** gfx1151 only. The build hard-rejects other
   architectures.
 

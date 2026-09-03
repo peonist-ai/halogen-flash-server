@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+- **The OpenAI Responses API at `POST /v1/responses`**, so clients that dropped
+  Chat Completions can use this server directly. The OpenAI Codex CLI is the
+  one this was built for: set `wire_api = "responses"` in a `model_providers`
+  entry pointing at this server and it works, tool calls included. Streaming
+  and non-streaming are both supported, `function_call` and
+  `function_call_output` round trip, and tool entries that are not functions
+  are ignored rather than rejected. The README has a worked Codex config.
+
+  Verified two ways that do not share an assumption: the Codex CLI driving real
+  tasks end to end against the server, and the official `openai` Python SDK,
+  which parses every event and object into its own typed models.
+
+  Not included, and stated rather than left to be discovered: **reasoning is
+  not returned** (the API carries it as an encrypted item the client hands back
+  and this server stores nothing, so a summary would be invented rather than
+  real; the answer is unaffected), and **there is no response store**, so
+  `previous_response_id`, retrieval by id and cancellation are unavailable.
+  Send the history with each request, which is what Codex does.
+
+- `/health` now lists the endpoints the running build serves, generated from
+  the routing table so it cannot describe a route that is not there.
+
 ## 0.3.2
 
 ### Fixed
