@@ -69,6 +69,13 @@ Both are marked, and both were measured before being offered.
 | `HALOGEN_PREFILL_CHUNK` | `32768` | How many tokens the engine prefills per call. Under the default cache mode this is purely a speed setting and 32,768 is the fastest value measured; 1,024 costs about half the throughput at long context. Under `HALOGEN_PROMPT_CACHE=1` it is also the resume granularity, so lower it to 8,192 if you need byte-identical repeat answers on conversations shorter than 32,768 tokens, at about 13% less prefill throughput. |
 | `HALOGEN_MATMUL_TUNING_FILE` | `/opt/halogen/flash-tune.plan` (baked in) | A tuned GEMM plan: which kernel the matrix library should use for each shape, decided once and shipped in the image. On by default at no measurable quality cost, and the published prefill numbers include it. Every process reads the same decisions, so the same prompt keeps giving the same answer. The plan is tuned on one machine; a different Strix Halo SKU loads it with a warning. To retune for your own workload, point this at a path that does not exist yet, run with `HALOGEN_MATMUL_ALGOS=8`, and stop the container cleanly. **Do not set `HALOGEN_MATMUL_ALGOS=8` without a file**: selection then happens per process by timing, and identical prompts stop answering identically across restarts. |
 
+## Troubleshooting
+
+| flag | default | meaning |
+|---|---|---|
+| `HALOGEN_VERBOSE` | `0` in this image | Whether the server narrates how it is armed at startup, on top of what it is serving. Off in the published image, where the extra lines are internal detail rather than anything a deployer acts on. Set it to `1` when you are diagnosing a start that goes wrong and want the fullest account the server can give. |
+| `HALOGEN_DMALLOC_LOG` | `0` | `1` prints every device allocation of 64 MB or more as it happens, with its size, a running total and a count. It is this configuration's memory budget measured rather than estimated, and it is the right thing to attach to a report about a server that will not start. It prints sizes and totals only. |
+
 ## Benchmark tooling
 
 | flag | default | meaning |

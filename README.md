@@ -559,7 +559,13 @@ the pool itself when the configured one will not fit, printing what it chose;
 `HALOGEN_KV_POOL_FIT=0` turns that off and allocates exactly what was asked
 for. `HALOGEN_DMALLOC_LOG=1` prints every allocation over 64 MB with a running
 total, which is this configuration's memory budget measured rather than
-estimated.
+estimated, and `HALOGEN_VERBOSE=1` turns on the fullest startup account the
+server can give. Both are off by default and both are useful to attach to a
+report. The two lines worth sending on their own are:
+
+```
+docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
+```
 
 ## What this release is not
 

@@ -73,6 +73,17 @@ BIND="${HALOGEN_BIND:-127.0.0.1}"
 # asking for a 262,144-wide call is an immediate out-of-memory, measured at
 # 131k. Prompts longer than max-tok are prefilled in max-tok pieces, which is
 # what makes the native context affordable at all.
+# THE SHIPPED SERVER IS QUIET ABOUT HOW IT IS ARMED.
+#
+# The engine narrates its startup by default, which is right for the machines
+# this is developed and gated on and wrong for a published container: those
+# lines name internal strategies, kernel arrangements and tuning constants,
+# and the audience here is a stranger running an image. What the server IS
+# SERVING still prints (precision, KV pool, slots, cache mode, the listening
+# banner); how it is armed does not. Set HALOGEN_VERBOSE=1 to get it back when
+# troubleshooting, which is the only time anyone wants it.
+export HALOGEN_VERBOSE="${HALOGEN_VERBOSE:-0}"
+
 ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
 # 0.3: THE POOL IS SIZED SEPARATELY FROM THE CONTEXT. HALOGEN_KV_POOL_POSITIONS
