@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.4.3
+
+### Fixed
+
+- **The front-end could open several connections to the engine at once, and
+  strand the requests that were already using the old one.** It keeps a single
+  connection and multiplexes every request over it, reopening that connection
+  when it closes. Every request checked that condition, and the reopen itself
+  was not serialised, so a connection that dropped with work in flight raced
+  all of the waiting callers into opening their own. Measured: six concurrent
+  callers opened six connections.
+
+  Each extra connection leaked the previous socket, started a second reader on
+  the same stream, and replaced the table of in-flight requests and the count
+  of engine slots underneath requests that were still using them. A request
+  whose entry in that table was replaced could no longer be reached by any
+  reader, and the reader responsible for it woke the wrong table when it
+  exited, so nothing ever told that request the connection had gone. It waited
+  out its full token budget and then reported that the engine had gone silent.
+
+  If you have seen an intermittent 504 saying the engine went silent, in either
+  prefill or decode, on prompts of any size, recovering by itself on the next
+  request, this is a candidate. It is not confirmed as the cause of every such
+  report: the race is proven and fixed, and the stranding that follows from it
+  is fixed with it, but we were not able to reproduce the reported stall on our
+  own hardware in 540 requests across three configurations.
+
+- **A cancelled request that had not started yet was not actually cancelled.**
+  Cancellation searched the requests that were running and the one whose prompt
+  was being read, but never the queue, so a client that disconnected before its
+  request began still had it generated in full, into a slot nobody was reading.
+  The front-end cancels every abandoned request, so this was the ordinary path
+  for a client that goes away under load rather than a rare case. It now costs
+  nothing.
+
+### Added
+
+- **A test for the reconnect path**, which runs against a stand-in engine and
+  needs no GPU and no model, so it runs in the release gate on every build. It
+  reads six connections on the previous release and one on this one.
+
 ## 0.4.2
 
 ### Fixed
