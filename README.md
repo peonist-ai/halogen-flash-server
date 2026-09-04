@@ -51,7 +51,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.4.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.4.4
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -71,7 +71,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.4.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.4.4
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -157,6 +157,43 @@ rather than a guess about which you meant. `/health` lists all three under
 
 If a reply looks empty or cut off, read `finish_reason` first: `"stop"` means
 you have the whole answer, `"length"` means you ran out of budget.
+
+---
+
+## Give it a machine of its own
+
+This server holds most of the host once it is loaded: the weights stay resident
+and the KV pool is reserved up front. On a 128 GB machine that leaves a fair
+number of gigabytes free, but very little of it in the large contiguous pieces
+that another big process needs in order to start or to grow.
+
+If you run application containers, a database, or another model on the same
+machine, they compete for what is left. When it runs out, allocations do not
+fail cleanly: the kernel goes looking for contiguous memory it cannot find, and
+whatever asked for it, including this server, can stop for minutes at a time at
+100% of one core with no disk activity and no output. It is not a crash, it
+needs no restart, and it looks exactly like a hang.
+
+The startup line says how much room is left:
+
+```
+startup [   4.9 s] host memory left for everything else: 620 contiguous 2 MiB
+                   blocks (80.4 GiB total, most of it not contiguous)
+```
+
+A few hundred blocks is normal for this server and is fine on a host of its
+own. If that number is small and you have other work on the machine, expect the
+above. Options, in the order worth trying:
+
+- **Give it its own machine.** This is the honest answer for a server that
+  holds this much of one.
+- **Lower `HALOGEN_KV_POOL_POSITIONS`.** Fewer conversations stay resident at
+  once; each one's speed and its answers are unchanged.
+- **`HALOGEN_FLASH_PIN_TRUNK=0`** gives a great deal of memory back and costs
+  **several times the decode speed**. It is a last resort, not a tuning option.
+
+Compacting memory afterwards does not help, because the memory this server
+holds cannot be moved. If you need to reclaim it, stop the server.
 
 ---
 
@@ -559,8 +596,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.4.3 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.4.3 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.4.4 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.4.4 sweep -p 8192,32768 -n 128
 ```
 
 ---

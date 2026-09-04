@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.4.4
+
+### Added
+
+- **The server now says how much of the machine is left when it finishes
+  loading**, because that turned out to be the thing operators most needed to
+  know and had no way to see:
+
+  ```
+  startup [   4.9 s] host memory left for everything else: 620 contiguous 2 MiB
+                     blocks (80.4 GiB total, most of it not contiguous)
+  ```
+
+  When that number is low it adds a note explaining what follows: other large
+  processes on the host compete for what is left, and when it runs out both
+  they and this server can stop for minutes at a time at full CPU with no disk
+  activity and no output. That is not a crash and needs no restart, but it
+  looks exactly like a hang, and two separate reports spent days on it before
+  the server said anything at all.
+
+  The block count leads because it is the number that matters. Plenty of
+  gigabytes can be free while almost none of it is in the large contiguous
+  pieces another big process needs in order to start or to grow.
+
+- **A README section, "Give it a machine of its own"**, with the same
+  information and what to do about it: lower `HALOGEN_KV_POOL_POSITIONS` first,
+  and treat `HALOGEN_FLASH_PIN_TRUNK=0` as a last resort at several times the
+  decode cost rather than as a tuning option. Compacting memory afterwards does
+  not help, because the memory this server holds cannot be moved.
+
+- **`HALOGEN_FLASH_PIN_TRUNK` is documented in the flag reference** as the
+  setting to reach for when you must share a machine, with its cost stated.
+
+### Changed
+
+- **`HALOGEN_DMALLOC_LOG` now takes a size in bytes** as well as `1`. `1` keeps
+  the previous behaviour and reports the large allocations that make up the
+  server's memory budget; a small value such as `4096` reports everything,
+  which is what you want if you are investigating what happens while requests
+  are being served rather than at startup.
+
 ## 0.4.3
 
 ### Fixed
