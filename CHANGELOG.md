@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.4.2
+
+### Fixed
+
+- **A healthy server reported itself unhealthy, on every deployment using the
+  two-container `docker-compose.yml` in this repository.** `docker ps` showed
+  `Up (unhealthy)` with a failing streak in the hundreds while the server was
+  answering every request correctly.
+
+  The engine serves one connection at a time. That is deliberate and is how the
+  slots are shared: the API front-end opens a single socket at startup and
+  multiplexes every request over it. But it meant that once the front-end
+  connected, no other connection was ever accepted. The kernel completes a few
+  extra connections into a backlog without the engine's involvement, and that
+  backlog was four, so the first five health probes succeeded and every one
+  after them timed out for the life of the process. Measured with a session
+  held: probes one to five pass, probe six onward never does.
+
+  The engine now accepts and queues connections while a session is running, and
+  serves the queue before asking for a new connection. Probes succeed, and a
+  client that connects while another is being served is served afterwards
+  rather than being dropped. If you added a longer `start_period`, more
+  `retries`, or removed the healthcheck to work around this, you can put it
+  back.
+
+- **`HALOGEN_FLASH_PIN_TRUNK=0` would not start alongside the quality overlay**,
+  exiting with `expected bf16 or Q4C-P, got q8g64`. The unpinned path handled
+  two weight formats and the twelve tensors the quality overlay promotes are a
+  third. It now handles them, and the result is token-for-token identical to
+  the reference implementation.
+
+### Added
+
+- **The server now says when the host's free memory is in the wrong shape.**
+  Free memory can be plentiful and still be unusable in large contiguous
+  pieces, typically right after a large process exits. In that state every big
+  allocation stops to compact memory, most of those attempts fail, and startup
+  can take tens of minutes at 100% of one core with no disk activity and no
+  output, which is indistinguishable from a hang. That is not a hypothetical:
+  it is what a user spent two rounds of a bug report tracking down.
+
+  Before it allocates anything the server now reads the supply of free 2 MiB
+  contiguous blocks and says how many there are, and warns when there are too
+  few. It also reports how many times each startup step had to stop and compact
+  memory. A healthy host does almost none; the reported case did tens of
+  thousands. If you see the warning, stop other large workloads and, as root,
+  `echo 1 > /proc/sys/vm/compact_memory` before starting again.
+
+  `HALOGEN_FRAG_WARN_BLOCKS` and `HALOGEN_FRAG_WARN_STALLS` set the two
+  thresholds; see `FLAGS.md`.
+
+- **The startup now names every step through to the open socket.** The previous
+  release stopped reporting at `model ready`, and the remaining work (reserving
+  serving slots, preparing the prompt cache, opening the socket) ran in
+  silence. A user watching a slow start could not tell which of those it was
+  sitting in. All of them announce themselves now.
+
 ## 0.4.1
 
 ### Fixed
