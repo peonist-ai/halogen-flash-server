@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- **An image request sent while another request was still generating could
+  stop the engine.** On some hosts it ended in a GPU memory fault and the
+  container went down and was restarted; on others the engine simply stopped
+  answering, at full GPU load, until the built in watchdog took the container
+  down. Both are the same defect and which one you saw was a matter of where
+  the bad read landed.
+
+  The state that maps an image onto the tokens it occupies, and the position
+  table that goes with it, belonged to one conversation but was kept once for
+  the whole server. Both are sized from the region reserved for the request
+  that created them, while every request in the server used them at its own
+  position. So an image request with a small region, arriving beside a
+  conversation that had a large one, left that conversation reading well past
+  the end of both. The state is now per conversation, and the code that reads
+  it cannot reach another conversation's copy.
+
+  It needed an overlap to happen. An image on its own is unaffected, and so is
+  an image sent after an earlier request has finished, which is why single
+  image use and the release gates never saw it. Reproduced on 0.5.0 before the
+  fix and confirmed on 0.5.1 with the same test: an image alone passes, an
+  image after a 19,000 token request passes, and an image beside that request
+  while it is still generating is what fails.
+
+  If you have seen a 504 saying the engine went silent, this is a candidate for
+  some of those reports, and it is not claimed as the cause of all of them.
+  0.4.3 fixed a different defect with the same symptom.
+
+- **A long prompt left the health check unanswered for the whole of its
+  prefill.** The engine answers a health probe once per pass of its serving
+  loop, and a prompt with nothing else running went in as a single pass, so
+  nothing was answered until the whole prompt was in. Measured on 0.5.0: 60
+  seconds of silence on a prompt of 100,000 tokens, against a watchdog that
+  stops the container at 180. A large image on a long prompt could cross that,
+  and the container was then restarted while it was working correctly.
+
+  The engine now answers between the chunks it already divides a long prompt
+  into. The longest silence is one chunk, measured at 26 seconds at the shipped
+  settings, for prompts of any length and whether or not other requests are
+  running. Health probes allow 30 seconds by default, so this is answered well
+  inside a single probe.
+
+### Notes
+
+- No change to weights, to any default, or to what the server computes. Text
+  output is byte for byte identical to 0.5.0, and so is image output for a
+  request that was not affected by the defect above.
+
 ## 0.5.0
 
 ### Added
