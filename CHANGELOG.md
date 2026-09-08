@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- **The server can read images.** It is off by default and stays off until you
+  point `HALOGEN_VISION_TOWER` at the vision sidecar, or set it to `1` to look
+  for the file beside the checkpoint. With no tower the image path is not
+  merely disabled but absent, so a text-only deployment behaves exactly as it
+  did in 0.4.x, byte for byte.
+
+  Both `/v1/chat/completions` and `/v1/responses` accept an image content part
+  carrying a `data:` URL or bare base64. An `http(s)` URL is refused on
+  purpose: fetching one would make the server issue outbound requests to
+  wherever a client asked, which is a different feature with a different threat
+  model. Several images in one conversation are attributed correctly, including
+  when an earlier one is referred to after a later one arrives.
+
+  `/health` gained a `vision` block saying whether images are accepted, on
+  which routes, in what form, and when they are not, why. An image sent to a
+  server with no tower is a **400 naming the flag**, rather than a generic
+  rejection that blames prompt length.
+
+- **What it reads, stated rather than implied.** Text at 12 pt and above is
+  read exactly at every supported resolution. Below that it degrades gradually
+  instead of failing: in a battery of several hundred readings, every miss was
+  the right field with one to three characters wrong, and none read a different
+  field or invented a value. Two things are worth knowing when you choose a
+  capture size. A **bigger frame is not better** for the same text, since past
+  a point it adds empty area rather than detail. And a **densely filled page is
+  harder than a sparse one** at the same point size, which is a matter of
+  finding the right row rather than seeing it.
+
+- **`HALOGEN_VISION_MAX_PIXELS`**, default 2560x1440. Larger images are
+  downscaled to fit rather than refused, preserving aspect ratio, and nothing
+  is refused until four times that. Measured end to end, one image costs about
+  5.5, 11.8, 25.3 and 105.8 seconds at 1280x800, 1920x1080, 2560x1440 and
+  3840x2160. 4K costs four times a 1440p frame and reads no better, which is
+  why the default is where it is. There is no fixed aspect ratio anywhere in
+  the path: a tall, wide or square crop all work, and a crop smaller than
+  256x256 is scaled up, which helps small text rather than hurting it.
+
+### Changed
+
+- **Image requests are substantially faster.** The work the tower does grows
+  with the square of the picture, so at any real capture size it, and not the
+  language model, is most of the request. That part is now about 2.3 times
+  faster at 1920x1080. Text requests are untouched.
+
+### Fixed
+
+- **A server that had stopped answering could still report itself healthy.**
+  If the engine stopped making progress while its process stayed alive, which
+  is what an aborted GPU queue looks like from outside, the published
+  healthcheck kept passing, `/health` kept returning `ok`, the container stayed
+  up, and every request hung until its timeout. The healthcheck was a bare TCP
+  connect, which the kernel completes without the engine's help, and `/health`
+  answered from the front-end's own state without asking the engine anything.
+
+  Now the engine answers a ping on a queued connection while it is generating,
+  the shipped healthcheck asks for that, `/health` returns **503
+  `engine_unresponsive`** when it does not come back, and a watchdog
+  (`HALOGEN_ENGINE_WATCHDOG_S`, default 180 seconds, `0` to disable) takes the
+  container down so a restart policy can act. Docker does not restart a
+  container for being unhealthy, which is the only reason the old behaviour was
+  survivable.
+
+
 ## 0.4.4
 
 ### Added

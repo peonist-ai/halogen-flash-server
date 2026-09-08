@@ -13,7 +13,7 @@
 #     --group-add keep-groups --security-opt seccomp=unconfined \
 #     --ipc=host --ulimit memlock=-1:-1 \
 #     -v /path/to/halogen-models:/models:ro \
-#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.4.4
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.5.0
 #
 # ONE VOLUME IS ENOUGH. The weights repo ships the tokenizer inside it, and
 # both services below read it from there. Set HALOGEN_MODELS to the directory
@@ -32,7 +32,7 @@
 #   podman-compose logs -f engine       # watch the load, it takes minutes
 services:
   engine:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.4.4
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.5.0
     command: ["engine"]
     environment:
       # Separate netns from the api service, so the engine must listen on all
@@ -54,6 +54,16 @@ services:
       # see the README's "1M context" section before uncommenting these.
       # HALOGEN_ROPE_YARN: "4"
       # HALOGEN_CTX: "1048576"
+      #
+      # IMAGES ARE OFF UNTIL THIS IS SET, and unset is the shipped state: with
+      # no tower the engine never builds one, allocates nothing for it, and
+      # every image path is unreachable, so a text server is byte-identical to
+      # a build without any of it. Point it at the vision sidecar (0.84 GiB,
+      # fetched beside the checkpoint) to accept images on
+      # /v1/chat/completions and /v1/responses. `1` resolves to the sidecar
+      # beside the checkpoint. An image costs about 1,000 tokens at 1280x800
+      # and 2,040 at 1080p, out of the same context as the prompt.
+      HALOGEN_VISION_TOWER: ${HALOGEN_VISION_TOWER:-}
     volumes:
       # The directory `hf download` wrote. It holds the checkpoint, the quality
       # sidecar the engine picks up automatically, and tokenizer/.
@@ -72,16 +82,23 @@ services:
     #   ConnectionRefusedError: [Errno 111] Connect call failed
     # then crash-loops under `restart` until the engine happens to be ready.
     # start_period is what buys the load time: failures during it do not count.
+    # A CONNECT IS NOT A HEALTHCHECK. This probed `</dev/tcp/127.0.0.1/8730`,
+    # which the kernel completes into the listen backlog with no help from the
+    # engine: an engine whose GPU queue has aborted answers it forever.
+    # Measured on 0.4.4 with the engine stopped: green healthcheck, /health
+    # "ok", every request hung. halogen-healthcheck asks for a PONG, which the
+    # engine answers between decode rounds and between prefill chunks, so a
+    # busy server stays healthy and a wedged one does not.
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8730' 2>/dev/null"]
+      test: ["CMD", "/usr/local/bin/halogen-healthcheck", "engine"]
       interval: 10s
-      timeout: 5s
+      timeout: 35s
       retries: 3
       start_period: 20m
     restart: unless-stopped
 
   api:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.4.4
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.5.0
     command: ["api"]
     depends_on:
       engine:
@@ -96,4 +113,13 @@ services:
       - ${HALOGEN_MODELS:?set HALOGEN_MODELS to the directory hf download wrote}:/models:ro
     ports:
       - "8731:8731"          # the only published port
+    # /health asks the ENGINE for a PONG before it answers, so this is a
+    # check on the pair rather than on the front-end's own process. A live
+    # front-end in front of a dead engine used to report itself healthy.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/halogen-healthcheck", "api"]
+      interval: 10s
+      timeout: 35s
+      retries: 3
+      start_period: 2m
     restart: unless-stopped

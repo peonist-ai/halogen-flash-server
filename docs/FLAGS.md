@@ -46,6 +46,13 @@ Both are marked, and both were measured before being offered.
 | `HALOGEN_QUEUE_TIMEOUT` | `3600` | Seconds a queued request waits before `503 engine_busy`. Must exceed the time a full-length request takes, or a long request 503s everyone behind it. |
 | `HALOGEN_DRAFTER_DEFAULT` | `1` | Which drafter a request that names none gets: `1` the model's own MTP head (speculative, and **byte-identical** to serial greedy, since it only proposes), `0` batched serial. A speculating request speculates while it is the only one generating and joins the batch as soon as another request is active, so the setting costs no concurrency. Overridable per request with `"drafter": "serial" | "mtp"`. |
 
+## Images
+
+| flag | default | meaning |
+|---|---|---|
+| `HALOGEN_VISION_TOWER` | *(unset: images are refused)* | Path to the vision sidecar, or `1` to look for it beside the checkpoint. Unset, the server takes text only and an image is a **400** naming this flag, which is the shipped default: with no tower the image path is not merely disabled but absent, so text behaviour is byte-identical to a build without it. Set, `/health` reports `vision.enabled` and both `/v1/chat/completions` and `/v1/responses` accept an image content part as a `data:` URL or bare base64. Fetching an `http(s)` URL is refused by design, since that would make the server issue outbound requests on a client's say-so. |
+| `HALOGEN_VISION_MAX_PIXELS` | `3686400` (2560x1440) | The most pixels an image is given before it is downscaled to fit, preserving aspect ratio. **Nothing is refused for being large** until four times this, which is a guard on decode cost rather than a quality limit. Measured end to end, one image costs about 5.5 / 11.8 / 25.3 / 105.8 seconds at 1280x800 / 1920x1080 / 2560x1440 / 3840x2160, and 4K reads no better than 1440p, which is why the default sits there. Images below 256x256 are scaled UP, which helps rather than hurts: a downscaled frame reads small text at least as well as a native one at the same final glyph size. Text at 12 pt and above is read exactly at every supported resolution; below that it degrades gradually rather than failing, and a densely filled page is harder than a sparse one at the same point size. |
+
 ## Context and concurrency
 
 | flag | default | meaning |

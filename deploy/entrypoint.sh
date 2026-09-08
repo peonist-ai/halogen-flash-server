@@ -245,7 +245,52 @@ need_ckpt() {
     echo "  or point:  -e HALOGEN_CHECKPOINT=/models/<file>.hgn" >&2
     exit 1; }
   check_sidecar
+  check_vision
   kv_budget_note
+}
+
+# VISION IS OFF UNTIL A PATH IS GIVEN, and that is the feature's whole safety
+# property: with HALOGEN_VISION_TOWER unset the tower is never constructed,
+# allocates nothing, and every image path is unreachable, so a text server is
+# byte-identical to a build without any of it. This does NOT turn it on by
+# finding a file, because a default that switches on when a volume happens to
+# contain something is not a default anyone chose.
+#
+# What it does is make the three ways to get it wrong LOUD instead of silent:
+# a path that does not exist (the engine would refuse later, after minutes of
+# loading), the value `1`/`auto` from someone who expected a discovery
+# feature, and a tower sitting unused beside the checkpoint.
+check_vision() {
+  local side="$(dirname "$HALOGEN_CHECKPOINT")/qwen38-flash-next-vision.hgn"
+  case "${HALOGEN_VISION_TOWER:-}" in
+    "")
+      if [ -f "$side" ]; then
+        echo "halogen: a vision sidecar is present but NOT loaded: $side"
+        echo "         set HALOGEN_VISION_TOWER=$side to accept images."
+      fi
+      return 0 ;;
+    1|auto|yes|true)
+      # A convenience, and it says what it resolved to rather than guessing
+      # silently.
+      [ -f "$side" ] || {
+        echo "halogen: HALOGEN_VISION_TOWER=${HALOGEN_VISION_TOWER} but there is no sidecar at $side" >&2
+        echo "  give the full path, or fetch the file (0.84 GiB) beside the checkpoint" >&2
+        exit 1; }
+      export HALOGEN_VISION_TOWER="$side"
+      echo "halogen: vision ON, tower $side (resolved from HALOGEN_VISION_TOWER=1)" ;;
+    *)
+      [ -f "$HALOGEN_VISION_TOWER" ] || {
+        echo "halogen: HALOGEN_VISION_TOWER=$HALOGEN_VISION_TOWER does not exist." >&2
+        echo "  It is the vision sidecar (0.84 GiB), converted by tools/convert_vision.py" >&2
+        echo "  and normally mounted beside the checkpoint." >&2
+        exit 1; }
+      echo "halogen: vision ON, tower $HALOGEN_VISION_TOWER ($(du -h "$HALOGEN_VISION_TOWER" | cut -f1))" ;;
+  esac
+  # An image is 240-8,160 LM tokens depending on its size, so it competes with
+  # the prompt for the same context. Say it once, here, rather than leaving it
+  # to be discovered by a refusal.
+  echo "         an image costs ~1,000 tokens at 1280x800 and ~2,040 at 1080p;"
+  echo "         HALOGEN_VISION_MAX_PIXELS caps it (default 2560x1440; larger is downscaled)."
 }
 
 # THE SERVED CHECKPOINT IS TWO FILES. `<ck>.overlay.hgn` is the
@@ -365,11 +410,97 @@ wait_for_engine() {
   done
 }
 
+# THE WEDGE WATCHDOG. A container whose engine is ALIVE and answering nothing
+# is the failure that was reported, and it is invisible to everything else
+# here: the process is up, so `wait -n` never fires; the port accepts, so a
+# connect-based healthcheck stays green; and the front-end goes on returning
+# 5xx after its own long timeouts. Reproduced on the shipped 0.4.4 image by
+# stopping the engine with SIGSTOP, which is what an aborted GPU queue looks
+# like from outside: healthcheck green, /health "ok", every request hung.
+#
+# PING is the discriminator, because the engine answers it between decode
+# rounds and between prefill chunks even while it is busy. Silence for
+# HALOGEN_ENGINE_WATCHDOG_S (default 180) therefore means wedged, not slow --
+# an order of magnitude above the ~14 s a 16k prefill chunk can take in 1M
+# mode. Taking the container down is the point: a restart policy can recover
+# a container, and nothing can recover a wedged engine in place.
+#
+# 0 disables it. The engine's own SIGTERM path is used, so a clean shutdown
+# still writes what it writes.
+engine_pong() {
+  ( exec 3<>"/dev/tcp/127.0.0.1/${1}" || exit 1
+    printf 'PING\n' >&3 || exit 1
+    read -r -t "${HALOGEN_ENGINE_PING_S:-30}" reply <&3 || exit 1
+    [ "$reply" = "PONG" ] ) 2>/dev/null
+}
+
+engine_watchdog() {
+  local port="$1" pid="$2"
+  local limit="${HALOGEN_ENGINE_WATCHDOG_S:-180}" step=15 silent=0
+  if [ "$limit" -le 0 ]; then
+    echo "halogen: engine watchdog OFF (HALOGEN_ENGINE_WATCHDOG_S=$limit)"
+    return 0
+  fi
+  echo "halogen: engine watchdog on, ${limit}s of silence takes the container down"
+  # SILENCE IS COUNTED IN REAL SECONDS, not in loop iterations. A failed probe
+  # also BLOCKS for the ping timeout, so counting `step` per iteration made the
+  # threshold mean about three times what it says: measured 130 s to fire at a
+  # 45 s setting. `last_ok` is the last time the engine actually answered.
+  local last_ok
+  last_ok=$(date +%s)
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep "$step"
+    if engine_pong "$port"; then
+      last_ok=$(date +%s)
+      continue
+    fi
+    silent=$(( $(date +%s) - last_ok ))
+    echo "halogen: the engine has not answered PING for ${silent}s" >&2
+    if [ "$silent" -ge "$limit" ]; then
+      echo "halogen: the engine process is alive and has answered nothing for ${silent}s." >&2
+      echo "  PING is answered between decode rounds and between prefill chunks, so this is" >&2
+      echo "  a wedged engine rather than a slow one. Shutting the container down so a" >&2
+      echo "  restart policy can recover it; raise or disable HALOGEN_ENGINE_WATCHDOG_S" >&2
+      echo "  (0 = off) if you would rather it stayed up for diagnosis." >&2
+      return 1
+    fi
+  done
+  return 0
+}
+
 start_engine() {
   need_ckpt
-  exec /usr/local/bin/flash_serve \
+  # NOT `exec` any more: something has to outlive the engine to watch it.
+  # SIGTERM is forwarded so the daemon still takes its own exit path.
+  /usr/local/bin/flash_serve \
     --ck "$HALOGEN_CHECKPOINT" --port "$ENG_PORT" --bind "$BIND" \
-    --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL"
+    --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
+  ENGINE_PID=$!
+  trap 'kill -TERM "$ENGINE_PID" 2>/dev/null || true' TERM INT
+  if ! wait_for_engine "$ENG_PORT" "$ENGINE_PID"; then
+    kill -TERM "$ENGINE_PID" 2>/dev/null || true
+    wait "$ENGINE_PID" 2>/dev/null || true
+    exit 1
+  fi
+  # A DISABLED WATCHDOG MUST NOT BE IN THE WAIT SET. It returns immediately
+  # when the limit is 0, so `wait -n` saw a component exit and took the
+  # container down at once: the documented way to turn this OFF killed the
+  # server. Found by running with it off, which no cell did.
+  WATCHDOG_PID=""
+  if [ "${HALOGEN_ENGINE_WATCHDOG_S:-180}" -gt 0 ]; then
+    engine_watchdog "$ENG_PORT" "$ENGINE_PID" &
+    WATCHDOG_PID=$!
+  else
+    echo "halogen: engine watchdog OFF (HALOGEN_ENGINE_WATCHDOG_S=0)"
+  fi
+  # shellcheck disable=SC2086
+  wait -n "$ENGINE_PID" $WATCHDOG_PID 2>/dev/null
+  kill -TERM "$ENGINE_PID" 2>/dev/null || true
+  [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null
+  wait "$ENGINE_PID" 2>/dev/null
+  RC=$?
+  echo "halogen: engine exited (rc=$RC); shutting down" >&2
+  exit "$RC"
 }
 
 start_api() {
@@ -421,9 +552,21 @@ all)
   # Either process exiting must take the container down. A live API in front
   # of a dead engine answers 200 + zero bytes, which is indistinguishable
   # from a hang on the client side.
-  wait -n "$ENGINE_PID" "$API_PID"
+  # The watchdog joins the set: a process that EXITS is caught by `wait -n`
+  # (measured: the container is down in under a second), and a process that
+  # lives and answers nothing is caught by this.
+  WATCHDOG_PID=""
+  if [ "${HALOGEN_ENGINE_WATCHDOG_S:-180}" -gt 0 ]; then
+    engine_watchdog "$ENG_PORT" "$ENGINE_PID" &
+    WATCHDOG_PID=$!
+  else
+    echo "halogen: engine watchdog OFF (HALOGEN_ENGINE_WATCHDOG_S=0)"
+  fi
+  # shellcheck disable=SC2086
+  wait -n "$ENGINE_PID" "$API_PID" $WATCHDOG_PID
   echo "halogen: a component exited; shutting down" >&2
   kill -TERM "$ENGINE_PID" "$API_PID" 2>/dev/null || true
+  [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null
   wait || true
   exit 1
   ;;
