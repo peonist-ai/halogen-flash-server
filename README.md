@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/halogen.jpg" alt="halogen-flash" width="760">
+  <img src="docs/halogen.jpg" alt="halogen-flash measured throughput" width="760">
 </p>
 
 # halogen-flash-server
