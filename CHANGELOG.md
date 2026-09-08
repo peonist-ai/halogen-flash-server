@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.5.2
+
+### Fixed
+
+- **A container could shut itself down in the middle of a request it was
+  serving correctly.** The server has a watchdog: it asks the engine a
+  question every few seconds, and if the engine has not answered for
+  `HALOGEN_ENGINE_WATCHDOG_S` (180 by default) it takes the container down so
+  a restart policy can recover it. The message it prints says a silent engine
+  is a stuck one rather than a busy one, because the engine is supposed to
+  answer between decode rounds and between the pieces a long prompt is read in.
+
+  It was not answering while a prompt was being read in, unless that prompt was
+  longer than one piece. The shipped piece size is 32,768 tokens, so any
+  ordinary prompt went in as a single uninterrupted step and the engine said
+  nothing for the whole of it. On a machine where that step took more than
+  three minutes, the watchdog shut down a container that was working.
+
+  The engine now comes up for air during a prompt, whatever its length. On this
+  hardware the longest it goes without answering fell from the length of the
+  whole prompt to under two seconds: measured 14.8 to 17.0 seconds down to 1.2
+  to 1.5 on a 20,000 token prompt, and 46.3 seconds down to 1.7 on a 100,000
+  token one. Prompt processing and generation speed are unchanged, and the same
+  prompts give byte for byte the same answers as 0.5.1.
+
+  `HALOGEN_ENGINE_YIELD_MS` controls how often it comes up for air, in
+  milliseconds. The default is 250 and there is no reason to change it; 0
+  restores the previous behaviour.
+
+- **A health check could be answered one step later than it needed to be.**
+  Connections that arrived while the engine was busy were accepted after the
+  waiting ones were answered rather than before, so a check that arrived during
+  a piece of work waited for the end of the next one as well.
+
 ## 0.5.1
 
 ### Fixed

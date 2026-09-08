@@ -419,7 +419,11 @@ wait_for_engine() {
 # like from outside: healthcheck green, /health "ok", every request hung.
 #
 # PING is the discriminator, because the engine answers it between decode
-# rounds and between prefill chunks even while it is busy. Silence for
+# rounds and, since 0.5.2, every HALOGEN_ENGINE_YIELD_MS while a prompt is
+# being read in, whatever its length. Before that it was answered only at a
+# prefill chunk boundary, and a prompt shorter than one chunk has none, so an
+# ordinary prompt on a slow host could trip this while the engine was working
+# correctly. Silence for
 # HALOGEN_ENGINE_WATCHDOG_S (default 180) therefore means wedged, not slow --
 # an order of magnitude above the ~14 s a 16k prefill chunk can take in 1M
 # mode. Taking the container down is the point: a restart policy can recover
@@ -458,10 +462,11 @@ engine_watchdog() {
     echo "halogen: the engine has not answered PING for ${silent}s" >&2
     if [ "$silent" -ge "$limit" ]; then
       echo "halogen: the engine process is alive and has answered nothing for ${silent}s." >&2
-      echo "  PING is answered between decode rounds and between prefill chunks, so this is" >&2
-      echo "  a wedged engine rather than a slow one. Shutting the container down so a" >&2
-      echo "  restart policy can recover it; raise or disable HALOGEN_ENGINE_WATCHDOG_S" >&2
-      echo "  (0 = off) if you would rather it stayed up for diagnosis." >&2
+      echo "  PING is answered between decode rounds and while a prompt is being read in," >&2
+      echo "  however long the prompt, so this is a wedged engine and not a slow one." >&2
+      echo "  Shutting the container down so a restart policy can recover it. Raise or" >&2
+      echo "  disable HALOGEN_ENGINE_WATCHDOG_S (0 = off) if you would rather it stayed" >&2
+      echo "  up for diagnosis, and please report it." >&2
       return 1
     fi
   done
