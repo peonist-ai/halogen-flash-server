@@ -17,15 +17,22 @@ else has published for this model on this hardware:
 
 | | precision | prefill | decode | **total** |
 |---|---|---|---|---|
-| **halogen-flash 0.3.0** | **5.53 bpw** | **25.0 s** | **6.1 s** | **31.1 s** |
+| **halogen-flash 0.5.3** | **5.53 bpw** | **23.0 s** | **6.1 s** | **29.1 s** |
 | [EngramHalo.cpp](https://github.com/Aristo94/EngramHalo.cpp) | 3.71 bpw | 103.7 s | 14.3 s | 118.0 s |
 | [ROCmFP4](https://huggingface.co/kingjones777/Qwen3.8-Flash-Next-ROCmFP4-STRIX-GGUF) | 5.51 bpw | 104.7 s | 13.2 s | 117.9 s |
 | [CIRU-IU4](https://huggingface.co/jcbtc/Qwen3.8-Flash-CIRU-STRIX-IU4) | 5.96 bpw | 143.7 s | 11.0 s | 154.7 s |
 
-**Roughly 3.8x faster end to end than the best of them.** Prefill is where that
+**Roughly 4x faster end to end than the best of them.** Prefill is where that
 is won, and on any prompt with real context prefill is most of the wall clock.
 The one runtime carrying more bits than we do is the slowest of the three, and
 the fastest of them runs at 3.71 bpw, two thirds of our precision.
+
+Our two cells are the rows published under [Measured](#measured), which is also
+where the conditions are: 32,768 tokens at 1,424 tok/s, then 256 tokens at the
+served speculative rate of 41.7 tok/s. Read those conditions before comparing,
+particularly the power envelope. The competitor rows are their own published
+figures on their own machines, and [Against the
+alternatives](#against-the-alternatives) says what differs.
 
 Bits per weight is measured from the checkpoint's own tensor table rather than
 quoted from a format name. It is 5.53 bpw across all 179.55B parameters, or
