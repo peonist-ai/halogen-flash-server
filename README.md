@@ -77,7 +77,9 @@ a quality trade.
   and [1M context](#1m-context-opt-in-and-a-different-configuration)
 - **[Troubleshooting](#troubleshooting)**:
   [will not start](#if-the-server-will-not-start-out-of-memory),
-  [starts but crawls](#if-the-server-starts-but-crawls-on-long-prompts)
+  [starts but crawls](#if-the-server-starts-but-crawls-on-long-prompts),
+  [the host settings we measured
+  on](#the-host-settings-these-numbers-were-measured-on)
 - **[What this release is not](#what-this-release-is-not)**, and the
   [license](#license)
 
@@ -325,10 +327,13 @@ measured the SoC drawing more power (122 to 127 W against 108 to 118) for lower
 shader clocks (2,357 to 2,409 MHz against 2,549 to 2,713) at the same
 temperature, and prefill fell from 460 to 385 tok/s at 2,048 tokens while every
 bandwidth-bound number held exactly. Bisected on one kernel, so it is the IOMMU
-and not the kernel version. If your prefill is well under these rows, check
-`/proc/cmdline` for `amd_iommu=off` before looking anywhere else. We have not
-measured the IOMMU in translated mode, only off against passthrough, and this
-is one machine.
+and not the kernel version. We have not measured the IOMMU in translated mode, only off against
+passthrough, and this is one machine.
+
+The full kernel command line this was measured on is published under
+[The host settings these numbers were measured
+on](#the-host-settings-these-numbers-were-measured-on), because numbers you
+cannot reproduce are not much use.
 
 **Match the power envelope before comparing decode numbers.** It is the
 condition most easily left out and it moves these rows: an independent tester
@@ -833,6 +838,53 @@ report. The two lines worth sending on their own are:
 
 ```
 docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
+```
+
+### The host settings these numbers were measured on
+
+Everything in [Measured](#measured) was measured on a machine booted like this,
+and the same command line has been in place unchanged for the whole life of
+this engine. **This is our configuration, not a tuning guide**: of the six
+settings we have A/B'd exactly one, and it is published here so the numbers can
+be reproduced and so a slow machine has somewhere to look.
+
+```
+amdgpu.vm_update_mode=0 amdgpu.noretry=0 amdgpu.gttsize=126976
+ttm.pages_limit=32505856 amdgpu.sg_display=0 amd_iommu=off
+```
+
+**`amd_iommu=off` is the one we have measured, and it is worth 13 to 16 percent
+of prefill.** The numbers and the mechanism are in the conditions paragraph
+above. Two things to weigh before copying it: it turns off DMA translation
+machine-wide, which is a real change in posture on a host that is not dedicated
+to this, and it takes the NPU with it. On a box that exists to serve this model
+it is the right trade and it is the one we made.
+
+**`ttm.pages_limit` and `amdgpu.gttsize` are sizes, not constants. Do not paste
+ours.** GTT is where every allocation this server makes on the GPU actually
+lands, and `ttm.pages_limit` sets that ceiling exactly: 32,505,856 pages times
+4 KiB is 124 GiB, which is 99.3% of this machine's RAM, and it is precisely
+what the driver then reports as its GTT total. Both values say the same thing
+in different units, so set both to about your installed RAM:
+
+| machine | `amdgpu.gttsize` (MiB) | `ttm.pages_limit` (4 KiB pages) |
+|---|---|---|
+| 128 GB | `126976` | `32505856` |
+| 96 GB | `95232` | `24379392` |
+| 64 GB | `63488` | `16252928` |
+
+Pasting the 128 GB row onto a 64 GB machine asks the driver for more GTT than
+the machine has. We have not measured what the kernel's own defaults are here,
+only that ours is what produced these numbers.
+
+The remaining three, `amdgpu.vm_update_mode=0`, `amdgpu.noretry=0` and
+`amdgpu.sg_display=0`, we have never run without. They are listed for
+completeness rather than recommended, and we make no claim about what they buy.
+
+Check what you are on with:
+
+```
+cat /proc/cmdline
 ```
 
 ---
