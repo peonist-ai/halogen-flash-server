@@ -47,6 +47,37 @@ At temperature 0, output is byte-identical to serial greedy decode.
 Speculation here is a pure speed optimization, verified on every release, not
 a quality trade.
 
+---
+
+## Contents
+
+- **[Quickstart](#quickstart)**, then **[Using it](#using-it)**:
+  [sampling](#sampling), [images](#images),
+  [token budgets](#token-budgets-and-why-an-empty-answer-means-you-ran-out),
+  [Codex and the Responses API](#codex-and-the-responses-api)
+- **[Give it a machine of its own](#give-it-a-machine-of-its-own)**: what this
+  server holds, and what that leaves for anything else
+- **[Measured](#measured)**: prefill and decode,
+  [against the alternatives](#against-the-alternatives), and
+  [end to end over HTTP](#served-throughput-end-to-end-over-http)
+- **[Quality](#quality-what-is-measured-and-what-is-not)**: what is measured,
+  and what is not
+- **[Precision](#precision-what-you-get-and-how-to-trade-it)**: what you get,
+  and how to trade it
+- **[Configuration](#configuration)**: every setting worth knowing, plus
+  [cache modes](#choosing-a-cache-mode),
+  [context and memory](#context-and-memory-one-kv-pool-several-conversations)
+  and [1M context](#1m-context-opt-in-and-a-different-configuration)
+- **[Troubleshooting](#troubleshooting)**:
+  [will not start](#if-the-server-will-not-start-out-of-memory),
+  [starts but crawls](#if-the-server-starts-but-crawls-on-long-prompts)
+- **[What this release is not](#what-this-release-is-not)**, and the
+  [license](#license)
+
+---
+
+## Quickstart
+
 ```bash
 podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
@@ -80,7 +111,18 @@ The weights repo carries the tokenizer, so one `-v` is all either form needs.
 On Docker rather than Podman, replace `--group-add keep-groups` with
 `--group-add video --group-add render`: `keep-groups` is a Podman extension.
 
-**Sampling.** `temperature`, `top_p`, `top_k`, `min_p`, `seed`,
+---
+
+## Using it
+
+The server speaks the OpenAI API at `/v1`, and `/health` is the authoritative
+account of what the build you are running supports: the sampling fields,
+whether images are accepted, the token budget aliases and the current default,
+and the tool-call wire format. What follows is the part worth reading first.
+
+### Sampling
+
+`temperature`, `top_p`, `top_k`, `min_p`, `seed`,
 `presence_penalty`, `frequency_penalty`, `logit_bias` and `logprobs` are
 supported. `temperature` absent or 0 is greedy decode. Above 0, the request
 samples from the filtered distribution on the same drafter it would otherwise
@@ -139,6 +181,42 @@ ratio anywhere in the path: tall, wide and square crops all work, and a crop
 under 256x256 is scaled up, which helps small text rather than hurting it. A
 1920x1080 frame occupies about 2,040 tokens of the context.
 
+### Token budgets, and why an empty answer means you ran out
+
+**The token budget covers thinking, not just the answer.** This model reasons
+before it replies and those tokens count against the budget, so a budget that
+runs out mid-thought does not shorten the answer, it removes it: the reply comes
+back with `finish_reason: "length"`, an empty `content`, and the partial
+reasoning in `reasoning_content`, which most OpenAI clients do not display.
+
+The default is **8192**, which finished every ordinary prompt we measured with
+room to spare. Send more when you want more, up to `HALOGEN_MAX_TOKENS_CAP`
+(**65536** by default); above the cap you get a 400 rather than a silent
+truncation, so ask for what you need and the server will tell you if it is too
+much. Hard reasoning problems can genuinely exceed 8192: pass a larger budget,
+or `"reasoning_effort": "low"` to make the model think less. Accepted efforts
+are `minimal`, `low`, `medium`, `high` and `xhigh`; the model's own default is
+`xhigh`.
+
+**Any of three field names works**, and they mean the same thing here:
+`max_completion_tokens` (current OpenAI Chat Completions), `max_output_tokens`
+(OpenAI Responses), or `max_tokens` (deprecated upstream, still widely sent).
+Send one, or send several as long as they agree; two different values is a 400
+rather than a guess about which you meant. `/health` lists all three under
+`token_budget_aliases` and reports the current default as `max_tokens_default`.
+
+```json
+{
+  "model": "halogen-qwen3.8-flash-next",
+  "messages": [{"role": "user", "content": "..."}],
+  "max_completion_tokens": 16384,
+  "reasoning_effort": "low"
+}
+```
+
+If a reply looks empty or cut off, read `finish_reason` first: `"stop"` means
+you have the whole answer, `"length"` means you ran out of budget.
+
 ### Codex and the Responses API
 
 The server also speaks the **OpenAI Responses API** at `POST /v1/responses`, so
@@ -175,40 +253,6 @@ history with each request, which is what Codex does.
 Verified against the Codex CLI driving real tasks end to end, and separately
 against the official `openai` Python SDK, which parses every event into its own
 typed models.
-
-**The token budget covers thinking, not just the answer.** This model reasons
-before it replies and those tokens count against the budget, so a budget that
-runs out mid-thought does not shorten the answer, it removes it: the reply comes
-back with `finish_reason: "length"`, an empty `content`, and the partial
-reasoning in `reasoning_content`, which most OpenAI clients do not display.
-
-The default is **8192**, which finished every ordinary prompt we measured with
-room to spare. Send more when you want more, up to `HALOGEN_MAX_TOKENS_CAP`
-(**65536** by default); above the cap you get a 400 rather than a silent
-truncation, so ask for what you need and the server will tell you if it is too
-much. Hard reasoning problems can genuinely exceed 8192: pass a larger budget,
-or `"reasoning_effort": "low"` to make the model think less. Accepted efforts
-are `minimal`, `low`, `medium`, `high` and `xhigh`; the model's own default is
-`xhigh`.
-
-**Any of three field names works**, and they mean the same thing here:
-`max_completion_tokens` (current OpenAI Chat Completions), `max_output_tokens`
-(OpenAI Responses), or `max_tokens` (deprecated upstream, still widely sent).
-Send one, or send several as long as they agree; two different values is a 400
-rather than a guess about which you meant. `/health` lists all three under
-`token_budget_aliases` and reports the current default as `max_tokens_default`.
-
-```json
-{
-  "model": "halogen-qwen3.8-flash-next",
-  "messages": [{"role": "user", "content": "..."}],
-  "max_completion_tokens": 16384,
-  "reasoning_effort": "low"
-}
-```
-
-If a reply looks empty or cut off, read `finish_reason` first: `"stop"` means
-you have the whole answer, `"length"` means you ran out of budget.
 
 ---
 
@@ -358,6 +402,29 @@ quantizes the n-gram lookup table harder than we do, to 26.8 GiB against our
 47.7 GiB. Keeping that table on disk is not one of the differences: we do the
 same, by default and with no way to turn it off. Treat the prefill gap as real
 and the decode rows as indicative.
+
+### Served throughput, end to end over HTTP
+
+The prefill numbers above are the engine's own prefill bench. Through the full
+stack of chat template, tokenizer, HTTP and SSE, the image's own `sweep` mode
+measures **812 tok/s at pp2048 and 1,041 at pp8192**, and `bench` over ten real prompt
+shapes measures **43.6 tok/s mean with speculation** on the 0.3.0 image (min
+38.5 on chat, max 48.1 on procedural text; 1.63 tokens committed per round;
+the 0.2.0 image read 44.4 in the same session, inside the run-to-run spread).
+Acceptance depends on how predictable the text is, so quote the mean with the
+prompt set named, never a single shape.
+
+That run also re-checks the identity property on live traffic: **every drafter
+produced byte-identical output on every case.**
+
+Reproduce the numbers with the benchmarks baked into the image:
+
+```bash
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.5 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.5 sweep -p 8192,32768 -n 128
+```
+
+---
 
 ## Quality: what is measured, and what is not
 
@@ -664,28 +731,9 @@ on the same machine as the table above:
   must leave room for the generation: a prompt at exactly the context is
   refused.
 
-### Served throughput, end to end over HTTP
-
-The numbers above are the engine's own prefill bench. Through the full stack of
-chat template, tokenizer, HTTP and SSE, the image's own `sweep` mode measures
-**812 tok/s at pp2048 and 1,041 at pp8192**, and `bench` over ten real prompt
-shapes measures **43.6 tok/s mean with speculation** on the 0.3.0 image (min
-38.5 on chat, max 48.1 on procedural text; 1.63 tokens committed per round;
-the 0.2.0 image read 44.4 in the same session, inside the run-to-run spread).
-Acceptance depends on how predictable the text is, so quote the mean with the
-prompt set named, never a single shape.
-
-That run also re-checks the identity property on live traffic: **every drafter
-produced byte-identical output on every case.**
-
-Reproduce the numbers with the benchmarks baked into the image:
-
-```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.5 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.5 sweep -p 8192,32768 -n 128
-```
-
 ---
+
+## Troubleshooting
 
 ### If the server will not start: "out of memory"
 
@@ -744,6 +792,8 @@ report. The two lines worth sending on their own are:
 docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
 ```
 
+---
+
 ## What this release is not
 
 - **Four conversations, not forty.** The slot count is fixed at startup
@@ -761,6 +811,8 @@ docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
   or video input.
 - **One GPU, one model family.** gfx1151 only. The build hard-rejects other
   architectures.
+
+---
 
 ## License
 
