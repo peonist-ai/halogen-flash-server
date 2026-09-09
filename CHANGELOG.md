@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **An image request that generated a long answer could take the engine
+  down.** On some hosts it ended in a GPU page fault and the container was
+  gone; on others the engine simply stopped answering and requests timed out.
+  It needed no second request and no unusual image: only an answer of a few
+  hundred tokens or more, which an image plus a detailed question routinely
+  produces.
+
+  The table that tells the model where each token sits, which images make more
+  complicated than a plain count, was built to cover the prompt and nothing
+  more. It was then used for every token generated after the prompt as well,
+  reading further past the end with each one. The table now covers everything
+  a request can generate, and the values past the prompt are the ordinary
+  count the model would have used anyway, so answers up to that point are
+  unchanged.
+
+  Short answers were never affected, which is why this survived: the gates all
+  asked for short ones. A request that generates 400 lines and then refers
+  back to the image is now part of the release gate.
+
+  Reported on 0.5.1 and present in 0.5.0. Text only servers cannot be
+  affected: the whole path exists only for requests that carry an image.
+
 - **A container could shut itself down in the middle of a request it was
   serving correctly.** The server has a watchdog: it asks the engine a
   question every few seconds, and if the engine has not answered for
