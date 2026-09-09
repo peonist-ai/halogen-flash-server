@@ -30,7 +30,9 @@ the fastest of them runs at 3.71 bpw, two thirds of our precision.
 Bits per weight is measured from the checkpoint's own tensor table rather than
 quoted from a format name. It is 5.53 bpw across all 179.55B parameters, or
 4.55 bpw across the trunk and experts with the FP8 n-gram lookup table set
-aside.
+aside. [`docs/QUANT.md`](docs/QUANT.md) gives the breakdown by tensor family
+and says how the figure is derived, so it can be checked with arithmetic rather
+than taken on trust.
 
 **On the decode column, which is the soft one.** Those are the published
 figures at this depth, and for two of the three we cannot tell whether
@@ -213,8 +215,8 @@ you have the whole answer, `"length"` means you ran out of budget.
 ## Give it a machine of its own
 
 This server holds most of the host once it is loaded: the weights stay resident
-and the KV pool is reserved up front. On a 128 GB machine that leaves a fair
-number of gigabytes free, but very little of it in the large contiguous pieces
+and the KV pool is reserved up front. On a 128 GB machine that leaves roughly
+twelve gigabytes free, and very little of it in the large contiguous pieces
 that another big process needs in order to start or to grow.
 
 If you run application containers, a database, or another model on the same
@@ -224,12 +226,23 @@ whatever asked for it, including this server, can stop for minutes at a time at
 100% of one core with no disk activity and no output. It is not a crash, it
 needs no restart, and it looks exactly like a hang.
 
-The startup line says how much room is left:
+The startup line says how much room is left, and a second line says why your
+own tools will disagree:
 
 ```
-startup [   4.9 s] host memory left for everything else: 620 contiguous 2 MiB
-                   blocks (80.4 GiB total, most of it not contiguous)
+startup [   4.9 s] host memory left for everything else: 465 contiguous 2 MiB
+                   blocks (12.4 GiB total, most of it not contiguous)
+startup [   4.9 s] free(1) and MemAvailable will report about 80.4 GiB
+                   instead: the kernel counts this server's locked weights as
+                   reclaimable file cache, and they cannot be reclaimed
 ```
+
+**Believe the first line.** `free`, `MemAvailable`, and every monitoring tool
+that reads them, count this server's locked weights as reclaimable page cache,
+so they overstate the memory available on this host by the size of the model,
+about 68 GiB. No kernel field reports the difference (`Mlocked` and
+`Unevictable` both stay at zero across the load), which is why the server has
+to print the correction itself.
 
 A few hundred blocks is normal for this server and is fine on a host of its
 own. If that number is small and you have other work on the machine, expect the
@@ -250,10 +263,21 @@ holds cannot be moved. If you need to reclaim it, stop the server.
 ## Measured
 
 **Conditions, because they change the numbers:** AMD Ryzen AI Max+ 395
-(Radeon 8060S, gfx1151), 128 GB unified memory, ROCm 7.14.0. The shipped
-checkpoint and its quality sidecar, in the image's default configuration:
-full 262,144 context, prompt cache on, tuned GEMM plan loaded. Prefill is a cold single-call prefill of real text;
-decode is greedy at temperature 0. Prefill is measured by the engine's own
+(Radeon 8060S, gfx1151), 128 GB unified memory, ROCm 7.14.0, and **about 85 W
+of sustained package power**, sampled from sysfs during a 32,768-token prefill
+alongside a 2,229 MHz median clock against the part's 2,900 MHz top state.
+
+**Match the power envelope before comparing decode numbers.** It is the
+condition most easily left out and it moves these rows: an independent tester
+running a 70 W-limited handheld measured 11 to 12 percent under both the serial
+and the drafted figure below, consistently on both, which is the signature of a
+lower envelope rather than a disagreement about the engine. Prefill reproduced
+on that same machine.
+
+The shipped checkpoint and its quality sidecar, in the image's default
+configuration: full 262,144 context, prompt cache on, tuned GEMM plan loaded.
+Prefill is a cold single-call prefill of real text; decode is greedy at
+temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
 2-3% more time-to-first-token, because the draft head prefills too. The prefill
 rows are 0.5.3's measurements. The control was this same binary with the
@@ -428,6 +452,12 @@ adding weight, it is spending the same bits better. Measuring each tensor
 family against its own BF16 ceiling put nearly all of the non-expert
 quantization cost in those twelve tensors, 106 MB of a 115 GiB file. At 8 bits
 they measure as a statistical tie with that ceiling.
+
+**Which tensor families are stored at which precision is written out in
+[`docs/QUANT.md`](docs/QUANT.md)**, along with what the sidecar changes and
+what has not been measured. Bits per weight there is computed from the tensor
+shapes in the checkpoint rather than quoted from a format name, so a format
+whose real cost differs from its nominal one shows the difference.
 
 **To trade quality for speed**, point `HALOGEN_CK_OVERLAY` at the speed arm:
 
