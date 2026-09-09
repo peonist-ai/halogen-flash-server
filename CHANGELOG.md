@@ -20,11 +20,12 @@
   machine state, so we quote the detokenization cost, which is the part that
   is controlled.
 
-  **Reported, measured and fixed by [@rosstang](https://github.com/rosstang),
-  who supplied a patch and a differential harness, and independently confirmed
-  by [@hvico](https://github.com/hvico).** We reimplemented rather than applied
-  the patch, and verified its central claim about the tokenizer ourselves
-  before trusting it. Neither the diagnosis nor the fix is ours: thank you
+  **Reported and diagnosed by [@rosstang](https://github.com/rosstang), with
+  measurements and a differential harness, and independently confirmed by
+  [@hvico](https://github.com/hvico).** The problem, the measurements and the
+  analysis that made the fix possible are theirs; the implementation here is
+  our own, written from the description rather than from their patch, and we
+  verified the tokenizer property ourselves before relying on it. Thank you
   both. (#13)
 
 - **`response_format` is no longer accepted and silently ignored.** A request
