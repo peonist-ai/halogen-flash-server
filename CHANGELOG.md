@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.5.5
+
+### Fixed
+
+- **The server could exit in the middle of serving, taking every request in
+  flight with it.** Reported by [@nr23730](https://github.com/nr23730) (#15),
+  who crashed it twice in a few minutes and posted the log that identified it.
+
+  Any request that used a temperature above 0 together with the speculative
+  drafter (both defaults for most clients) was decoded using a block of memory
+  that had already been released. The sampling settings for the request -
+  temperature, seed, and the repetition penalties - lived in that block, and
+  they were read again on every step of the answer.
+
+  Usually the memory still happened to hold the right values, which is why this
+  went unnoticed for nine releases. When it did not, one of two things
+  happened. If the leftover data looked like a plausible temperature, the reply
+  came back normally but was generated with settings that were not the ones
+  asked for. If it happened to be exactly zero, the server treated it as an
+  internal contradiction and shut itself down, and every other request being
+  served at that moment failed with a 502.
+
+  **If you use temperature above 0, we would treat any sampled output from
+  0.4.x or 0.5.0 through 0.5.4 as unreliable, not merely as occasionally
+  crashy.** Greedy decoding (temperature 0, the default when the field is
+  omitted) was never affected: it does not use that path at all, and a
+  48-request control run confirms it.
+
+  Reproduced on the published 0.5.4 image before the fix was written: four
+  concurrent requests at temperature 0.7 took the container down on the first
+  round. The same test against 0.5.5 completes 48 of 48 with the server up.
+
+### Known
+
+- Some internal consistency checks still stop the whole server rather than
+  failing the one request responsible. Nothing is known to reach them, and the
+  path that did reach one is fixed above, but it is the wrong behaviour for a
+  server handling several conversations and we are changing it.
+
+
 ## 0.5.4
 
 ### Fixed
