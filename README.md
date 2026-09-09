@@ -327,7 +327,9 @@ the competitor columns is from their own model card or repository, on their
 machine, at their quantization and their settings. We have not run their
 builds. Their conditions differ from ours in ways that matter: EngramHalo
 measures on a 96 GB machine rather than 128 GB, runs a q8_0 KV cache, and
-keeps the model's 26.8 GiB n-gram table on SSD. Treat the prefill gap as real
+quantizes the n-gram lookup table harder than we do, to 26.8 GiB against our
+47.7 GiB. Keeping that table on disk is not one of the differences: we do the
+same, by default and with no way to turn it off. Treat the prefill gap as real
 and the decode rows as indicative.
 
 ## Quality: what is measured, and what is not
