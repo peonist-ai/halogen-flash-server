@@ -783,6 +783,30 @@ it:
 free for that cache when it sizes the pool at startup; raising it makes the
 server choose a smaller pool on its own.
 
+**Check the BIOS before you tune anything, if this machine carves memory out
+for the iGPU.** A fixed block assigned to graphics in firmware is taken before
+the kernel boots, so it never shows up as missing anywhere on the host: the
+machine just reports itself smaller, and that RAM is gone from the file cache
+the lookup table depends on. **This server does not need it.** It drives the
+GPU through GTT and allocates from the same unified memory whichever way the
+setting is left, so a large carve-out buys nothing here and costs cache. Set
+the UMA frame buffer or dedicated graphics memory option back to Auto or its
+minimum, which reports about 512 MiB on this hardware.
+
+You are paying for a carve-out even when nothing has thrashed yet. The pool
+sizes itself from the memory total the OS reports, which the carve-out has
+already made smaller, so the server quietly chooses a smaller pool and keeps
+fewer conversations resident than [the pool table](#context-and-memory-one-kv-pool-several-conversations) says. Pin the pool yourself
+and the file cache takes the whole loss instead. Either way the server prints
+what it found at startup, and warns when it is large:
+
+```
+memory: 16.0 GiB of this machine's RAM is carved out for the iGPU in firmware.
+        That is not free memory the OS can lend to the file cache above, and
+        it does not appear anywhere in /proc/meminfo: the machine simply
+        reports itself smaller
+```
+
 Device memory here is system memory, and the ceiling is set by the kernel's
 resident-memory limit rather than by anything a driver reports: measured at
 about 47 GB on a 128 GB machine, and lower on machines carrying more besides
