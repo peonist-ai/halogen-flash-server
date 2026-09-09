@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.5.6
+
+### Fixed
+
+- **`/health` said the speculative drafter was not loaded, on every build ever
+  shipped.** Reported by [@aic0d3r](https://github.com/aic0d3r) (#16), who
+  benchmarked four stacks on this hardware and noticed that
+  `drafter_weights_loaded` read `false` while their own measurements showed the
+  drafter working: 43.1 tokens per second drafted against 33.2 serial, with
+  drafted and serial output byte-identical on all ten prompts they tried.
+
+  The field is inherited from an engine that had a separate draft model, where
+  it meant that model's weights were present. This engine has no such model,
+  the MTP head is the drafter, and nothing ever set the field, so it reported a
+  hardcoded `false`. At least one public diagnosis had already misfired off it,
+  reading it as evidence that speculative decoding never loads.
+
+  It now reports whether the MTP head is ready, which is the question the name
+  asks. `shortlist_draft_head` stays `false` beside it and that is correct:
+  this build has no such head, and the fix for a field that lies is not to make
+  an honest neighbour lie the other way.
+
+### Added
+
+- **The server detects a BIOS iGPU memory carve-out and says so.** A fixed
+  block of RAM assigned to graphics in firmware is taken before the kernel
+  boots, so it appears nowhere on the host: the machine simply reports itself
+  smaller. This model reads a 47.7 GiB lookup table through the host file cache
+  on every request, so that RAM is taken directly out of what the table needs.
+  The startup memory ledger now reports the carve-out, and warns when it is
+  large enough to matter, naming the BIOS setting.
+
+  It costs you something even when nothing has visibly thrashed: the KV pool
+  sizes itself from the memory total the OS reports, so a carve-out quietly
+  buys fewer resident conversations instead.
+
+### Documentation
+
+- **The conditions the published numbers were measured under are now stated in
+  full**, after #16 measured our decode 11 to 12 percent low on both rows on a
+  70 W handheld and we had never published a power envelope. The Measured
+  section now names the sustained package power and the clock, and it names the
+  IOMMU, which is worth 13 to 16 percent of prefill on this hardware and which
+  no artifact had ever mentioned.
+- **The kernel command line the reference machine boots with is published**, in
+  a new section under Troubleshooting. Numbers nobody can reproduce are not
+  much use. It is labelled as our configuration rather than a tuning guide, and
+  the two settings that are sizes rather than constants are given as a table
+  per machine size instead of as values to paste.
+- **A startup line in the README had been quoting output the server stopped
+  printing three releases ago**, on the one line that tells you how much memory
+  is left. It now shows what the server actually prints, including the second
+  line explaining why `free` and `MemAvailable` disagree with it by the size of
+  the model.
+- **`docs/QUANT.md` is linked from the README.** It has shipped in this
+  repository since 0.1 and nothing pointed at it, so a reader asking how the
+  bits-per-weight figure is derived had no way to find the answer already here.
+- The README has a table of contents, and the two troubleshooting sections have
+  a heading to live under. The explanation of token budgets covering thinking
+  as well as the answer, which is the difference between a short reply and an
+  empty one, was filed under the Codex section; it applies to every client and
+  now has its own section.
+
 ## 0.5.5
 
 ### Fixed
