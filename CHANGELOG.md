@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.4
+
+### Fixed
+
+- **Long replies no longer slow down as they get longer.** The streaming
+  front-end re-decoded the entire answer on every single token and diffed it
+  against what it had already sent, which costs time proportional to the length
+  squared. A reply of a few thousand tokens spent hundreds of microseconds per
+  token on that alone, and a reply running to the cap would have spent about
+  half a minute of pure bookkeeping.
+
+  It now decodes only the last token or two, which is all that can still
+  change. Detokenization cost is flat at 9 to 19 microseconds per token
+  regardless of length, where before it climbed from 42 to 726. Answers of
+  1,000 and 3,000 tokens now run at 39 tok/s where they used to sag to 34.
+
+  **Reported, measured and fixed by [@rosstang](https://github.com/rosstang),
+  who supplied a patch and a differential harness, and independently confirmed
+  by [@hvico](https://github.com/hvico).** We reimplemented rather than applied
+  the patch, and verified its central claim about the tokenizer ourselves
+  before trusting it. Neither the diagnosis nor the fix is ours: thank you
+  both. (#13)
+
+- **`response_format` is no longer accepted and silently ignored.** A request
+  asking for JSON or a schema returned 200 and prose, so a client had no way to
+  tell that nothing had enforced it. This server has no constrained decoding,
+  so it cannot honour the field. It now refuses with a 400 that says so, on
+  both `/v1/chat/completions` and `/v1/responses` (where the field is spelled
+  `text.format`), matching what the server already does for any other option it
+  cannot honour. `/health` gained a `not_implemented` list so a client can ask
+  before sending. `{"type": "text"}`, the default, is unaffected.
+
+  **Reported by [@hvico](https://github.com/hvico)**, who also laid out what
+  real support would take. Structured output is not implemented and this
+  release does not add it: it makes the gap visible instead. (#14)
+
+
 ## 0.5.3
 
 ### Faster
