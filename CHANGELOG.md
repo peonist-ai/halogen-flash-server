@@ -22,6 +22,12 @@
   this build has no such head, and the fix for a field that lies is not to make
   an honest neighbour lie the other way.
 
+- **The out-of-memory refusal at startup referred to one of our internal
+  documents.** If pinning the weights would have left the host short, the
+  server refused and explained why by citing a file nobody outside this
+  project can read. It now says the same thing in its own words and names the
+  setting that runs without pinning.
+
 ### Added
 
 - **The server detects a BIOS iGPU memory carve-out and says so.** A fixed
