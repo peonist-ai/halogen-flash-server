@@ -51,7 +51,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.5.3
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -71,7 +71,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.5.3
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -256,15 +256,18 @@ full 262,144 context, prompt cache on, tuned GEMM plan loaded. Prefill is a cold
 decode is greedy at temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
 2-3% more time-to-first-token, because the draft head prefills too. The prefill
-and decode rows are 0.2.0's measurements: 0.3.0 changed the scheduler and the
-memory layout, not the kernels, and a same-session check of the two images at
-the engine's protocol read the same decode rates within 1 tok/s.
+rows are 0.5.3's measurements. The control was this same binary with the
+previous release's ordering step selected, so the two arms differ in one thing
+and nothing else; it ran in the same session, on the plan this image bakes, and
+it reproduced the rows it replaces to within 1.4%. The decode rows are 0.2.0's and have not moved since:
+the releases between them changed the scheduler, the memory layout and one
+host-side sort, not the decode kernels.
 
-| | halogen-flash 0.3.0 |
+| | halogen-flash 0.5.3 |
 |---|---|
-| prefill @ 8,192 | **~1,175 tok/s** (TTFT 7.0 s) |
-| prefill @ 32,768 | **~1,309 tok/s** (TTFT 25.0 s) |
-| prefill @ 131,072 | **1,256 tok/s** (104.4 s) |
+| prefill @ 8,192 | **~1,246 tok/s** (TTFT 6.6 s) |
+| prefill @ 32,768 | **~1,424 tok/s** (TTFT 23.0 s) |
+| prefill @ 131,072 | **1,358 tok/s** (96.5 s) |
 | follow-up turn at 100,000 tokens of context | **~2 s** (prompt cache on, the default) |
 | decode, serial greedy @ ctx 1,500 | **37.6 tok/s** |
 | decode, serial greedy @ ctx 8,000 | **36.1 tok/s** |
@@ -310,13 +313,13 @@ llama.cpp derivatives or forks of one.
 
 | prefill, tok/s | CIRU-IU4 | ROCmFP4 | EngramHalo | **halogen-flash** | vs best |
 |---|---|---|---|---|---|
-| @ 8,192 | 373 | 385 | 436 | **1,175** | **2.7x** |
-| @ 32,768 | 228 | 313 | 316 | **1,309** | **4.1x** |
-| @ 131,072 | 121 | 196 | 174 | **1,256** | **6.4x** |
+| @ 8,192 | 373 | 385 | 436 | **1,246** | **2.9x** |
+| @ 32,768 | 228 | 313 | 316 | **1,424** | **4.5x** |
+| @ 131,072 | 121 | 196 | 174 | **1,358** | **6.9x** |
 
 **The shape matters more than the ratio.** Every one of them decays hard with
-depth. Ours does not: 1,175 at 8K, 1,309 at 32K, 1,256 at 131K. Their own documentation puts it plainly enough. A 156K
-prompt takes EngramHalo about twelve minutes. We prefill 131K in 104 seconds.
+depth. Ours does not: 1,246 at 8K, 1,424 at 32K, 1,358 at 131K. Their own documentation puts it plainly enough. A 156K
+prompt takes EngramHalo about twelve minutes. We prefill 131K in 96 seconds.
 
 Decode is the closer row. Against the fastest of them we are roughly 1.2x on
 code and 1.7x on prose at short context, and the comparison at depth is muddied
@@ -648,8 +651,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.2 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.2 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.3 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.3 sweep -p 8192,32768 -n 128
 ```
 
 ---

@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.5.3
+
+### Faster
+
+- **Long prompts are read 5 to 8 percent faster, and the answers are
+  byte-for-byte the ones 0.5.2 gave.** Nothing about the model or the
+  arithmetic changed. Every layer has to work out which expert handles which
+  token, and that ordering was being produced by a general-purpose sort running
+  on the CPU while the GPU sat idle waiting for it. There are only 512 experts,
+  so the ordering can be counted out directly instead of compared into place.
+  A stable count on the same key produces the identical ordering by definition,
+  which is why the output is unchanged rather than merely close.
+
+  Measured on this machine against 0.5.2 in the same session, on the tuned plan
+  this image ships:
+
+  | prompt | 0.5.2 | 0.5.3 | |
+  |---|---|---|---|
+  | 8,192 tokens | 1,191 tok/s | **1,246 tok/s** | +4.6% |
+  | 32,768 tokens | 1,317 tok/s | **1,424 tok/s** | +8.1% |
+  | 131,072 tokens | 1,259 tok/s (104.1 s) | **1,358 tok/s (96.5 s)** | +7.9% |
+
+  Decode speed is unchanged, and unchanged by construction: generating a token
+  never takes the path this touches.
+
+  The saving is a fixed amount of time per layer, so it is worth more on a long
+  prompt than a short one, and worth more on a fast machine than a slow one.
+
+### Changed
+
+- **The server now reports the memory it actually holds.** The pre-flight
+  estimate printed at startup says plainly that it is an estimate, and the
+  engine prints measured figures once the model is loaded, including the large
+  lookup table it reads from disk and never keeps in memory.
+
+  This matters for anyone sizing a machine, because the usual tools understate
+  it: the weights are locked in place in a way that `MemAvailable` and `free`
+  do not count, so a loaded server looks like it has roughly 68 GB more room
+  than it has. Nothing but the server itself can correct that figure, so it
+  does.
+
+- **`/health` now names `/cache`**, which carries the live prompt-cache
+  counters. It was reachable before but undiscoverable, since it does not sit
+  under `/v1/`. The counters now include how many times a cache hit had to copy
+  its rows and how long that took: if those climb while the hit rate looks
+  healthy, the host is under memory pressure rather than the cache missing.
+
+
 ## 0.5.2
 
 ### Fixed

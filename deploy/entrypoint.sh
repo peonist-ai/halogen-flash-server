@@ -174,16 +174,18 @@ kv_budget_note() {
   # The prompt cache (HALOGEN_PROMPT_CACHE, default on) keeps the KV in
   # place and holds ~115 MiB of O(1) state; with HALOGEN_CACHE_INPLACE=0 it
   # holds a second copy of one slot's state and the budget is kv + one slot.
-  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" 'BEGIN{printf "%.1f", (on==0 || f!="")?0:(ip!="0"?0.2:c*26624/1073741824)}')
+  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-8}" 'BEGIN{printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*26624/1073741824)}')
   avail_gib=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?")
   if [ "${HALOGEN_KV_POOL:-1}" = "0" ]; then
     echo "halogen: KV budget ${ENG_SLOTS} slot(s) x ${ENG_CTX} ctx = ${kv_gib} GiB" \
-         "(~26 KiB/position/slot, HALOGEN_KV_POOL=0) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of ~68 GiB" \
-         "of weights and ~11 GiB of scratch. MemAvailable now ${avail_gib} GiB."
+         "(~26 KiB/position/slot, HALOGEN_KV_POOL=0) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of roughly 68 GiB" \
+         "of weights and 11 GiB of scratch. Those last two are estimates for this pre-flight check; the engine prints its measured figures once loaded," \
+         "including the large lookup table it reads from disk and never holds. MemAvailable now ${avail_gib} GiB."
   else
     echo "halogen: KV budget ${ENG_SLOTS} slot(s) over one ${ENG_POOL}-position pool (each request up to ${ENG_CTX}) = ${kv_gib} GiB" \
-         "(~28 KiB/position incl. block scratch + ~115 MiB/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of ~68 GiB" \
-         "of weights and ~11 GiB of scratch. MemAvailable now ${avail_gib} GiB."
+         "(~28 KiB/position incl. block scratch + ~115 MiB/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of roughly 68 GiB" \
+         "of weights and 11 GiB of scratch. Those last two are estimates for this pre-flight check; the engine prints its measured figures once loaded," \
+         "including the large lookup table it reads from disk and never holds. MemAvailable now ${avail_gib} GiB."
   fi
   awk -v kv="$kv_gib" -v cg="$cache_gib" -v av="$avail_gib" 'BEGIN{ if (av != "?" && kv+cg+80 > av)
     print "halogen: WARNING: that budget is close to or over what this host has free.\n  If startup ends in \"HIP … out of memory\", lower HALOGEN_KV_POOL_POSITIONS (the pool) or HALOGEN_MAX_TOK (the prefill arena);\n  a 1,048,576-position pool fits only with HALOGEN_MAX_TOK=16384." > "/dev/stderr" }'
