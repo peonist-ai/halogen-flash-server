@@ -318,6 +318,18 @@ holds cannot be moved. If you need to reclaim it, stop the server.
 of sustained package power**, sampled from sysfs during a 32,768-token prefill
 alongside a 2,229 MHz median clock against the part's 2,900 MHz top state.
 
+**The IOMMU is off on the reference machine, and it is worth 13 to 16 percent
+of prefill.** Prefill is compute-bound, and on this hardware an enabled IOMMU
+is a power-budget tax rather than a memory-path one: with `iommu=pt` we
+measured the SoC drawing more power (122 to 127 W against 108 to 118) for lower
+shader clocks (2,357 to 2,409 MHz against 2,549 to 2,713) at the same
+temperature, and prefill fell from 460 to 385 tok/s at 2,048 tokens while every
+bandwidth-bound number held exactly. Bisected on one kernel, so it is the IOMMU
+and not the kernel version. If your prefill is well under these rows, check
+`/proc/cmdline` for `amd_iommu=off` before looking anywhere else. We have not
+measured the IOMMU in translated mode, only off against passthrough, and this
+is one machine.
+
 **Match the power envelope before comparing decode numbers.** It is the
 condition most easily left out and it moves these rows: an independent tester
 running a 70 W-limited handheld measured 11 to 12 percent under both the serial
