@@ -13,8 +13,12 @@
 
   It now decodes only the last token or two, which is all that can still
   change. Detokenization cost is flat at 9 to 19 microseconds per token
-  regardless of length, where before it climbed from 42 to 726. Answers of
-  1,000 and 3,000 tokens now run at 39 tok/s where they used to sag to 34.
+  regardless of output length, where before it climbed from 42 to 726. Long
+  answers no longer pay more per token than short ones. The reporter measured
+  the end-to-end effect on their own host at 34-35 rising to 36-37.6 tok/s on
+  replies of several thousand tokens; our own runs vary by about 7% with
+  machine state, so we quote the detokenization cost, which is the part that
+  is controlled.
 
   **Reported, measured and fixed by [@rosstang](https://github.com/rosstang),
   who supplied a patch and a differential harness, and independently confirmed
