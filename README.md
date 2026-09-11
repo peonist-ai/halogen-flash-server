@@ -852,6 +852,14 @@ docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
 
 ### The host settings these numbers were measured on
 
+**Native Linux only.** This server runs on the amdgpu/KFD driver stack and
+its memory design depends on it: the checkpoint is mapped and registered with
+the GPU in place, never copied, and every memory ceiling it knows about lives
+in that driver. **WSL2 (ROCm through `/dev/dxg`) is not a supported host**: the
+registration is refused there, and the server does not reach readiness. If
+you are on that stack, the same hardware booted into Linux is the path that
+works.
+
 Everything in [Measured](#measured) was measured on a machine booted like this,
 and the same command line has been in place unchanged for the whole life of
 this engine. **This is our configuration, not a tuning guide**: of the six
