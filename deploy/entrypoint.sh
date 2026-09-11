@@ -526,6 +526,13 @@ start_api() {
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}"
 }
 
+# The FIRST line of every mode names the release and
+# the role. Two containers four releases apart ran side by side for weeks and
+# neither log said a version, so a careful reader posting both had no way to
+# see the split; the api one predated the image path the engine one had, and
+# every picture was answered from nothing.
+echo "halogen: halogen-flash-server ${HALOGEN_IMAGE_VERSION:-unknown}, mode ${1:-all}"
+
 case "${1:-all}" in
 engine) start_engine ;;
 api)    start_api ;;

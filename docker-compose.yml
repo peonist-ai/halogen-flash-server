@@ -13,7 +13,7 @@
 #     --group-add keep-groups --security-opt seccomp=unconfined \
 #     --ipc=host --ulimit memlock=-1:-1 \
 #     -v /path/to/halogen-models:/models:ro \
-#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.5.7
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.5.8
 #
 # ONE VOLUME IS ENOUGH. The weights repo ships the tokenizer inside it, and
 # both services below read it from there. Set HALOGEN_MODELS to the directory
@@ -30,9 +30,18 @@
 #   HALOGEN_MODELS=~/halogen-models podman-compose up -d
 #   podman-compose restart api          # cheap: no model reload
 #   podman-compose logs -f engine       # watch the load, it takes minutes
+#
+# BOTH SERVICES MUST RUN THE SAME TAG. The api renders the prompt and the
+# engine runs it, and what one release can do the other may not know how to
+# ask for. Public issue #26 was an api at 0.4.4 in front of an engine at
+# 0.5.6: the front-end predated images, so it rendered the chat template's
+# image placeholder and never sent the pixels, and every picture was
+# described from nothing, with no error anywhere. The api now warns at
+# startup when the engine's version differs from its own, and /health shows
+# both, but the fix is this file: one tag, changed in both places.
 services:
   engine:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.5.7
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.5.8
     command: ["engine"]
     environment:
       # Separate netns from the api service, so the engine must listen on all
@@ -98,7 +107,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.5.7
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.5.8
     command: ["api"]
     depends_on:
       engine:

@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.5.8
+
+One engine check that can only refuse, and a version that can be read from
+inside the container. No kernel change, no weight change, no numeric change:
+every request the engine served before is served identically, so every
+published prefill, decode and quality number is unmoved.
+
+### Fixed
+
+- **An image placeholder with no image behind it was answered as if there
+  were one.** Reported by [@jtnishi](https://github.com/jtnishi) (#26). Their
+  compose file ran the `api` container at 0.4.4 and the `engine` at 0.5.6.
+  That front-end predates image support: it rendered the chat template's
+  `<|vision_start|><|image_pad|><|vision_end|>` for the image part and never
+  decoded or sent the pixels. The engine then prefilled the placeholder's
+  ordinary embedding, and the model, which has learned that an image lives at
+  that token, described one. The result was a fluent, confident, different
+  picture every run, unaffected by temperature, with nothing anywhere saying
+  a thing had gone wrong. Reproduced here against one engine: 60 prompt tokens
+  through the 0.4.4 front-end against 2,559 through the current one, for the
+  same image.
+
+  The engine now refuses any prompt in which a placeholder token is not
+  covered by an attached image, naming the token position and the likely
+  cause, and the same goes for a video placeholder (this server has no video
+  path) and for an image declared over a token that is not a placeholder.
+  The check runs once over the prompt ids at admission and can only refuse,
+  so an accepted request is untouched. It also closes a path that was open
+  from any client at any version: a user message whose text contains the
+  literal string `<|image_pad|>` reached the engine the same way, and was
+  answered the same way.
+
+- **The engine's reason for refusing a request now reaches the client.**
+  Until now it went only to the engine's log, and the front-end's `400` had to
+  guess (the old text blamed prompt length). The reason rides the internal
+  protocol after the fixed fields, and the front-end repeats it verbatim:
+  `the engine refused this request: prompt token 38 is the image placeholder
+  <|image_pad|> and no image covers it: ...`.
+
+### Added
+
+- **Each container says which release it is, and the front-end compares.**
+  Nothing running inside the image could read the version label, so neither
+  log in #26 printed one and `/health` had none to show; a careful reporter
+  posting both logs could not see that they disagreed. The first line of every
+  mode is now `halogen: halogen-flash-server 0.5.8, mode api`, the front-end
+  prints its own version beside the engine's at startup and prints a
+  `WARNING` when they differ, and `/health` carries
+  `version: {"api": ..., "engine": ..., "match": ...}`. A mismatch is a warning
+  and not a refusal, because a split across a patch release is harmless and
+  refusing it would break a working install; the engine-side check above is
+  what turns the harmful case into an error.
+
+### Documentation
+
+- The compose file and the README now say it in one place: **both services
+  run the same image tag.** When you bump one, bump the other.
+
 ## 0.5.7
 
 Front-end only. No engine change, no kernel change, no weight change, so every
