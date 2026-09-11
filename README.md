@@ -93,7 +93,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.6
+  ghcr.io/peonist-ai/halogen-flash-server:0.5.7
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -113,7 +113,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.6
+  ghcr.io/peonist-ai/halogen-flash-server:0.5.7
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -444,8 +444,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.6 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.6 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.7 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.7 sweep -p 8192,32768 -n 128
 ```
 
 ---

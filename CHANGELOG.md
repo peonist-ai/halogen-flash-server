@@ -1,5 +1,84 @@
 # Changelog
 
+## 0.5.7
+
+Front-end only. No engine change, no kernel change, no weight change, so every
+published prefill, decode and quality number is unmoved.
+
+### Fixed
+
+- **An idle connection was closed after five seconds, and the next request on
+  it failed.** Reported by [@iTechMedic](https://github.com/iTechMedic) (#25).
+  The server never set uvicorn's keep-alive timeout, so it ran at the framework
+  default of 5 s on every release ever shipped. An agent idles between turns for
+  as long as a tool call, a file write, or a person reading the last answer
+  takes, and because `POST` is not idempotent most HTTP clients will not quietly
+  retry on a fresh socket the way they would for a `GET`. The failure therefore
+  reached the user as a socket error partway through a long session.
+
+  The default is now 300 s, and `HALOGEN_KEEPALIVE_TIMEOUT` sets it. An idle
+  connection costs a file descriptor and holds no conversation slot, so there is
+  no reason for it to be short. The race is inherent to HTTP keep-alive, since a
+  server may close at the moment a client writes, so a client that pools
+  connections should still retry a reused socket; what the old default did was
+  turn a rare race into a constant one.
+
+  The report is worth reading for its method. The first reproduction idled 6, 30
+  and 90 seconds between reuses, all above the threshold, which a server closing
+  after *every* response would have matched exactly. Asked for a control, they
+  added back-to-back reuse at zero idle and then bracketed the boundary to
+  between 4 s and 5 s.
+
+- **`chat_template_kwargs` was accepted and silently ignored.** Reported by
+  [@nortejiang-tech](https://github.com/nortejiang-tech) (#24). vLLM and SGLang
+  take the template controls nested, as
+  `chat_template_kwargs: {"enable_thinking": false}`, and that is what most
+  agentic clients send because that is what they were written against. This
+  server declared those controls only as top-level fields, so the nested form
+  was discarded with no warning and no log line: a caller who asked for thinking
+  off got a `200` with thinking on.
+
+  Both spellings now reach the same three controls: `reasoning_effort`,
+  `enable_thinking` and `preserve_thinking`. Sending a control both ways is fine
+  when the values agree and a `400` when they disagree, and an unsupported key
+  inside `chat_template_kwargs` is a `400` naming the keys that work rather than
+  a silent drop.
+
+### Added
+
+- **`/health` says what the token budget is spent on.** Raised by
+  [@tretyakevich](https://github.com/tretyakevich) (#21) and
+  [@nortejiang-tech](https://github.com/nortejiang-tech) (#24). `max_tokens`
+  bounds reasoning and content together, and with no `reasoning_effort` sent the
+  chat template's own default is `xhigh`. On a long agentic prompt that can
+  consume the entire budget before the model closes its thinking block, and the
+  caller then receives an empty `content`, the whole reply in
+  `reasoning_content`, and `finish_reason: "length"`. At least one agent harness
+  reads that as "the model returned no assistant message" and retries, which is
+  deterministic at temperature 0 and so repeats exactly.
+
+  None of that was discoverable. `/health` advertised `max_tokens_default` and
+  said nothing about what consumes it. It now reports
+  `reasoning_effort_default`, `reasoning_effort_values`,
+  `token_budget_covers_reasoning` and `chat_template_kwargs` beside it. To turn
+  reasoning off entirely, send `enable_thinking: false`; `reasoning_effort:
+  "minimal"` is an alias for the template's `low`, which still reasons.
+
+- **A client that hangs up mid-stream now says so in the log.** Raised by
+  [@iTechMedic](https://github.com/iTechMedic) while diagnosing #3, which stays
+  open. Until now a hangup and a clean finish produced identical output: uvicorn
+  logs `200 OK` either way, because the status went out with the headers long
+  before, and the per-request summary never printed because the generator was
+  cancelled before it could emit one. The entire server-side trace of an
+  abandoned stream was a bare access line indistinguishable from success.
+
+  That is a hole in the log, and a hole in a log gets filled by someone's
+  inference: the reporter reasoned from the absence of our own timeout message
+  that the engine had stalled, and the silence was ours. There is now one line
+  on the disconnect path, naming the response id, the frames and characters
+  already sent, and the elapsed time. A disconnect is a normal event rather than
+  an error, so it is a line and not a traceback.
+
 ## 0.5.6
 
 ### Fixed
