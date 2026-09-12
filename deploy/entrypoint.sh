@@ -256,6 +256,41 @@ maybe_download() {
   echo "halogen: download complete ($(du -h "$HALOGEN_CHECKPOINT" | cut -f1))"
 }
 
+# 0.6.0: THE SIDECAR CHANGED UNDER THE SAME NAME. It gained the draft head's
+# 18 dense projections at 8 bits (2.31 -> 2.40 GiB; the 723 tensors it already
+# carried are byte-identical). An install that downloaded before 0.6.0 has the
+# older file, which runs, with the draft head at 4 bits: about 4% of decode on
+# prose, nothing on correctness. maybe_download() never re-fetches once the
+# checkpoint exists, which is right for 115 GiB and wrong for a 2.4 GiB file
+# that moved, so this checks the sidecar's own table for the head's entries
+# (the entry table is the first ~120 KB of the file) and, when HALOGEN_DOWNLOAD
+# names the repo and the volume is writable, fetches just that file; otherwise
+# it says what is missing and how to get it. A fetch that changes nothing (the
+# Hub not yet carrying the new file, or a transient failure) leaves the file on
+# disk in place and the server starts on it.
+sidecar_is_current() {
+  head -c 262144 "$1" | grep -aq "mtp.fc_hidden.weight"
+}
+update_sidecar() {
+  local side="$1"
+  sidecar_is_current "$side" && return 0
+  local dir; dir="$(dirname "$side")"
+  if [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$dir" ]; then
+    echo "halogen: the quality sidecar predates 0.6.0 (the draft head's 8-bit projections are absent)."
+    echo "halogen: fetching the current $(basename "$side") from $HALOGEN_DOWNLOAD (2.4 GiB)"
+    if HF_HUB_OFFLINE=0 hf download "$HALOGEN_DOWNLOAD" "$(basename "$side")" --local-dir "$dir" \
+       && sidecar_is_current "$side"; then
+      echo "halogen: sidecar updated ($(du -h "$side" | cut -f1))"
+      return 0
+    fi
+    echo "halogen: the sidecar on disk is unchanged (the fetch failed or the repo still carries the older file); starting on it." >&2
+  fi
+  echo "halogen: NOTE: the quality sidecar predates 0.6.0, so the draft head runs at 4 bits" >&2
+  echo "  (about 4% of decode on prose; answers are unaffected). To update it, fetch" >&2
+  echo "  $(basename "$side") from the weights repo into the models volume, or start" >&2
+  echo "  once with HALOGEN_DOWNLOAD set and the volume mounted read-write." >&2
+}
+
 need_ckpt() {
   maybe_download
   [ -f "$HALOGEN_CHECKPOINT" ] || {
@@ -339,6 +374,7 @@ check_sidecar() {
   local side="${HALOGEN_CHECKPOINT%.hgn}.overlay.hgn"
   if [ -f "$side" ]; then
     echo "halogen: quality sidecar present ($(du -h "$side" | cut -f1)) at $side"
+    update_sidecar "$side"
   else
     echo "halogen: WARNING: no sidecar at $side" >&2
     echo "  The engine will run the BARE 4-bit checkpoint: about 6-9% worse" >&2

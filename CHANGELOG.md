@@ -1,5 +1,106 @@
 # Changelog
 
+## 0.6.1
+
+Serving surface and startup legibility. No kernel change, no weight change, no
+change to any answer, so every published prefill, decode and quality number is
+unmoved.
+
+### Fixed
+
+- **Tool-call arguments were flushed as one burst, and Node clients hung up on
+  the long ones.** Reported with a raw-client measurement by
+  [@smazurov](https://github.com/smazurov) (#36) and, from the client side,
+  by [@iTechMedic](https://github.com/iTechMedic) (#3), who showed every
+  failing client was Node/undici, every passing one was not, and that
+  re-chunking the identical bytes through a proxy removed every failure. The
+  streaming splitter emitted nothing about a call until its closing tag
+  arrived, so a 150-character command was 1.4 s of silence and a file-writing
+  call was minutes, which is undici's 300 s inactivity timer with no client
+  setting to change it.
+
+  A call's id and name now go out as soon as the function tag closes, a
+  string parameter streams as it is written (JSON-escaped in pieces, and the
+  pieces concatenate byte for byte to what a non-streaming request returns),
+  and a non-string parameter goes out when its value closes, because the wire
+  carries values untyped. On the gate, the report's `bash` command is 43
+  argument frames spread over the value's generation instead of 3 at its end.
+  A call cut off by `max_tokens` now leaves its partial arguments on the wire
+  with `finish_reason: "length"`, as OpenAI does.
+
+  Separately, a streaming response now sends an SSE comment line
+  (`: keepalive`) whenever nothing else has gone out for 10 s
+  (`HALOGEN_SSE_KEEPALIVE_S`, 0 disables). SSE parsers ignore comment lines
+  and every HTTP client's inactivity timer resets on one. This also covers a
+  long prefill, which sends nothing before its first token. The
+  client-disconnected log line now ends with the largest gap between frames,
+  the age of the last frame at the hangup, and the keepalive count.
+
+- **The `developer` role was refused with a 400.** Reported by
+  [@felladrin](https://github.com/felladrin) (#32), confirmed by
+  [@k4ss4n](https://github.com/k4ss4n). OpenAI clients send it for reasoning
+  models; pi does for every model it marks as one. It maps to `system` before
+  the template runs, on `/v1/chat/completions` as it already did on
+  `/v1/responses`.
+
+- **Four `/cache` fields were placeholders.** Found while answering
+  [@carrot-root-ai](https://github.com/carrot-root-ai) (#31). `entries`,
+  `evicted`, `cap_bytes` and `reserved_bytes` were stand-ins from when the
+  cache held one entry and were never updated for the eight-entry cache, so a
+  two-prompt run read `entries: 1, evicted: 3`. `entries` and `evicted` are
+  real now; `cap_bytes` and `reserved_bytes` are replaced by `max_entries`
+  and `last_entry_bytes`, and `bytes` is what is resident for the live
+  entries. The counters that were already right (`hits`, `misses`, `stores`,
+  the timings) are unchanged.
+
+### Added
+
+- **`HALOGEN_ENABLE_THINKING`**, the ninth request default, alongside the
+  eight from 0.5.9. `0` renders every request that does not say otherwise
+  without the thinking block; a request that sends `enable_thinking` wins.
+  `/v1/responses` has no such field, so this is the only way to run that
+  route without thinking.
+
+- **A reservation that runs long says why while it runs.** Reported by
+  [@felladrin](https://github.com/felladrin) (#33), who watched
+  `still loading, 300s elapsed` five times on the KV pool step and could not
+  tell a slow disk from a machine that would never finish. Every 30 s
+  (`HALOGEN_RESERVE_TICK_S`) during the working-memory and KV-pool
+  reservations the engine now prints the free contiguous 2 MiB block count
+  and the compaction stalls since the reservations began. Stalls climbing
+  means the kernel is compacting host memory, which finishes on its own. The
+  pool is not sized against the block count, and the report's own log shows
+  why that would not have helped: 16.6 GiB was contiguous two lines before a
+  7.2 GiB pool stalled, and the 21 GiB working reservation between them took
+  it.
+
+### Changed
+
+- **`seccomp:unconfined` is gone** from the compose file and both run
+  commands. Suggested by [@rcmorano](https://github.com/rcmorano) (#8) and
+  measured: the image starts and serves without it under Podman, and the
+  reporter runs Docker without it. `ipc: host` stays; the compose file now
+  says why beside it (the GPU runtime dies in 2 s without it, and no
+  `shm_size` substitutes). If a Docker install breaks on the default profile,
+  the line comes back and this file will say so.
+
+- **The published 0.6.0 source tree lagged the 0.6.0 image on
+  `deploy/entrypoint.sh`.** The image's entrypoint checks whether the quality
+  sidecar on disk predates 0.6.0 (no draft-head entries), fetches just that
+  2.4 GiB file when `HALOGEN_DOWNLOAD` is set and the volume is writable, and
+  otherwise says what is missing; the tree published with 0.6.0 did not carry
+  that change. It does now, and the README's note on the models volume says
+  when a start re-fetches.
+
+### Documentation
+
+- The three kernel flags the README lists for completeness
+  (`amdgpu.vm_update_mode=0`, `amdgpu.noretry=0`, `amdgpu.sg_display=0`) now
+  say they are unmeasured in both directions and cite
+  [@felladrin](https://github.com/felladrin)'s report (#34) of an amdgpu
+  deadlock on a boot that had the first two set: one machine, one occurrence,
+  not isolated to either flag.
+
 ## 0.6.0
 
 Faster decode on the traffic an agent produces, and a better draft head. No

@@ -10,10 +10,9 @@
 # a model reload. If you do not need that, the single container is simpler:
 #
 #   podman run --rm -it --device /dev/kfd --device /dev/dri \
-#     --group-add keep-groups --security-opt seccomp=unconfined \
-#     --ipc=host --ulimit memlock=-1:-1 \
+#     --group-add keep-groups --ipc=host --ulimit memlock=-1:-1 \
 #     -v /path/to/halogen-models:/models:ro \
-#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.6.0
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.6.1
 #
 # ONE VOLUME IS ENOUGH. The weights repo ships the tokenizer inside it, and
 # both services below read it from there. Set HALOGEN_MODELS to the directory
@@ -41,7 +40,7 @@
 # both, but the fix is this file: one tag, changed in both places.
 services:
   engine:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.6.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.6.1
     command: ["engine"]
     environment:
       # Separate netns from the api service, so the engine must listen on all
@@ -80,7 +79,13 @@ services:
     devices:
       - /dev/kfd
       - /dev/dri
-    security_opt: [seccomp:unconfined]
+    # `ipc: host` is load-bearing: without it the GPU runtime dies during
+    # startup, and no `shm_size` substitutes (five sizes from 64 MiB to
+    # 64 GiB fail identically; the shared namespace itself is what is
+    # needed). `seccomp:unconfined` used to sit beside it and was measured
+    # to do nothing here (public issue #8: starts and serves without it
+    # under Podman; the reporter runs Docker 29 without it), so 0.6.1
+    # dropped it.
     ipc: host
     ulimits:
       memlock: -1
@@ -107,7 +112,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.6.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.6.1
     command: ["api"]
     depends_on:
       engine:

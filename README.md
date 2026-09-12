@@ -92,10 +92,10 @@ covers both.
 ```bash
 podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
-  --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
+  --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.6.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.6.1
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -103,8 +103,12 @@ give it a while; the transfer resumes if interrupted) and serves an
 OpenAI-compatible endpoint on `:8731`, reachable from your network.
 
 Note the models volume is read-**write** here, with no `:ro`, because it is
-being downloaded into. Nothing is fetched on later starts, and with
-`HALOGEN_DOWNLOAD` unset the container opens no outbound connections at all.
+being downloaded into. Nothing is fetched on later starts, with one
+exception: a start with `HALOGEN_DOWNLOAD` set and the volume writable
+re-fetches the 2.4 GiB quality sidecar when the one on disk predates the image
+(0.6.0 changed that file; the 115 GiB checkpoint is never re-fetched). With
+`HALOGEN_DOWNLOAD` unset the container opens no outbound connections at all,
+and says at startup if the sidecar is the older one.
 
 **If you would rather fetch the weights yourself:**
 
@@ -113,9 +117,9 @@ hf download peonist-ai/halogen-qwen3.8-flash-next --local-dir ~/halogen-models
 
 podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
-  --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
+  --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.6.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.6.1
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -521,8 +525,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.0 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.0 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.1 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.1 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -970,7 +974,13 @@ only that ours is what produced these numbers.
 
 The remaining three, `amdgpu.vm_update_mode=0`, `amdgpu.noretry=0` and
 `amdgpu.sg_display=0`, we have never run without. They are listed for
-completeness rather than recommended, and we make no claim about what they buy.
+completeness rather than recommended, and they are unmeasured in both
+directions: we make no claim about what they buy, and one report
+([#34](https://github.com/peonist-ai/halogen-flash-server/issues/34)) of an
+unkillable amdgpu deadlock came from a boot that had the first two set. One
+machine, one occurrence, not isolated to either flag, and none since on that
+machine without them. If you do not need them for something else, leave them
+off.
 
 Check what you are on with:
 
