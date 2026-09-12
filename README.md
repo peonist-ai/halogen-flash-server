@@ -937,6 +937,15 @@ registration is refused there, and the server does not reach readiness. If
 you are on that stack, the same hardware booted into Linux is the path that
 works.
 
+**Kernel 7.0 or newer.** The checkpoint is a read-only file mapping registered
+with the GPU as read-only, and that registration needs kernel support. The
+reference host runs 7.1.8 (Fedora 43 Server); every install reported working
+here is on 7.0.0 or later; on 6.18.6
+([#37](https://github.com/peonist-ai/halogen-flash-server/issues/37)) the
+driver refuses every read-only mapping with `invalid argument` and the server
+cannot pin the weights. We have not bisected the exact kernel that added it;
+7.0 is the oldest we have seen work.
+
 Everything in [Measured](#measured) was measured on a machine booted like this,
 and the same command line has been in place unchanged for the whole life of
 this engine. **This is our configuration, not a tuning guide**: of the six
