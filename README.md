@@ -93,7 +93,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.5.9
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -113,7 +113,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.5.9
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -149,6 +149,34 @@ get, so speculation stays on. A `seed` reproduces a request on the same server
 configuration. `top_logprobs`, `logprobs` with `stream: true` and `n > 1` are
 not implemented and are refused with a 400, as is any value outside its defined
 range, rather than clamped. `/health` lists what the running build supports.
+
+**Server-side defaults, and the model card's settings.** This image decodes
+greedy unless a request says otherwise, because greedy is what every
+byte-identical guarantee below is made on. The model's authors recommend
+sampling: the card's thinking-mode settings are `temperature=1.0`,
+`top_p=0.95`, `top_k=20`, and every benchmark in it was run at that point.
+Most agent clients send no sampling fields at all, so the server can supply
+them:
+
+```
+-e HALOGEN_TEMPERATURE=1.0 -e HALOGEN_TOP_P=0.95 -e HALOGEN_TOP_K=20
+```
+
+`HALOGEN_TEMPERATURE`, `HALOGEN_TOP_P`, `HALOGEN_TOP_K`, `HALOGEN_MIN_P`,
+`HALOGEN_PRESENCE_PENALTY` and `HALOGEN_FREQUENCY_PENALTY` each set the value a
+request gets when it omits that field. The rule is one sentence: a field the
+request sends always wins, a default fills only a field the request omits, and
+a request that sends `temperature: 0` decodes greedy and takes none of the
+sampling defaults. With a temperature default set, a request that sends no
+temperature is sampled, so its output differs run to run unless it sends a
+`seed`, and the byte-identical claims below apply only to requests that send
+`temperature: 0`. That is why the image does not set these itself: it is your
+call which default you want, and this is the switch. `/health` reports what is
+set under `server_defaults`, and a value outside its range refuses to start,
+before the model loads, naming the variable. (The card's non-thinking settings
+are `temperature=0.7`, `top_p=0.80`, `top_k=20`, `presence_penalty=1.5`; they
+apply when a request disables thinking, which these defaults cannot tell
+apart, so send them from the client in that case.)
 
 ### Images
 
@@ -223,6 +251,16 @@ are `minimal`, `low`, `medium`, `high` and `xhigh`; the model's own default is
 Send one, or send several as long as they agree; two different values is a 400
 rather than a guess about which you meant. `/health` lists all three under
 `token_budget_aliases` and reports the current default as `max_tokens_default`.
+`HALOGEN_MAX_TOKENS_DEFAULT` moves that default for every route. The card's
+advice is not to cap the budget at all; here a request reserves its prompt
+plus its budget in the KV pool when it is admitted, so a large default costs
+concurrency (four slots at 65,536 is a whole 262,144-position pool before a
+single prompt token). `-e HALOGEN_MAX_TOKENS_DEFAULT=16384` is the step that
+clears an ordinary agentic turn's reasoning without that cost.
+`HALOGEN_REASONING_EFFORT` moves the effort a request gets when it names none,
+and the card's own guidance is to leave it at `xhigh`: lower effort on
+multi-turn agentic tasks "can lead to insufficient analysis, more failures, and
+repeated retries." A request that sends either field still wins.
 
 ```json
 {
@@ -454,8 +492,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.8 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.8 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.9 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.9 sweep -p 8192,32768 -n 128
 ```
 
 ---

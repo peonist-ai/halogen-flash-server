@@ -176,6 +176,23 @@ kv_budget_note() {
   # holds a second copy of one slot's state and the budget is kv + one slot.
   cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-8}" 'BEGIN{printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*26624/1073741824)}')
   avail_gib=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?")
+  # PUBLIC ISSUE #10: WHAT THE HOST IS ALREADY CARRYING. The pool sizing reads
+  # MemTotal and reserves a fixed amount for the OS plus the lookup table's
+  # file cache; it cannot see that a desktop session, a browser, or the
+  # client on the same host already holds 13 to 17 GiB, and on such a host
+  # the 47.7 GiB table it reads through the file cache is left with almost
+  # none, every prompt reads it from disk, and the engine goes silent for
+  # minutes under a watchdog that called that a wedge. The number that says
+  # so was printed on the line below in every such report and nothing
+  # compared it to MemTotal. This does. Informational; the pool is not
+  # resized, because below one context there is no smaller pool to pick.
+  used_gib=$(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.1f", (t-a)/1048576}' /proc/meminfo 2>/dev/null || echo "0")
+  if awk -v u="$used_gib" 'BEGIN{exit !(u >= 10)}'; then
+    echo "halogen: WARNING ${used_gib} GiB of host RAM is in use before this server starts. The server sizes itself from the machine's total and leaves a fixed" \
+         "reserve for the OS and the model's 47.7 GiB lookup table, which is read through the file cache; whatever is already using those ${used_gib} GiB comes out of that cache." \
+         "Expect every prompt to read the table from disk, prefill to run several times slower than published, and pauses of a minute or more. Stop the other" \
+         "workloads, or run this server on a host of its own." >&2
+  fi
   if [ "${HALOGEN_KV_POOL:-1}" = "0" ]; then
     echo "halogen: KV budget ${ENG_SLOTS} slot(s) x ${ENG_CTX} ctx = ${kv_gib} GiB" \
          "(~26 KiB/position/slot, HALOGEN_KV_POOL=0) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of roughly 68 GiB" \
@@ -464,11 +481,14 @@ engine_watchdog() {
     echo "halogen: the engine has not answered PING for ${silent}s" >&2
     if [ "$silent" -ge "$limit" ]; then
       echo "halogen: the engine process is alive and has answered nothing for ${silent}s." >&2
-      echo "  PING is answered between decode rounds and while a prompt is being read in," >&2
-      echo "  however long the prompt, so this is a wedged engine and not a slow one." >&2
-      echo "  Shutting the container down so a restart policy can recover it. Raise or" >&2
-      echo "  disable HALOGEN_ENGINE_WATCHDOG_S (0 = off) if you would rather it stayed" >&2
-      echo "  up for diagnosis, and please report it." >&2
+      echo "  PING is answered between decode rounds, between the layers of a prefill, and" >&2
+      echo "  while the lookup table is being read, so on a healthy host this is a wedge." >&2
+      echo "  On a host short of RAM it is not: the table is read from disk one page at a" >&2
+      echo "  time and the engine prints 'lookup table: ... took N s' when that runs long." >&2
+      echo "  If that line appears above, this is a slow host and not a wedge: disable or" >&2
+      echo "  raise HALOGEN_ENGINE_WATCHDOG_S (0 = off) and free host memory. Otherwise," >&2
+      echo "  shutting the container down so a restart policy can recover it; please" >&2
+      echo "  report it with the log." >&2
       return 1
     fi
   done
@@ -510,8 +530,23 @@ start_engine() {
   exit "$RC"
 }
 
+# PUBLIC ISSUE #30: the HALOGEN_* request defaults (HALOGEN_TEMPERATURE,
+# HALOGEN_TOP_P, HALOGEN_MAX_TOKENS_DEFAULT, HALOGEN_REASONING_EFFORT, ...)
+# are read by serve_api.py, which refuses to start on a bad value. Ask it
+# HERE, before the engine spends minutes pinning the checkpoint, so that a
+# typo in a variable is found in a second. One implementation of the rules,
+# used early; a bash copy of them would drift.
+check_defaults() {
+  if ! python3 /halogen/tools/serve_api.py --tokenizer "$HALOGEN_TOKENIZER" \
+       --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" --check-defaults; then
+    echo "halogen: a HALOGEN_* request default is invalid (see above); not starting" >&2
+    exit 1
+  fi
+}
+
 start_api() {
   need_tokenizer
+  check_defaults
   # HALOGEN_ENGINE must be settable. In `all` the engine is in this same
   # container and loopback is right, but in the two-container topology
   # (docker-compose) the services get SEPARATE network namespaces and the
@@ -537,7 +572,7 @@ case "${1:-all}" in
 engine) start_engine ;;
 api)    start_api ;;
 all)
-  need_ckpt; need_tokenizer
+  need_ckpt; need_tokenizer; check_defaults
   /usr/local/bin/flash_serve --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
       --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
@@ -587,7 +622,7 @@ all)
 bench|sweep)
   MODE="$1"
   shift || true
-  need_ckpt; need_tokenizer
+  need_ckpt; need_tokenizer; check_defaults
   BENCH_LOG=/tmp/halogen-api.log
   : > "$BENCH_LOG"
 

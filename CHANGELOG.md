@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.5.9
+
+Server-side defaults for the fields a request leaves out, and two things the
+log now says that it could not before. No kernel change, no weight change, no
+numeric change on any path a request took before: every published prefill,
+decode and quality number is unmoved.
+
+### Added
+
+- **Server-side defaults for sampling, the token budget, and reasoning
+  effort.** Asked for by [@Mushoz](https://github.com/Mushoz) (#30).
+  `HALOGEN_TEMPERATURE`, `HALOGEN_TOP_P`, `HALOGEN_TOP_K`, `HALOGEN_MIN_P`,
+  `HALOGEN_PRESENCE_PENALTY`, `HALOGEN_FREQUENCY_PENALTY`,
+  `HALOGEN_MAX_TOKENS_DEFAULT` and `HALOGEN_REASONING_EFFORT` each set the
+  value a request gets when it omits that field, on all three routes. A field
+  the request sends always wins; a default fills only a field the request
+  omits; a request that sends `temperature: 0` decodes greedy and takes none
+  of the sampling defaults. A value outside its range refuses to start,
+  before the model loads, naming the variable. `/health` reports what is set
+  under `server_defaults` and says which path a temperature-less request
+  takes. The image's own default is unchanged (greedy); the README now gives
+  the model card's settings as the three `-e` lines that switch to them.
+
+### Fixed
+
+- **The engine answers its health check while it reads the lookup table.**
+  Reported by [@mqtt-fan](https://github.com/mqtt-fan) (#10, #22). Reading
+  the model's 47.7 GiB lookup table at the start of a prefill was the one
+  step that could not answer the container's PING. On a host with too little
+  RAM left for the table's file cache that read runs for minutes, and the
+  watchdog took a working server down as a wedge, twice, while the same host
+  with the watchdog off finished every request. The read now answers PING on
+  the same cadence as the rest of a prefill, prints `lookup table: ... took
+  N s` when it runs long, and the watchdog's message says what the code
+  guarantees. The startup pre-flight warns when 10 GiB or more of host RAM
+  is already in use before the engine starts, which is the condition. The
+  slowness itself is the host's memory, not the engine, and is not changed.
+
+- **`commit N/round` in the request log counted tokens the request produced
+  beside other streams.** Same reporter (#22), and the same shape in #3. A
+  request alone for one speculative round and then sharing the engine for
+  189 tokens printed `1 rounds, commit 190.00/round`, which read as a decode
+  defect and was not one. The ratio is now over the speculative rounds'
+  tokens only (healthy is 1.6 to 1.8), and the line ends with `N tok beside
+  other streams` when any were.
+
+### Documentation
+
+- The README's Sampling section gives the model card's recommended settings
+  and how to make them the server's default; the budget section explains why
+  the default budget is a concurrency decision on a 128 GB host.
+
 ## 0.5.8
 
 One engine check that can only refuse, and a version that can be read from
