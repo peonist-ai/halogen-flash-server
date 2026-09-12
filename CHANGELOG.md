@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.6.0
+
+Faster decode on the traffic an agent produces, and a better draft head. No
+kernel change and no change to any answer: at temperature 0 every token is
+still the model's own greedy choice, verified on every release, and the
+sidecar's 723 existing tensors are byte-identical to 0.5.x's.
+
+### Added
+
+- **Prompt lookup beside the MTP head.** When the last three tokens of the
+  answer already occur earlier in the request's own context (the prompt or
+  what it has generated so far), the three tokens that followed that earlier
+  occurrence are proposed as one chain and verified in a single step, and the
+  head's own draft has to open the chain. Nothing is drafted by a model, so it
+  costs nothing where an answer is new text and pays where it repeats its
+  context, which is most of what a coding agent's turn is: tool-call
+  arguments, file paths, code that quotes the file being edited. Measured on
+  the engine, thinking off, coding-agent turns (SWE-agent trajectories cut at
+  an assistant turn, six prompts, 400 tokens each): **49.1 tok/s with the head
+  alone, 56.3 with prompt lookup beside it (+15%)**, serial 36.8; on
+  function-calling turns (Hermes, six prompts) 48.8 to 53.1 (+9%). With thinking on,
+  the served default: 49.2 to 55.7 on the same SWE prompts (+13%), because
+  this model's reasoning quotes the task and the file. Prose and code text are
+  unchanged within noise. Greedy requests only; a sampled request uses the
+  head alone; like the head it drafts while the request is the only one
+  generating, and the concurrency rows are unchanged (2 streams 56.5 and 4
+  streams 77.1 tokens/s total on this image, every stream byte-identical to
+  alone). `HALOGEN_PLD=0` turns it off. Every one of those runs produced the
+  serial run's tokens exactly.
+
+- **The MTP head's own projections at 8 bits**, in the sidecar. The head had
+  shipped at the base file's 4-bit rounding since 0.1.0 and nobody had
+  measured what that cost, because there was no other head to compare it with.
+  At 8 bits its drafts are accepted 59% of the time on prose against 51%,
+  which is about 4% of decode on prose (43.1 to 44.8 tok/s at 1,500 tokens of
+  context) and within noise on code. The sidecar grows by 0.09 GiB (2.31 to
+  2.40 GiB); its existing 723 tensors are unchanged byte for byte, so
+  `HALOGEN_CK_OVERLAY` and the speed arm behave as before. An older image
+  reads the new file and gains the same.
+
+- The per-request log line ends with the prompt-lookup rounds (`pld N
+  rounds, X acc/round`), the engine's `D` line carries them as two trailing
+  fields, and `/health` reports `prompt_lookup`. The image's own `bench` over
+  its ten prompt shapes reads 45.3 tok/s mean with speculation (43.6 on
+  0.3.0, the same instrument).
+
+### Changed
+
+- The speculative verify reserves 4 rows instead of 2 (about 0.2 GiB of device
+  memory), so a three-token chain fits; the KV-pool fit accounts for it.
+
 ## 0.5.9
 
 Server-side defaults for the fields a request leaves out, and two things the

@@ -52,7 +52,9 @@ claim, and it has no such ambiguity.
 
 At temperature 0, output is byte-identical to serial greedy decode.
 Speculation here is a pure speed optimization, verified on every release, not
-a quality trade.
+a quality trade. Since 0.6.0 there are two draft sources, the model's own
+draft head and the request's own text (prompt lookup), and the guarantee
+covers both.
 
 ---
 
@@ -93,7 +95,7 @@ podman run --rm -p 8731:8731 \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.9
+  ghcr.io/peonist-ai/halogen-flash-server:0.6.0
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -113,7 +115,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.5.9
+  ghcr.io/peonist-ai/halogen-flash-server:0.6.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -399,9 +401,13 @@ prefill bench; a served request with the default speculative drafter pays about
 rows are 0.5.3's measurements. The control was this same binary with the
 previous release's ordering step selected, so the two arms differ in one thing
 and nothing else; it ran in the same session, on the plan this image bakes, and
-it reproduced the rows it replaces to within 1.4%. The decode rows are 0.2.0's and have not moved since:
+it reproduced the rows it replaces to within 1.4%. The serial decode rows are 0.2.0's and have not moved since:
 the releases between them changed the scheduler, the memory layout and one
-host-side sort, not the decode kernels.
+host-side sort, not the decode kernels. 0.6.0 moves the speculative rows
+twice, and both moves are draft-side: the sidecar now carries the draft
+head's own projections at 8 bits (its proposals are accepted more often), and
+the request's own text is a second draft source (the rows below the served
+one).
 
 | | halogen-flash 0.5.3 |
 |---|---|
@@ -412,8 +418,29 @@ host-side sort, not the decode kernels.
 | decode, serial greedy @ ctx 1,500 | **37.6 tok/s** |
 | decode, serial greedy @ ctx 8,000 | **36.1 tok/s** |
 | decode, serial greedy @ ctx 32,768 | **34.1 tok/s** |
-| decode, MTP speculation @ ctx 1,500 | **42.4 tok/s** prose, **48.3 tok/s** code |
+| decode, MTP speculation @ ctx 1,500 | **44.8 tok/s** prose, **49.9 tok/s** code (0.6.0 sidecar; 42.4 / 48.3 with the 0.5.x sidecar) |
 | decode, MTP speculation @ ctx 32,768, served | **41.7 tok/s** mean over ten prompts |
+| decode, coding-agent turn, MTP alone (0.6.0 control) | **49.1 tok/s** thinking off, **49.2** thinking on |
+| decode, coding-agent turn, MTP + prompt lookup (0.6.0) | **56.3 tok/s** thinking off, **55.7** thinking on |
+| decode, function-calling turn, MTP + prompt lookup (0.6.0) | **53.1 tok/s** thinking off (48.8 with MTP alone) |
+
+**The 0.6.0 rows are agent turns, not prose.** Each is the mean over six
+prompts: a real coding-agent conversation (SWE-agent trajectories over real
+repositories, driven by another model) or a function-calling dialogue, cut at
+the start of an assistant turn, ~1,000–1,800 tokens of context, 400 tokens
+generated, greedy. Prompt lookup drafts from the request's own text: when the
+last three tokens of the answer already occur earlier in the conversation, the
+three that followed are proposed as a chain and verified in one step, with the
+draft head's own proposal opening the chain. On a coding turn about half the
+generated tokens are such copies (tool-call arguments, paths, code quoting the
+file being edited), thinking on or off, which is why the gain over the head
+alone is 13–15% there, 6–9% on function-calling turns, and within noise on
+prose and code text (the head already takes what there is). Serial on the same
+prompts is 36.8 tok/s, so a coding-agent turn decodes at about 1.5x serial.
+Every one of those runs produced the serial run's tokens exactly. Like the
+draft head, prompt lookup runs while the request is the only one generating;
+with several conversations generating at once the scheduler batches them
+instead (the concurrency table below is unchanged by it).
 
 Decode barely moves with depth. Serial gives up about 7% going from 1,500 to
 32,768 tokens of context, a 22x increase. The 32,768 served figure is the one
@@ -480,9 +507,11 @@ and the decode rows as indicative.
 The prefill numbers above are the engine's own prefill bench. Through the full
 stack of chat template, tokenizer, HTTP and SSE, the image's own `sweep` mode
 measures **812 tok/s at pp2048 and 1,041 at pp8192**, and `bench` over ten real prompt
-shapes measures **43.6 tok/s mean with speculation** on the 0.3.0 image (min
-38.5 on chat, max 48.1 on procedural text; 1.63 tokens committed per round;
-the 0.2.0 image read 44.4 in the same session, inside the run-to-run spread).
+shapes measures **45.3 tok/s mean with speculation** on the 0.6.0 image with
+its sidecar (min 39.5 on chat, max 49.4 on procedural text; 1.63 tokens
+committed per round; the 0.3.0 image read 43.6 on the same instrument, and
+the difference is the draft head's 8-bit projections: these short prompts
+give prompt lookup one to eight rounds a case).
 Acceptance depends on how predictable the text is, so quote the mean with the
 prompt set named, never a single shape.
 
@@ -492,8 +521,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.9 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.5.9 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.0 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.0 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -736,6 +765,12 @@ the built-in `bench` below.
 | 4 | 74.8 | 18.6 to 18.7 | 4 of 4 |
 | 8 | 87.8 | 10.9 to 11.0 | 8 of 8 |
 
+Re-measured on the 0.6.0 image in one session: 2 streams 56.5 total, 4
+streams 77.1, every stream byte-identical to alone. Prompt lookup does not
+change these rows: like the draft head, it drafts only while a request is the
+only one generating (see below), and a batched step is already the cheapest
+way to get one token per stream on this hardware.
+
 **Slots are a latency policy, not a memory decision.** Raising
 `HALOGEN_KV_SLOTS` past four trades what each client sees for admitting more
 clients at once instead of queueing them; past eight the total stops growing.
@@ -754,7 +789,7 @@ token, and that prompt's answer then depends on the load when it arrived, which
 is the one setting here that gives up the identity property. And the speculative
 drafter, which is the default, speculates while it is the only conversation
 generating and joins the batch as soon as another one is active, so it never
-holds the others back.
+holds the others back; prompt lookup rides with it and follows the same rule.
 
 The prompt cache keeps eight entries (`HALOGEN_CACHE_ENTRIES`), two per
 conversation: one at the end of its system prompt and one at the end of its
