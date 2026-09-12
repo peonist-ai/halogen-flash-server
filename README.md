@@ -95,7 +95,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.6.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.6.2
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -119,7 +119,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.6.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.6.2
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -134,7 +134,8 @@ release can do the other may not know how to ask for: an API from before
 pixels behind it, and the model describes a picture it never received. Since
 0.5.8 the engine refuses that, each container prints its version on its
 first log line, the API warns at startup when the engine's differs, and
-`/health` reports both under `version`.
+`/health` reports both under `version`. (The text `<|image_pad|>` written in
+a message is not a placeholder and, since 0.6.2, is served as text; see #39.)
 
 ---
 
@@ -525,8 +526,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.1 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.1 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.2 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.6.2 sweep -p 8192,32768 -n 128
 ```
 
 ---

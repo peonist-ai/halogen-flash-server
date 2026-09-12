@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.6.2
+
+Front-end only (`tools/serve_api.py`). No kernel change, no weight change, no
+change to any answer on a request that does not mention the placeholder, so
+every published prefill, decode and quality number is unmoved.
+
+### Fixed
+
+- **A conversation that mentioned `<|image_pad|>` was unservable.** Reported
+  with a precise repro and the mechanism by
+  [@Syakyr](https://github.com/Syakyr) (#39). The tokenizer parses its added
+  tokens out of ordinary text, so the thirteen characters `<|image_pad|>`
+  typed by a user (a pasted log, a quoted traceback, a bug report about this
+  server) or printed by the model became the same special id the chat
+  template writes for an image, and the engine's 0.5.8 check refused it as a
+  placeholder with no image behind it. The next turn re-tokenizes the
+  history, so one mention by either side made every later turn a 400 and the
+  only recovery was a new session with the string rewritten. 0.5.8's
+  changelog called that path "the same defect"; it is not, and the reporter
+  is right that a mention has to be servable as text.
+
+  The API now sends a mentioned placeholder as the ordinary tokens of its
+  spelling (`<`, `|`, `image`, `_pad`, `|`, `>`), decided on the token ids
+  after the template runs, so the model reads exactly the characters that
+  were written and the engine never sees an uncovered placeholder. The
+  template's own placeholder is told apart by the `<|vision_start|>` and
+  `<|vision_end|>` it is always written between when the request carries an
+  image; with no image on the request every placeholder is a mention.
+  `<|video_pad|>` in text is text the same way. Applies to
+  `/v1/chat/completions`, `/v1/responses` and `/v1/completions`. Every
+  request without a mention sends the same ids it did before, checked on the
+  gate. The engine's refusal (0.5.8) is unchanged; from this API it is now
+  reachable only by typing the whole
+  `<|vision_start|><|image_pad|><|vision_end|>` sequence in a request that
+  also attaches an image, which is refused with a message naming both counts.
+
+  A `video` content part is now refused by the API before the template runs
+  (this server has no video path); it used to reach the engine and be
+  refused there, after the stream had started.
+
+- **An error after a streaming response had started cut the connection.**
+  The second half of #39. The engine's refusal, and the first-token and
+  mid-decode timeouts, were raised after the SSE headers had gone out, so
+  the client saw a dropped stream and the log Starlette's
+  `Caught handled exception, but response already started`. A streaming
+  request now ends with its wire's own error: on `/v1/chat/completions` and
+  `/v1/completions` a `data: {"error": {...}}` frame followed by
+  `data: [DONE]` (what the OpenAI SDKs raise as an `APIError`), on
+  `/v1/responses` an `error` event. The log gets one line with the reason.
+  Non-streaming requests still get the 400 they always did.
+
+- **The prompt cache's snapshot point could drift on a conversation with
+  images.** Found while fixing the above: the API added an image's token
+  growth to the snapshot point once per token it walked past the shifted
+  value, not once. Unreachable in practice for an image (its growth outruns
+  the few tokens that follow the history point) and reachable for a
+  mention's five; both passes now read the original points. No served
+  number moved.
+
 ## 0.6.1
 
 Serving surface and startup legibility. No kernel change, no weight change, no
