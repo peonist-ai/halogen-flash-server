@@ -45,8 +45,28 @@ which the server never calls). One front-end addition from issue #86
 
 ### Notes
 
+- **The first thing these tools showed us was about our own default.** On
+  the wikitext-2 test split, past about 96k tokens of depth, the shipped
+  checkpoint with its quality sidecar puts `<|im_end|>` at the top of its
+  next-token distribution in the middle of running prose at 1,466 of
+  297,052 positions (922 of them above p 0.5); the bare checkpoint does it
+  85 times and unsloth's UD-IQ4_XS 504, so it is the model at depth and
+  the quantization variant sets the rate, and perplexity does not see it.
+  It is not fixed in this release. The numbers, the recipe and what we
+  will do are in the issue opened with this release, which is also an
+  invitation: if you have a quant of this model, run the recipe and post
+  your row.
 - The tools load the model where a mode needs it (`ppl`, `niah`): one model
   per machine at a time, not beside a running server.
+- A corpus longer than the native context (262,144 tokens; wikitext-2 test
+  is 297,053 under this tokenizer) is scored as consecutive sequences of
+  that length, the state reset at each; `--seq` sets the length, the
+  reference dump records it, and a dump made with another length is
+  refused.
+- The tools read whatever file they are given and refuse a malformed one
+  with a sentence (a header with a rank past four, an entry past the end
+  of the file, a dump whose header does not fit its file), checked under
+  the address and undefined-behaviour sanitizers.
 - Inside the image `ppl` runs under the image's own engine environment
   (the baked tuning plan, the quality sidecar beside the checkpoint), which
   is the served numerics; `-e HALOGEN_MATMUL_TUNING_FILE=` runs without the

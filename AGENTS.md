@@ -191,8 +191,8 @@ machine you are running on, belongs on the
 
 The image has four modes beside the server: `verify FILE`, `inspect FILE
 [--json] [--no-hash]`, `ppl FILE (--corpus TEXT | --ids IDS.bin) [--chunk
-1024|8] [--vs OTHER] [--ref-out REF | --ref REF [--worst N] [--per-pos P]]
-[--json]`, `niah FILE --corpus TEXT [--depths ...] [--positions ...] [--gen
+1024|8] [--seq N] [--vs OTHER] [--ref-out REF | --ref REF [--worst N]
+[--per-pos P]] [--json]`, `niah FILE --corpus TEXT [--depths ...] [--positions ...] [--gen
 N] [--json]`. Same run line as the server without `-p`; `FILE` defaults to
 `HALOGEN_CHECKPOINT`; the tokenizer mount is required for `--corpus`. `ppl`
 and `niah` load the model: one model per machine at a time. `/health`
@@ -214,9 +214,12 @@ lists the modes under `modes`, as does the OCI label
   better, worse, tied}, bands, nll_quartiles}}`. The KL is a lower bound on
   the exact KL (top-K support, the tail as one bucket); `ref.topk` says K.
 - `ppl --per-pos P.bin`: little-endian f32 x 4 per position: `kl, dp, top1
-  (0/1), nll`. `--ref-out REF.bin`: header `<4s I I I Q>` = `HREF`, version
-  1, K, vocab, positions; then per position `<f i d>` (nll, argmax,
-  tail_logp) + `K x i32` ids + `K x f64` log-probs.
+  (0/1), nll`. `--ref-out REF.bin`: header `<4s I I I Q Q>` = `HREF`,
+  version 2, K, vocab, positions, seq; then per position `<f i d>` (nll,
+  argmax, tail_logp) + `K x i32` ids + `K x f64` log-probs. A corpus longer
+  than `--seq` (default 262144, the native context) is scored as
+  consecutive sequences of that length, the state reset at each; a dump
+  made with one `--seq` is refused by a run with another.
 - `niah --json`: `{depths, positions, gen, by_depth:[{T, pNN:[hits,
   cases]…, all:[hits, cases]}], overall:[hits, cases], cases:[{name, needle,
   T, frac, needle_pos, answer, gen, tiled, text, hit, hit_ids}]}`.
