@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.13.1
+
+Front end, entrypoint and one line on the engine's socket path. No weight
+change, no kernel change, nothing in the engine's numerics. One report,
+issue #90 ([@AdrianMcAteer](https://github.com/AdrianMcAteer)).
+
+### Fixed
+
+- **The front end could silently serve a 32,768-token context, and one
+  slot, while the engine was correctly at `HALOGEN_CTX`.** It learns the
+  context, the slot count and every feature it advertises from the engine's
+  capability line at connect, with a 5 s budget, and on a miss it fell back
+  to its own command-line default (32,768, which the entrypoint never
+  overrode) for the life of the container: `/health.context` read 32768
+  and a longer prompt got "the prompt does not fit". Nothing said so
+  except the startup line's `engine version unknown`. The report did not
+  reproduce as filed on 0.12.3 (the same environment reads 131072 here and
+  admits a 60k prompt; 0.12.1 to 0.12.3 changed nothing on that path), but
+  the fallback was reachable: the engine answered that line only on its
+  bound session, so a probe queued behind one waited for the session to
+  end, not for the request (measured at 180 s behind a 46 s prefill), and a
+  host that stalls the engine past 5 s at that moment has the same effect.
+  Now the engine answers the capability line on a queued connection the
+  way it answers the health `PING`; the front end makes three attempts,
+  prints `serve_api: capability probe FAILED` naming what it is serving on,
+  re-probes on the next request and prints `capability probe recovered`;
+  `/health` reports `capability_probe: ok` or `failed`; and the entrypoint
+  passes `HALOGEN_CTX` as the fallback, so a failed probe cannot shrink the
+  context below what was configured. `HALOGEN_ENGINE_PROBE_S` (default 5)
+  is the per-attempt budget.
+
+### Documentation
+
+- README, *From an agent harness*: point a harness at this server as a
+  provider, not as its own server. OpenCode's `opencode attach` and
+  `OPENCODE_SERVER` probe `/global/health` and `/api/health`, which are
+  OpenCode's server API and are not answered here; the provider entry
+  (`@ai-sdk/openai-compatible`, `baseURL .../v1`) is the one that works.
+  hermes-agent's `/api/tags`, `/props` and `/version` probes are backend
+  detection and the 404s are harmless (issue #91,
+  [@bobdvb](https://github.com/bobdvb)).
+
 ## 0.13.0
 
 The checkpoint tools, as modes of the image: `verify`, `inspect`, `ppl`

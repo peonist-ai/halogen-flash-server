@@ -1077,11 +1077,17 @@ start_api() {
   # api has to reach `engine:8730` by name. Hardcoding 127.0.0.1 here made
   # `api` mode silently unusable for exactly the deployment the split exists
   # to serve, found by writing the compose file rather than by testing.
+  # 0.13.1 (issue #90): --context is the front end's FALLBACK when the
+  # engine does not answer its capability probe. It defaulted to 32768 and
+  # was never set here, so a probe that missed its 5 s budget shrank the
+  # served context to that number for the life of the container while the
+  # engine sat correctly at HALOGEN_CTX. The engine's own INFO still wins.
   exec python3 /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "${HALOGEN_ENGINE:-127.0.0.1:$ENG_PORT}" \
     --host 0.0.0.0 --port "$API_PORT" \
     --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
+    --context "$ENG_CTX" \
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}"
 }
 
@@ -1124,6 +1130,7 @@ all)
     --engine "127.0.0.1:$ENG_PORT" \
     --host 0.0.0.0 --port "$API_PORT" \
     --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
+    --context "$ENG_CTX" \
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" &
   API_PID=$!
 
@@ -1187,6 +1194,7 @@ bench|sweep)
     --engine "127.0.0.1:$ENG_PORT" \
     --host 127.0.0.1 --port "$API_PORT" \
     --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
+    --context "$ENG_CTX" \
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" 2>&1 | tee "$BENCH_LOG" &
   API_PID=$!
 

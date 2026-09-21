@@ -117,7 +117,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -141,7 +141,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -540,6 +540,16 @@ from failing; these are the switches if you want it faster:
 | **Roo Code** | `reasoning_effort` (`none`..`high`) when the model info advertises reasoning effort; `disable` sends nothing | enable reasoning effort on the model and pick a level |
 | **aider** | `--reasoning-effort` as `reasoning_effort`; `--thinking-tokens N` as `thinking: {budget_tokens}` | either flag; both are read here |
 
+**Point the harness at this server as a provider, not as its own server.**
+OpenCode has both: a provider entry in `opencode.json` (`"npm":
+"@ai-sdk/openai-compatible"`, `"options": {"baseURL": "http://HOST:8731/v1"}`,
+a model under `"models"`) is the one that reaches this server; `opencode
+attach URL` and the `OPENCODE_SERVER` setting expect an OpenCode server and
+probe `/global/health` and `/api/health`, which this server does not have
+and should not answer (issue #91). hermes-agent's `/api/tags`, `/props` and
+`/version` probes are its backend detection; the 404s are harmless and it
+proceeds on `/v1/models`.
+
 The server variables are `HALOGEN_REASONING_EFFORT` (the effort a request
 gets when it names none; the card's advice is to leave it at `xhigh` for
 agentic work), `HALOGEN_ENABLE_THINKING=0` (thinking off unless a request
@@ -689,7 +699,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -705,7 +715,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -721,7 +731,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -911,8 +921,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.0 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.0 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.1 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.1 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1055,7 +1065,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1227,7 +1237,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1269,7 +1279,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1 \
   MODE [FILE] [flags]
 ```
 

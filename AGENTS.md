@@ -39,7 +39,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
 ```
 
 - On Docker, `--group-add keep-groups` is `--group-add video --group-add render`.
@@ -130,7 +130,11 @@ concurrency, prompt). Quote them with the number.
   it accepts (`supported`, `token_budget_aliases`, `max_tokens_default`,
   whether images are accepted and why not), `version` for both containers,
   `chat_template` (path, sha256, `probe`), `engine.responds`, `busy`,
-  `busy_for_s`, `in_flight`, `queued`.
+  `busy_for_s`, `in_flight`, `queued`, and since 0.13.1 `capability_probe`:
+  `ok` means `context`, the slots and every feature field came from the
+  engine; `failed` means the engine did not answer the front end's probe at
+  connect, the fields are the entrypoint's defaults (`context` is
+  `HALOGEN_CTX`, one slot), and the next request re-probes.
 - **`GET /cache`**: hits and stores, `hit_rate` (requests) and
   `token_hit_rate` (prompt tokens), `dropped` (entries a follow-up dropped
   to take its region over; not evictions), and `pool`: `positions`, `used`,
