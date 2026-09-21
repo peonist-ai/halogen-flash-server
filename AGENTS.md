@@ -219,7 +219,9 @@ lists the modes under `modes`, as does the OCI label
   argmax, tail_logp) + `K x i32` ids + `K x f64` log-probs. A corpus longer
   than `--seq` (default 262144, the native context) is scored as
   consecutive sequences of that length, the state reset at each; a dump
-  made with one `--seq` is refused by a run with another.
+  made with one `--seq` is refused by a run with another. A dump
+  reconstructs most of the text it was made on (the argmax and the
+  target's NLL per position): treat one made on private text as that text.
 - `niah --json`: `{depths, positions, gen, by_depth:[{T, pNN:[hits,
   cases]…, all:[hits, cases]}], overall:[hits, cases], cases:[{name, needle,
   T, frac, needle_pos, answer, gen, tiled, text, hit, hit_ids}]}`.

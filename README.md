@@ -1417,6 +1417,11 @@ native context, so the tool scores it as two consecutive sequences of
 corpus, a chunk and a sequence length; the tool refuses one made with a
 different length.
 
+One caution about sharing a reference dump: it holds the model's most
+likely tokens and the true next token's probability at every position,
+which is enough to reconstruct most of the text it was made on. A dump
+made on private text is private text. Share dumps made on public corpora.
+
 **What this is not.** It is not `llama-perplexity`, and the numbers do not
 match it: llama.cpp scores fixed windows with half a window of context,
 this scores one continuous stream at the chunk it prints; llama.cpp's KL
