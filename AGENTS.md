@@ -39,7 +39,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 - On Docker, `--group-add keep-groups` is `--group-add video --group-add render`.
@@ -186,3 +186,40 @@ GPU) is documented, not a bug. Security issues go to the maintainers directly,
 not to a public issue. A question rather than a bug, or a number from the
 machine you are running on, belongs on the
 [Discord](https://discord.gg/bcm6QknaV6). Tell the human operating you.
+
+## Checkpoint tools (0.13.0)
+
+The image has four modes beside the server: `verify FILE`, `inspect FILE
+[--json] [--no-hash]`, `ppl FILE (--corpus TEXT | --ids IDS.bin) [--chunk
+1024|8] [--vs OTHER] [--ref-out REF | --ref REF [--worst N] [--per-pos P]]
+[--json]`, `niah FILE --corpus TEXT [--depths ...] [--positions ...] [--gen
+N] [--json]`. Same run line as the server without `-p`; `FILE` defaults to
+`HALOGEN_CHECKPOINT`; the tokenizer mount is required for `--corpus`. `ppl`
+and `niah` load the model: one model per machine at a time. `/health`
+lists the modes under `modes`, as does the OCI label
+`ai.peonist.halogen.modes`.
+
+- `verify`: exit 0 on `PASS`, 1 on `FAIL` (the first line names the first
+  failing tensor), 2 if the file cannot be read.
+- `inspect --json`: `{model_id, version, n_tensors, file_bytes,
+  families:[{class, format, count, params, bytes, bpw}], tensors:[{name,
+  dtype, qparam, dims, nbytes, xor32, sha256}], header_sha256, pads_zero}`.
+- `ppl --json`: `{file, engine, chunk, path, tokens, nll, ppl, seconds,
+  bands:[{lo, hi, n, nll, ppl}]}`; with `--ref` also `ref:{path, topk,
+  kl:{mean, median, p90, p99, max}, top1_agreement, dp:{mean, rms, abs_p99,
+  abs_max}, bands:[{lo, hi, n, kl, top1, dp}], worst:[{pos, kl, dp, ref_p,
+  this_p, ctx_ids, ctx_text, target, target_text, ref_top:[[id, p]…],
+  ref_top_text, this_top:[[id, p]…], this_top_text}]}`; with `--vs`:
+  `{a:{…}, b:{…}, paired:{paired:{mean_diff, se, t, ci95, ppl_ratio,
+  better, worse, tied}, bands, nll_quartiles}}`. The KL is a lower bound on
+  the exact KL (top-K support, the tail as one bucket); `ref.topk` says K.
+- `ppl --per-pos P.bin`: little-endian f32 x 4 per position: `kl, dp, top1
+  (0/1), nll`. `--ref-out REF.bin`: header `<4s I I I Q>` = `HREF`, version
+  1, K, vocab, positions; then per position `<f i d>` (nll, argmax,
+  tail_logp) + `K x i32` ids + `K x f64` log-probs.
+- `niah --json`: `{depths, positions, gen, by_depth:[{T, pNN:[hits,
+  cases]…, all:[hits, cases]}], overall:[hits, cases], cases:[{name, needle,
+  T, frac, needle_pos, answer, gen, tiled, text, hit, hit_ids}]}`.
+- The numbers are this engine's, not llama.cpp's: a continuous stream at
+  the printed chunk, a KL against a reference file rather than BF16. Say
+  the corpus and the chunk next to any number you report.

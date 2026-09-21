@@ -88,6 +88,9 @@ the changelog can credit them. See [Community](#community).
   and how to trade it
 - **[Bring your own GGUF](#bring-your-own-gguf)**: run a llama.cpp file of this
   model on this engine, and what that costs and buys
+- **[Measuring a checkpoint](#measuring-a-checkpoint)**: `verify`, `inspect`,
+  `ppl` (perplexity, and KL against a reference file) and `niah` as modes
+  of the image, for your own quant or a GGUF
 - **[Configuration](#configuration)**: every setting worth knowing, plus
   [cache modes](#choosing-a-cache-mode),
   [context and memory](#context-and-memory-one-kv-pool-several-conversations)
@@ -114,7 +117,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -138,7 +141,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -686,7 +689,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -702,7 +705,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -718,7 +721,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -908,8 +911,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.12.3 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.12.3 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.0 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.0 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1052,7 +1055,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1224,7 +1227,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.12.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1244,6 +1247,185 @@ is the engine's `flash_serve --repack IN.gguf --out OUT.hgn` with the head
 and the checks around it (since 0.12.3 the table is written by default; on
 0.12.2 and earlier `--repack` needed `--with-table`, and a file made without
 it loads and stops at `no tensor named layers.1.ple.ngram_embedding.weight`).
+
+---
+
+## Measuring a checkpoint
+
+Since 0.13.0 the image carries the tools this project measures its own
+checkpoints with, as modes of the same container: `verify`, `inspect`,
+`ppl` and `niah`. They take the same mounts as the server and no port,
+they load nothing you do not already have, and every number they print
+is on the same scale as the numbers in this README, because it is the
+same engine computing it. They exist so that a quant you made, a GGUF you
+pulled, or a fine-tune you converted can be checked and compared without
+our fixtures, a torch install, or our word for it.
+
+The run line is the server's without `-p`, plus the mode and its
+arguments. Every example below abbreviates it as `podman run … halogen`:
+
+```bash
+podman run --rm \
+  --device /dev/kfd --device /dev/dri --group-add keep-groups \
+  --ipc=host --ulimit memlock=-1:-1 \
+  -v ~/halogen-models:/models:ro -v ~/halogen-models/tokenizer:/tokenizer:ro \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.0 \
+  MODE [FILE] [flags]
+```
+
+`FILE` is any `.hgn` (the checkpoint, a sidecar, the draft head, the
+vision sidecar) or, for `ppl` and `niah`, any shard of a GGUF; left out, it
+is `HALOGEN_CHECKPOINT`, the file the server would serve. `ppl` and `niah`
+load the model, so run them on a machine that is not serving at the time.
+`--json` on any of the four prints one object on stdout for a script or an
+assistant to read; the prose goes to stderr.
+
+### Is this file what it says it is?
+
+```bash
+podman run … halogen verify /models/my-quant.hgn
+PASS /models/my-quant.hgn: 1198 tensors, 115.55 GiB, v2, model_id qwen3.8-flash-next; header, table,
+  layout, payload sizes, checksums, codebooks and scales OK; geometry checked on 1197 tensors (1 with no rule)
+```
+
+`verify` reads the file back independently of whatever wrote it: the
+header, the table, every tensor's dims against the model's geometry, the
+payload size each format implies, the per-tensor checksum over the bytes
+on disk, codebooks in order, scales finite. It says `PASS`, or `FAIL` and
+names the first tensor and what is wrong with it, and its exit status is
+the answer. About 40 seconds on the full checkpoint from an NVMe, under a
+second on a sidecar. Run it on anything you downloaded or converted before
+you run anything else on it, and paste its line into any report of a bad
+file.
+
+### What does it actually carry?
+
+```bash
+podman run … halogen inspect /models/my-quant.hgn
+  class                      format  count         params       bytes     bpw
+  FFN (mlp)                  q4c       288   121032007680    68.58 GB    4.53
+  embed_tokens               fp8g        1    51200245760    51.20 GB    8.00
+  …
+  FFN (mlp)                  bf16       48       62914560     0.13 GB   16.00
+```
+
+The precision by tensor family with bits per weight computed from the
+shapes (so padding and scale planes are in the number, not hidden by the
+format's name), then one sha256 per tensor in table order behind the hash
+of the header and table. `--no-hash` skips the hashes and answers in a
+second; `--json` gives every tensor's dims, format and hash as one object.
+Two files with the same hash lines are the same weights.
+
+### How does it compare to the shipped checkpoint?
+
+Perplexity is the coarse number, and it hides more than it shows: two files
+can read within 0.3% of each other and still disagree about the next token
+at thousands of positions. So the comparison has two parts. The first is a
+reference dump of the file you are comparing against, made once per corpus:
+
+```bash
+podman run … halogen ppl /models/qwen38-flash-next-w4b.hgn \
+  --corpus /models/wikitext-2-test.txt --ref-out /models/shipped-wikitext2.ref
+```
+
+The second is your file against it:
+
+```bash
+podman run … halogen ppl /models/my-quant.hgn \
+  --corpus /models/wikitext-2-test.txt --ref /models/shipped-wikitext2.ref --worst 10
+/models/my-quant.hgn: PPL 5.6497 (mean NLL 1.73160 over 32767 tokens, chunk 1024 = the prefill kernels)
+  against /models/shipped-wikitext2.ref (top-128 support, a lower bound on the exact KL):
+  KL(ref || this)  mean 0.0212  median 0.0080  p90 0.0510  p99 0.2130  max 2.4410
+  top-1 agreement  94.812%
+  delta p(target)  mean -0.0031  rms 0.0412  |dp| p99 0.1840
+  the 10 positions the two files disagree on most:
+    pos   7642  KL   26.89  ref p 0.000  this p 1.000  'AI model. You are' -> ' provided'
+      ref top: ' coming' 0.79, ' arriving' 0.15, ' getting' 0.01   this top: ' provided' 1.00, ' required' 0.00, 'provided' 0.00
+```
+
+(The numbers in this block are illustrative; the shape is the tool's.)
+What the lines mean:
+
+- **PPL** is the teacher-forced perplexity of the corpus through this
+  engine: the text is fed in chunks of 1,024 tokens on the prefill
+  kernels, and the line says so, because a different chunk is a different
+  forward pass and a different number. `--chunk 8` scores on the decode
+  kernels, the arithmetic the server generates with; it is slower and it
+  is a different number too.
+- **KL(ref || this)** is how far this file's next-token distribution sits
+  from the reference's, per position, in nats, on the reference's 128 most
+  likely tokens with everything else as one bucket. That makes it a lower
+  bound on the exact value, tight where those 128 tokens carry the mass;
+  the reference run prints how much they carried. Read the median and the
+  percentiles before the mean: quantization noise is a median of a few
+  hundredths, and a mean far above the median means a tail of positions
+  where the two files disagree outright.
+- **top-1 agreement** is how often the two files would emit the same token
+  greedily. **delta p(target)** is how much probability this file gives the
+  token that actually came next, relative to the reference.
+- **`--worst N`** decodes the N positions the two files disagree on most:
+  the context, the token that came next, and what each file expected
+  instead. This is the line to read before deciding whether a difference is
+  noise, a register the file is weak in, or a broken tensor.
+
+`--vs OTHER` compares two files by PPL alone in one run (a paired
+statistic: the mean per-token difference with a t and a 95% interval,
+which resolves a half-percent difference two separate PPLs cannot). `--ids
+IDS.bin` takes a pre-tokenized corpus of little-endian int32 ids instead of
+text; `--per-pos P.bin` writes four floats per position (KL, delta p,
+top-1, NLL) for your own plots.
+
+**Which corpus.** There is no built-in text. A perplexity is a number about
+a register, and the same two files can be a wash on prose and 25% apart
+on agent transcripts, so use the text you actually serve, and say which.
+For a number other people can reproduce, use a public one: the wikitext-2
+raw test split is the convention (about 300 KB; download it yourself, it
+is not ours to redistribute), and the reference dumps published beside the
+weights on Hugging Face are made on it, so one run compares your file to
+the shipped checkpoint on that corpus. A dump is specific to a corpus and a
+chunk; the tool refuses one made on a different length.
+
+**What this is not.** It is not `llama-perplexity`, and the numbers do not
+match it: llama.cpp scores fixed windows with half a window of context,
+this scores one continuous stream at the chunk it prints; llama.cpp's KL
+is against a base model's full log-probs, this is against a reference file
+through the same engine, on a bounded support. It is a comparison between
+two files under one engine, which is the question a quant answers. A
+comparison against the BF16 model through transformers is a different
+tool and is not in the image.
+
+### Does it still find things at depth?
+
+```bash
+podman run … halogen niah /models/my-quant.hgn \
+  --corpus /models/some-long-text.txt --depths 4096,32768,131072 --positions 0.05,0.5,0.95
+retrieval by depth x needle position (hits / cases)
+  T              p05       p50       p95       all
+  4096           3/3       3/3       3/3      9/9    100.0%
+  32768          3/3       3/3       2/3      8/9     88.9%
+  131072         3/3       2/3       3/3      8/9     88.9%
+overall 25/27 = 92.6%
+```
+
+A needle-in-a-haystack battery: three synthetic facts (codes no corpus
+contains) are spliced into your text at the given depths and positions,
+the document continues into a sentence whose next words are the fact, and
+the model decodes greedily. A hit is the answer appearing in what it
+wrote; the misses are listed with what it wrote instead. It measures
+retrieval, not knowledge: a fact the model could know is not a test. The
+filler is your corpus, repeated when a depth is longer than it; a depth
+below 2,048 tokens is the control, where the engine's attention budget is
+not yet in play. Deep cases take minutes each at 131k and above.
+
+### Reading the output as an assistant
+
+Every mode takes `--json`, and the files the modes write are small and
+plain: the reference dump is a header (`HREF`, version, K, vocab,
+positions) followed by fixed-size records, and `--per-pos` is 16 bytes a
+position. `AGENTS.md` has the field lists. The pattern that works: `verify`,
+`inspect --json`, `ppl --ref … --worst 20 --json`, then hand the object and
+the per-position file to the assistant and ask it what the worst positions
+have in common.
 
 ---
 

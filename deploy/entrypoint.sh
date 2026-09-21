@@ -44,6 +44,29 @@
 #            start does (HALOGEN_MTP_HEAD, or beside the GGUF, or
 #            HALOGEN_DOWNLOAD). No engine, no port. About 10 minutes and
 #            ~105 GiB on the reference machine for an IQ4_XS build.
+#   inspect  (0.13.0) the checkpoint tools, one verb each, and exit:
+#   verify     `inspect [FILE.hgn] [--json] [--no-hash]` prints what the
+#   ppl        file carries (precision by tensor family, bits per weight from
+#   niah       the shapes, one sha256 per tensor); `verify [FILE.hgn]` reads
+#            it back independently of any writer and says PASS, or FAIL
+#            naming the first tensor; `ppl [FILE] --ids IDS.bin [--chunk
+#            1024|8] [--vs OTHER]` is teacher-forced perplexity through
+#            this image's engine (with --vs, the paired statistic against
+#            a second file); `niah [FILE] --manifest CASES.tsv [--out DIR]`
+#            runs a retrieval battery. `ppl --corpus TEXT` and `niah
+#            --corpus TEXT` take a text file (tokenized with the mounted
+#            tokenizer; the battery's filler is the corpus); `--json` gives
+#            one object; `ppl --ref REF --worst N` prints the N positions
+#            two files disagree on most, decoded. FILE defaults to
+#            HALOGEN_CHECKPOINT (an .hgn, or any shard of a GGUF for
+#            ppl/niah). ppl and niah
+#            load the model and run under this image's engine environment
+#            (the baked tuning plan, the quality sidecar beside the
+#            checkpoint, the trunk pinned), which is the served numerics;
+#            `-e HALOGEN_MATMUL_TUNING_FILE=` runs without the plan. One
+#            model at a time: not beside a running server on the same
+#            machine. The image advertises these in /health `modes` and the
+#            OCI label `ai.peonist.halogen.modes`.
 #
 # The engine's token protocol has NO AUTH. In `all` it binds loopback INSIDE
 # the container and is unreachable from outside; only the API port is
@@ -1067,7 +1090,12 @@ start_api() {
 # neither log said a version, so a careful reader posting both had no way to
 # see the split; the api one predated the image path the engine one had, and
 # every picture was answered from nothing.
-echo "halogen: halogen-flash-server ${HALOGEN_IMAGE_VERSION:-unknown}, mode ${1:-all}"
+# The tool modes keep stdout for their own output (`--json` is one object a
+# script reads), so their release line goes to stderr.
+case "${1:-all}" in
+  inspect|verify|ppl|niah) echo "halogen: halogen-flash-server ${HALOGEN_IMAGE_VERSION:-unknown}, mode $1" >&2 ;;
+  *) echo "halogen: halogen-flash-server ${HALOGEN_IMAGE_VERSION:-unknown}, mode ${1:-all}" ;;
+esac
 
 case "${1:-all}" in
 engine) start_engine ;;
@@ -1223,5 +1251,31 @@ convert)
   fi
   exit $RC
   ;;
-*) echo "usage: entrypoint.sh [all|engine|api|bench|sweep|convert IN.gguf OUT.hgn]" >&2; exit 2 ;;
+inspect|verify|ppl|niah)
+  # 0.13.0: the checkpoint tools as modes. The verb goes to the sibling
+  # binary as it is; the only thing this layer adds is the FILE default
+  # (HALOGEN_CHECKPOINT, the file `all` would serve) and, for the two modes
+  # that load a model, the same resolution `all` does: the draft head beside
+  # a GGUF, the tuning plan copied out of the read-only layer so a clean
+  # exit cannot rewrite the baked file. No port is bound; the process is
+  # the tool and exits with its status.
+  MODE="$1"
+  shift || true
+  FILE=""
+  if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then FILE="$1"; shift; fi
+  [ -n "$FILE" ] || FILE="$HALOGEN_CHECKPOINT"
+  [ -f "$FILE" ] || { echo "halogen $MODE: $FILE is not there (mount the models volume and name a file inside it, or set HALOGEN_CHECKPOINT)" >&2; exit 1; }
+  if [ "$MODE" = ppl ] || [ "$MODE" = niah ]; then
+    tuning_plan_copy
+    if [ "$(head -c 4 "$FILE" 2>/dev/null)" = "GGUF" ]; then need_head "$(dirname "$FILE")"; fi
+    echo "halogen $MODE: $FILE under this image's engine environment (tuning plan: ${HALOGEN_MATMUL_TUNING_FILE:-none}; quality sidecar: ${HALOGEN_CK_OVERLAY:-beside the checkpoint, if any}; trunk pinned: ${HALOGEN_FLASH_PIN_TRUNK:-1})" >&2
+    # the two modes that read text go through the Python front end: it
+    # tokenizes --corpus with the mounted tokenizer, builds the retrieval
+    # battery, runs the binary, and decodes what the binary prints as ids
+    need_tokenizer
+    exec python3 /halogen/tools/halogen_tools.py "$MODE" "$FILE" --tokenizer "$HALOGEN_TOKENIZER" "$@"
+  fi
+  exec /usr/local/bin/halogen-tools "$MODE" "$FILE" "$@"
+  ;;
+*) echo "usage: entrypoint.sh [all|engine|api|bench|sweep|convert IN.gguf OUT.hgn|inspect|verify|ppl|niah [FILE] ...]" >&2; exit 2 ;;
 esac

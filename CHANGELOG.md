@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.13.0
+
+The checkpoint tools, as modes of the image: `verify`, `inspect`, `ppl`
+and `niah`. No weight change; no kernel change; the server's numerics are
+untouched (the engine gained one method the tools read the logits through,
+which the server never calls). One front-end addition from issue #86
+([@Lafunamor](https://github.com/Lafunamor)).
+
+### Added
+
+- **`verify FILE`**: reads an `.hgn` back independently of whatever wrote
+  it (header, table, every tensor's dims against the model's geometry, the
+  payload size each format implies, per-tensor checksums over the bytes on
+  disk, codebooks in order, scales finite) and says `PASS`, or `FAIL`
+  naming the first tensor. Exit status is the answer. About 40 s on the full
+  checkpoint.
+- **`inspect FILE [--json] [--no-hash]`**: the precision by tensor family
+  with bits per weight from the shapes, and one sha256 per tensor in table
+  order behind the hash of the header and table.
+- **`ppl FILE --corpus TEXT`** (or `--ids IDS.bin`): teacher-forced
+  perplexity through this engine, the chunk printed with the number.
+  `--vs OTHER` compares two files paired (mean per-token difference, t,
+  95% interval). `--ref-out REF` writes the file's next-token distribution
+  at every position (top-128 log-probs, the tail, the argmax; 50 MB for
+  32k tokens) and `--ref REF` scores another file against it: KL on that
+  support (a stated lower bound on the exact KL), top-1 agreement, the
+  target's probability shift, per band, and `--worst N` decodes the N
+  positions the two files disagree on most. `--json` prints one object.
+- **`niah FILE --corpus TEXT --depths ...`**: a needle-in-a-haystack
+  battery built from your text at the given depths and positions, run
+  through the engine and scored.
+- The README's [Measuring a checkpoint](README.md#measuring-a-checkpoint)
+  section has the recipes, which corpus to use, and what these numbers are
+  not (they are not `llama-perplexity`'s). `AGENTS.md` has the `--json`
+  shapes and the file formats.
+- `/health` lists the image's modes under `modes`, and the image carries
+  the same list in the OCI label `ai.peonist.halogen.modes`
+  (`HALOGEN_IMAGE_MODES`).
+- **`/v1/models` advertises the window and the token limits** (issue #86):
+  `max_model_len` and `context_length` (the served context), `meta.n_ctx_train`,
+  `max_tokens_cap` and `max_tokens_default`, the values `/health` reports,
+  so a generic client or proxy sizes its compaction from the OpenAI surface.
+
+### Notes
+
+- The tools load the model where a mode needs it (`ppl`, `niah`): one model
+  per machine at a time, not beside a running server.
+- Inside the image `ppl` runs under the image's own engine environment
+  (the baked tuning plan, the quality sidecar beside the checkpoint), which
+  is the served numerics; `-e HALOGEN_MATMUL_TUNING_FILE=` runs without the
+  plan. The mode prints which it did.
+- `--corpus` reads the tokenizer from the mounted directory only; a path
+  that is not a directory is refused rather than looked up by name.
+
 ## 0.12.3
 
 Entrypoint, front end, the repack command's default, and docs. No
