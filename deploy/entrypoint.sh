@@ -434,11 +434,31 @@ maybe_download() {
   # Override it for this command only. Without this the download fails even
   # against a valid repo, which is exactly how the first build of this feature
   # behaved until the failure-path test caught it.
-  if ! HF_HUB_OFFLINE=0 hf download "$HALOGEN_DOWNLOAD" --local-dir "$dir"; then
+  # 0.13.2: the progress is BYTES ON DISK, not a file count. The Hub client's
+  # own bar counts files ("Fetching 14 files: 86% 12/14" for the seventeen
+  # minutes the 115 GiB file takes, measured on a fresh box), so it is
+  # silenced and a line every 30 s says how much of the volume has arrived
+  # and at what rate. The client's version nag, its CLI advert, the
+  # lock-wait chatter and the anonymous-request warning are dropped from
+  # stderr on the way through; the exit status is the command's own.
+  local t0 b0 rep
+  t0=$(date +%s); b0=$(du -sb "$dir" 2>/dev/null | cut -f1); b0=${b0:-0}
+  ( while sleep 30; do
+      local b now
+      b=$(du -sb "$dir" 2>/dev/null | cut -f1); b=${b:-0}; now=$(date +%s)
+      printf 'halogen: downloaded %.1f GB so far (%.0f MB/s average over %d s)\n' \
+        "$(( b - b0 ))e-9" "$(( (b - b0) / (now - t0 + 1) ))e-6" "$(( now - t0 ))" 2>/dev/null || true
+    done ) &
+  rep=$!
+  if ! HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
+       hf download "$HALOGEN_DOWNLOAD" --local-dir "$dir" \
+       2> >(grep --line-buffered -vE 'hf update|hf skills|HF_TOKEN|gitignore\.lock|A new version of' >&2); then
+    kill "$rep" 2>/dev/null || true
     echo "halogen: download FAILED. Nothing was started." >&2
     echo "  Re-run to resume, or fetch it yourself and mount it." >&2
     exit 1
   fi
+  kill "$rep" 2>/dev/null || true
 
   # Verify rather than trust: a failed transfer can leave a plausible-looking
   # tree, and an engine that starts on a truncated checkpoint fails much later
@@ -1005,8 +1025,28 @@ engine_watchdog() {
   return 0
 }
 
+# 0.13.2: HALOGEN_WEIGHTS_LOCK=1 needs RLIMIT_MEMLOCK to cover the weights,
+# and a rootless container cannot raise that above the invoking user's hard
+# limit whatever `--ulimit memlock=-1:-1` says (Ubuntu's default is 8 MiB;
+# Podman clamps silently). Say so BEFORE the engine spends a minute loading
+# and then reports the lock failed; the engine's own line repeats the fix.
+memlock_note() {
+  [ "${HALOGEN_WEIGHTS_LOCK:-0}" = "1" ] || return 0
+  local hard; hard=$(ulimit -H -l 2>/dev/null || echo "?")
+  case "$hard" in unlimited|"?") return 0 ;; esac
+  # ulimit -l is in KiB; 70 GiB of weights + sidecar + tower is the ask
+  if [ "$hard" -lt 75000000 ] 2>/dev/null; then
+    echo "halogen: WARNING HALOGEN_WEIGHTS_LOCK=1 asks the engine to mlock about 68 GiB of weights, but this container's hard memlock limit is ${hard} KiB." >&2
+    echo "  A rootless container cannot exceed the host user's hard limit, so --ulimit memlock=-1:-1 did not take effect. On the host: ulimit -H -l; if it is not unlimited, add" >&2
+    echo "    <user> hard memlock unlimited" >&2
+    echo "    <user> soft memlock unlimited" >&2
+    echo "  to /etc/security/limits.conf (or a file under /etc/security/limits.d/), log in again, and start the container from that login. The engine will start, unlocked." >&2
+  fi
+}
+
 start_engine() {
   need_ckpt
+  memlock_note
   # NOT `exec` any more: something has to outlive the engine to watch it.
   # SIGTERM is forwarded so the daemon still takes its own exit path.
   /usr/local/bin/flash_serve \

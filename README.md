@@ -112,17 +112,24 @@ the changelog can credit them. See [Community](#community).
 ## Quickstart
 
 ```bash
+mkdir -p ~/halogen-models
+
 podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
-give it a while; the transfer resumes if interrupted) and serves an
-OpenAI-compatible endpoint on `:8731`, reachable from your network.
+give it a while; the transfer resumes if interrupted; since 0.13.2 the log
+says how many gigabytes have arrived every 30 seconds instead of counting
+files) and serves an OpenAI-compatible endpoint on `:8731`, reachable from
+your network. The `mkdir` is there because Podman refuses a bind mount
+whose source does not exist (`statfs ...: no such file or directory`) where
+Docker would create it; through 0.13.1 this block started with the
+`podman run` and failed on a fresh machine.
 
 Note the models volume is read-**write** here, with no `:ro`, because it is
 being downloaded into. Nothing is fetched on later starts, with one
@@ -141,7 +148,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -629,7 +636,10 @@ that reads them, count this server's locked weights as reclaimable page cache,
 so they overstate the memory available on this host by the size of the model,
 about 68 GiB. No kernel field reports the difference (`Mlocked` and
 `Unevictable` both stay at zero across the load), which is why the server has
-to print the correction itself.
+to print the correction itself. With `HALOGEN_WEIGHTS_LOCK=1` (below) the
+weights are locked in the kernel's sense too, `Mlocked` and `Unevictable`
+carry them, `free` and `MemAvailable` drop by their size, and the second
+line is not printed because there is nothing to correct.
 
 A few hundred blocks is normal for this server and is fine on a host of its
 own. If that number is small and you have other work on the machine, expect the
@@ -652,6 +662,38 @@ above. Options, in the order worth trying:
   at the shipped settings at all (the first request ended the server with
   `internal sizing error in the per-forward arena`, issue #83); since
   0.12.2 it does.
+
+- **`HALOGEN_WEIGHTS_LOCK=1`** (0.13.2, opt-in) is for the other direction:
+  a host that is already short. "Reclaimable page cache" above is not only
+  a reporting problem. The weights are registered with the GPU as ordinary
+  file-backed memory, and this server also streams a 47 GiB lookup table
+  through the same file cache on every request, so when the host is short
+  the kernel reclaims weight pages to make room for table rows and the GPU
+  driver has to tear down and restore the engine's mapping each time. That
+  cycle is what the stalls in issue #85 and the read faults in issue #83
+  look like from the outside. With the flag set the server `mlock`s every
+  weight page it registers (never the table), which takes the weights out
+  of that cycle entirely: the kernel cannot reclaim them, and the pressure
+  lands on whatever else is running instead, as swap or the OOM killer,
+  which is at least visible. Costs nothing on a warm start (the lock is a
+  fraction of a second over resident pages; the startup line
+  `checkpoint: locked ...` says how long and what `MemAvailable` did), and
+  changes no output: the same bytes at the same addresses. It needs the
+  memlock limit to cover the weights, and here the `--ulimit memlock=-1:-1`
+  on every run line is not enough by itself: a rootless container cannot
+  raise that limit above your user's hard limit, and Ubuntu's default is
+  8 MiB (Podman clamps it silently; measured on a fresh Ubuntu 26.04
+  install, where the lock failed after 0 bytes). Check with `ulimit -H -l`
+  on the host; if it does not say `unlimited`, add
+  `<user> hard memlock unlimited` and `<user> soft memlock unlimited` to
+  `/etc/security/limits.conf` (or a file under `/etc/security/limits.d/`),
+  log in again, and start the container from that login. The container
+  says so at startup when it can see the limit is short, the engine says
+  so again if the lock fails, and it runs unlocked either way. It is opt-in
+  until the reporters on those two issues have run it. Memory the kernel
+  can move by compaction is not held still by this flag; if that turns out
+  to matter, the next step is a pinned allocation, and it will be a
+  different value of the same flag.
 
 Compacting memory afterwards does not help, because the memory this server
 holds cannot be moved. If you need to reclaim it, stop the server.
@@ -699,7 +741,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -715,7 +757,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -731,7 +773,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -921,8 +963,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.1 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.1 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.2 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.2 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1065,7 +1107,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1237,7 +1279,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1279,7 +1321,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.1 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.2 \
   MODE [FILE] [flags]
 ```
 
@@ -2143,8 +2185,11 @@ machine just reports itself smaller, and that RAM is gone from the file cache
 the lookup table depends on. **This server does not need it.** It drives the
 GPU through GTT and allocates from the same unified memory whichever way the
 setting is left, so a large carve-out buys nothing here and costs cache. Set
-the UMA frame buffer or dedicated graphics memory option back to Auto or its
-minimum, which reports about 512 MiB on this hardware.
+the UMA frame buffer or dedicated graphics memory option to its explicit
+MINIMUM, not to Auto: on the reference machine the minimum reports about
+512 MiB, on a GMKtec EVO-X2 it is 2 GB, and on that board "Auto" turned out
+to be 64 GiB (the OS saw 61 GiB of a 128 GB machine and the weights could
+not load until the setting was changed).
 
 You are paying for a carve-out even when nothing has thrashed yet. The pool
 sizes itself from the memory total the OS reports, which the carve-out has
@@ -2227,8 +2272,13 @@ in different units, so set both to about your installed RAM:
 | 64 GB | `63488` | `16252928` |
 
 Pasting the 128 GB row onto a 64 GB machine asks the driver for more GTT than
-the machine has. We have not measured what the kernel's own defaults are here,
-only that ours is what produced these numbers.
+the machine has. **Neither flag is required.** Measured on a second 128 GB
+machine on a stock kernel command line: the kernel's default GTT is half of
+RAM (60.6 GiB there), this server at the Quickstart defaults uses about
+35 GiB of it (the weights are registered host memory and do not count
+against GTT), and the Quickstart served from that default without either
+flag. Ours are set because we set them on day one, not because the server
+needs them.
 
 The remaining three, `amdgpu.vm_update_mode=0`, `amdgpu.noretry=0` and
 `amdgpu.sg_display=0`, we have never run without. They are listed for

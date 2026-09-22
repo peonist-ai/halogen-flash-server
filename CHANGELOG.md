@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.13.2
+
+One opt-in flag on the engine's memory behaviour, the download's progress
+line, and three README corrections measured on a second machine. No weight
+change, no kernel change, nothing in the engine's numerics (the flag's
+output is byte-identical with it on or off; the bitwise gate and the
+six-fixture gate ran both ways). For the two reports behind it, issue #83
+([@noguespi](https://github.com/noguespi)) and issue #85 / #71
+([@YanissAmz](https://github.com/YanissAmz)); the flag is the thing to
+run there, and it is opt-in until they have.
+
+### Added
+
+- **`HALOGEN_WEIGHTS_LOCK=1` locks the weights in memory.** The weights
+  are registered with the GPU as ordinary file-backed memory, which the
+  kernel is free to reclaim, and this server streams a 47 GiB lookup table
+  through the same file cache on every request. On a host with room the
+  kernel leaves the weights alone (measured on a stock 128 GB machine over
+  a 90-minute soak: not one weight page reclaimed while 16 GiB of table
+  rows came and went), but on a host that is short it reclaims weight
+  pages to make room, and every one of those costs the GPU driver a
+  teardown and restore of the engine's mapping. That cycle is the shape of
+  the stalls in issue #85 and the read faults in issue #83. With the flag
+  set the server `mlock`s every weight range it registers (the checkpoint,
+  the quality sidecar, the vision tower, a GGUF's repacked trunk and its
+  draft head; never the lookup table), which takes them out of the cycle:
+  the pressure lands on whatever else runs on the host, as swap or the OOM
+  killer, instead of on this server's mapping. Costs: a fraction of a
+  second at startup over already-resident pages (0.6 s for 65.6 GiB in 252
+  ranges on the reference machine; the line `checkpoint: locked ...` says
+  how long, and what `Mlocked` and `MemAvailable` did), and `free` and
+  `MemAvailable` finally drop by the size of the weights, so the startup's
+  second host-memory line (the correction for tools that count locked
+  weights as free) is not printed because it is no longer needed. It needs
+  the memlock limit to cover the weights, and `--ulimit memlock=-1:-1` on
+  the run line is not enough on its own: a rootless container cannot
+  exceed the user's hard limit, which on Ubuntu is 8 MiB by default
+  (measured: the lock failed after 0 bytes on a fresh Ubuntu 26.04 host
+  with the README's exact line). The README says what to put in
+  `/etc/security/limits.conf`; the container warns before the load when
+  it can see the limit is short, the engine prints the limit it has and
+  the same fix if the lock fails, and it runs unlocked either way. Memory the kernel can still move by compaction is not held by
+  this flag; if that turns out to matter on the reporters' hosts, the next
+  step is a pinned allocation under another value of the same flag.
+
+### Fixed
+
+- **The download's progress line counts bytes, not files.** The Hub
+  client's own bar counts files, and sat at `12/14` for the seventeen
+  minutes the 115 GiB checkpoint took on a fresh machine. The container now
+  prints how many gigabytes have arrived and the average rate every 30 s,
+  and drops the client's version nag, its CLI advertisement, its lock-wait
+  chatter and its unauthenticated-request warning from the log.
+
+### Documentation
+
+- **The Quickstart failed as written on Podman.** Podman refuses a bind
+  mount whose source directory does not exist (`statfs ~/halogen-models:
+  no such file or directory`) where Docker creates it; the block now starts
+  with `mkdir -p ~/halogen-models`. Measured on a fresh Ubuntu 26.04
+  install; the same fix in AGENTS.md.
+- **`amdgpu.gttsize` and `ttm.pages_limit` are not required.** The README
+  said their defaults had not been measured. They have now: on a second
+  128 GB machine on a stock kernel command line, the kernel's default GTT
+  (half of RAM) served the Quickstart at the shipped defaults with room to
+  spare, because the weights are registered host memory and do not count
+  against it.
+- **The BIOS carve-out advice was wrong for at least one board.** "Auto or
+  its minimum, about 512 MiB" is true of the reference machine; on a GMKtec
+  EVO-X2, Auto is 64 GiB and the OS saw 61 GiB until the setting was
+  changed to its explicit minimum (2 GB there). The README now says to set
+  the minimum, not Auto.
+
 ## 0.13.1
 
 Front end, entrypoint and one line on the engine's socket path. No weight
