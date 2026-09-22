@@ -25,9 +25,15 @@ run there, and it is opt-in until they have.
   the stalls in issue #85 and the read faults in issue #83. With the flag
   set the server `mlock`s every weight range it registers (the checkpoint,
   the quality sidecar, the vision tower, a GGUF's repacked trunk and its
-  draft head; never the lookup table), which takes them out of the cycle:
-  the pressure lands on whatever else runs on the host, as swap or the OOM
-  killer, instead of on this server's mapping. Costs: a fraction of a
+  draft head; never the lookup table), which takes them out of the cycle.
+  Measured: a 20 GiB co-tenant silenced the unlocked server from its first
+  request and the watchdog took it down after 15 minutes; a 12 GiB
+  co-tenant beside the locked server, under 1 GiB left on the host, got
+  81 of 81 requests at about 5 percent longer walls. A co-tenant that asks
+  for more than the host has left now triggers the OOM killer, which picks
+  the largest resident set, i.e. this server: the container exits with
+  status 137 within seconds instead of a 15-minute silence, and comes back
+  under a restart policy. Fast and legible, not a way to share the host. Costs: a fraction of a
   second at startup over already-resident pages (0.6 s for 65.6 GiB in 252
   ranges on the reference machine; the line `checkpoint: locked ...` says
   how long, and what `Mlocked` and `MemAvailable` did), and `free` and

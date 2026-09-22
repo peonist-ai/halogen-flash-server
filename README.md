@@ -674,8 +674,18 @@ above. Options, in the order worth trying:
   look like from the outside. With the flag set the server `mlock`s every
   weight page it registers (never the table), which takes the weights out
   of that cycle entirely: the kernel cannot reclaim them, and the pressure
-  lands on whatever else is running instead, as swap or the OOM killer,
-  which is at least visible. Costs nothing on a warm start (the lock is a
+  lands somewhere visible instead. Measured both ways on two machines: a
+  20 GiB co-tenant beside the unlocked server silenced it from the first
+  request and the watchdog took it down after 15 minutes; a 12 GiB
+  co-tenant beside the locked server, with under 1 GiB left on the host,
+  got 81 of 81 requests answered at about 5 percent longer walls. The
+  other side of that coin: a co-tenant that asks for more than the host
+  has left triggers the OOM killer, and the OOM killer picks the process
+  with the largest resident set, which is this server (its locked weights
+  count). The container then exits with status 137 within seconds rather
+  than sitting silent for 15 minutes, a restart policy brings it back, and
+  it will be killed again until the co-tenant is gone. Neither is a way to
+  share the machine; the lock just makes the failure fast and legible. Costs nothing on a warm start (the lock is a
   fraction of a second over resident pages; the startup line
   `checkpoint: locked ...` says how long and what `MemAvailable` did), and
   changes no output: the same bytes at the same addresses. It needs the
