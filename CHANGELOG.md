@@ -1,5 +1,84 @@
 # Changelog
 
+## 0.13.3
+
+A prompt-cache regression that cost a busy server whole conversations, a
+chat field that was being dropped without a word, and a startup refusal
+that could not see its own cause. No weight change, no kernel change,
+nothing in the engine's numerics. For the reports behind it: issue #94
+([@phantomii](https://github.com/phantomii) and
+[@davidberardozzi](https://github.com/davidberardozzi)), #96
+([@Gobutsu](https://github.com/Gobutsu)), #95
+([@jarekjaryszew](https://github.com/jarekjaryszew)) and #88
+([@JonRickSanchez](https://github.com/JonRickSanchez)).
+
+### Fixed
+
+- **A conversation could lose its history to another conversation's
+  request.** When several conversations share one system prompt, each
+  stores a resume point at the end of that system block, and those points
+  are identical: same length, same tokens. A conversation whose own
+  history had been evicted would match one of those shared points inside
+  **another conversation's** memory, and the server, which had no way to
+  tell whose memory it had just landed in, would discard that
+  conversation's history and take the space, before it had considered
+  giving up any idle space at all. The robbed conversation then did the
+  same to a third one on its next turn. The effect on a busy server is
+  that a long conversation stops advancing: it resumes from the same early
+  point every turn while its prompt keeps growing, so the share it has to
+  re-read climbs with every turn, and the wall time with it. Measured here
+  on the previous release with five conversations sharing a system prompt:
+  the long one resumed 7,552 rows of 18,490 it could have resumed (41%)
+  by its third turn; on this release it resumes all of them, and the
+  server gives up idle space instead (the engine log's "cheapest" drops go
+  from 10 to 0 over the same run, and the no-loss move that never fired
+  once now does). A gate cell now runs five conversations against a shared
+  system prompt, which no gate here had ever done.
+- **`continue_final_message` did nothing.** Sending a partial assistant
+  message back with `continue_final_message: true` did not resume it: the
+  field was not declared, so it was discarded before anything read it, and
+  every request rendered a fresh assistant turn. With plain text that is
+  invisible, because a new turn that carries on the sentence looks like a
+  continuation. With a tool call cut off by `finish_reason: "length"` it is
+  not: the model opened a second call and rewrote the arguments from the
+  start, so a file bigger than `max_tokens` could never be finished. The
+  field now works, and so does `add_generation_prompt`. A resumed tool call
+  comes back as one finished call carrying the arguments the client had
+  already sent. Sending `continue_final_message` without a trailing
+  assistant message, or together with `add_generation_prompt: true`, is now
+  a 400 rather than silence.
+- **A refusal to start on a machine with a memory carve-out now says so.**
+  On a host whose firmware reserves a large block of RAM for the integrated
+  GPU, the server would refuse to start with a message about free GTT and
+  no way to see why GTT was small. The carve-out is taken before Linux
+  boots, so nothing on the host reports the memory as missing, and the
+  operator is left freeing memory that was never in use. The engine has
+  had a check for this for some time, but it ran after the weights loaded,
+  which is after this refusal. The refusal now names the carve-out, the
+  total it produced, and the BIOS setting to change.
+
+### Added
+
+- **`HALOGEN_CACHE_BRANCHES`** (default 2) sets how many branches of one
+  conversation the cache keeps resume points for. Two is a conversation
+  and one side turn. **Three is a parent forked into two children**, which
+  is what a harness fanning out subagents runs; on two, the parent's
+  resume point is the one dropped when the children store theirs. Raising
+  it costs host memory in whole entries (about 111 MiB each) and raises
+  the entry cap with it: 3 gives about 3.5 GiB of prompt cache against
+  2's 2.7. The entry cap's default is now derived from this rather than
+  set by hand beside it, which is the mistake behind the first half of
+  #94, and a `HALOGEN_CACHE_ENTRIES` too small to hold one conversation's
+  worth per slot now says so at startup instead of quietly costing a
+  conversation its history.
+### Documentation
+
+- **`:latest` exists, and the Quickstart still pins a version.** Every
+  release publishes `ghcr.io/peonist-ai/halogen-flash-server:latest`. The
+  Quickstart names a version because a pinned tag is what makes a bug
+  report answerable and a bad release reversible; the README now says
+  both, and which to use where.
+
 ## 0.13.2
 
 One opt-in flag on the engine's memory behaviour, the download's progress

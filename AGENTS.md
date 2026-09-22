@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -98,6 +98,13 @@ whether it starts and how it behaves:
 - **The token budget covers thinking too.** `finish_reason: "length"` means
   the budget ran out; the default is 8,192, and `max_tokens`,
   `max_completion_tokens` and `max_output_tokens` are the same field.
+- **`continue_final_message` resumes a truncated reply** (0.13.3). Send the
+  partial assistant turn back as the last message with
+  `continue_final_message: true` and `add_generation_prompt: false`, and
+  generation carries on from where it stopped, including inside a tool call
+  cut off by `finish_reason: "length"`; the finished call comes back with
+  the arguments you already had. Through 0.13.2 both fields were ignored
+  and the model started a fresh reply.
 - **Images are off until `HALOGEN_VISION_TOWER` is set** (`1` finds the
   sidecar beside the checkpoint). Without it an image is a 400 naming the
   flag.

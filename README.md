@@ -119,7 +119,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -130,6 +130,15 @@ your network. The `mkdir` is there because Podman refuses a bind mount
 whose source does not exist (`statfs ...: no such file or directory`) where
 Docker would create it; through 0.13.1 this block started with the
 `podman run` and failed on a fresh machine.
+
+**The tag is pinned on purpose, and `:latest` exists too.** Every release
+also publishes `ghcr.io/peonist-ai/halogen-flash-server:latest`, so
+substitute that if you would rather always get the newest build and not
+edit this line again. The Quickstart pins a version because a pinned tag is
+what makes a bug report answerable and a bad release reversible: the
+startup log and `/health` both name the version either way, but by the time
+you read a log the tag may have moved under it. Pin in anything durable, use
+`:latest` to try the newest.
 
 Note the models volume is read-**write** here, with no `:ro`, because it is
 being downloaded into. Nothing is fetched on later starts, with one
@@ -148,7 +157,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -751,7 +760,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -767,7 +776,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -783,7 +792,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -973,8 +982,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.2 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.2 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.3 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.3 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1117,7 +1126,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1289,7 +1298,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1331,7 +1340,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.2 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.3 \
   MODE [FILE] [flags]
 ```
 
@@ -1751,8 +1760,8 @@ drafter, which is the default, speculates while it is the only conversation
 generating and joins the batch as soon as another one is active, so it never
 holds the others back; prompt lookup rides with it and follows the same rule.
 
-The prompt cache keeps twenty entries (`HALOGEN_CACHE_ENTRIES`; sixteen
-before 0.12.1), five per conversation: one at the end of its system prompt,
+The prompt cache keeps twenty-four entries (`HALOGEN_CACHE_ENTRIES`;
+twenty from 0.12.1 to 0.13.2, sixteen before), six per conversation: one at the end of its system prompt,
 three at points in its history (the ends of earlier requests, and since
 0.12.1 the start of the last message, above), and since 0.11.3 one at the
 end of its last request, which serves an exact repeat of that request
@@ -1771,17 +1780,32 @@ turn hits the true history entry and stores its own beside it, and the next
 real turn hits the true one again. Conversations taking turns each resume
 from their own state, and requests that share a system prompt and ask
 different things, together or in turn, resume from it as well. More than
-four deep conversations at once wants `HALOGEN_CACHE_ENTRIES` raised to
-five per conversation (about 115 MiB of host RAM each, and the KV rows an
-entry covers stay reserved while it exists). The server prints the memory
-budget at startup and warns before the allocator refuses.
+four deep conversations at once wants `HALOGEN_CACHE_ENTRIES` raised by
+one conversation's worth for each extra one (about 115 MiB of host RAM per
+entry, and the KV rows an entry covers stay reserved while it exists); from
+0.13.3 a value too small to hold one conversation's worth per slot says so
+at startup instead of quietly costing a conversation its history. A
+**fan-out**, where one parent conversation is forked into several children
+that all live in the same region, wants `HALOGEN_CACHE_BRANCHES` raised
+instead: it is two by default, which is a conversation plus one side turn,
+and on two the parent's resume point is the one the children's stores
+replace. The server prints the memory budget at startup and warns before
+the allocator refuses.
 
 When the KV pool has no room for a new request, the server forgets the
 least recently used conversation's region and says so in the log (`kv
 pool: no room for N positions; forgot the region at ...`); the entry the
 request is about to resume from is never the one forgotten, and a
 conversation whose only stale entries are dead side turns grows its own
-region in place rather than displacing another conversation. Before 0.11.0
+region in place rather than displacing another conversation. **Through
+0.13.2 that last guarantee did not hold when conversations shared a system
+prompt** (issue #94): a conversation that had lost its own history would
+match the shared resume point at the end of the system block inside
+*another* conversation's region, and the server, which had no way to tell
+whose region it had matched in, would drop that conversation's history and
+take the space before it had considered giving up any idle space. From
+0.13.3 it gives up an idle region first and only takes a live
+conversation's as a last resort. Before 0.11.0
 the eviction order could drop the very entry the request had matched, which
 read as an unexplained cold prefill (issue #61). When nothing else is left
 to forget and the request still has no span, because the conversation's own

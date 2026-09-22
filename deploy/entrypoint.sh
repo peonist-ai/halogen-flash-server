@@ -220,7 +220,12 @@ kv_budget_note() {
   # The prompt cache (HALOGEN_PROMPT_CACHE, default on) keeps the KV in
   # place and holds ~115 MiB of O(1) state; with HALOGEN_CACHE_INPLACE=0 it
   # holds a second copy of one slot's state and the budget is kv + one slot.
-  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-20}" 'BEGIN{printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*26624/1073741824)}')
+  # 0.13.3 (public issue #94): the entry cap's DEFAULT is derived by the engine
+  # from the region shape, `slots x (1 anchor + branches x leaves per turn +
+  # 1 full)`, so this pre-flight derives the same thing rather than carrying a
+  # copy of the number. It was a hand-set 20 here and a hand-set 20 there, and
+  # a release that moved one of them would have left this line lying.
+  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-}" -v s="$ENG_SLOTS" -v br="${HALOGEN_CACHE_BRANCHES:-2}" -v s3="${HALOGEN_CACHE_SNAP3:-1}" -v fu="${HALOGEN_CACHE_FULL:-1}" 'BEGIN{if (n=="") n = s * (1 + br*((s3=="0")?1:2) + ((fu=="0")?0:1)); printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*26624/1073741824)}')
   avail_gib=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?")
   # PUBLIC ISSUE #10: WHAT THE HOST IS ALREADY CARRYING. The pool sizing reads
   # MemTotal and reserves a fixed amount for the OS plus the lookup table's
@@ -392,6 +397,34 @@ gtt_note() {
   if awk -v f="$free_gib" -v n="$need_gib" 'BEGIN{exit !(f < n)}'; then
     echo "halogen: refusing to start: ${free_gib} GiB of GTT is free and this configuration needs about ${need_gib} GiB there." >&2
     echo "  A start that cannot place its pool does not fail, it blocks inside the driver (issue #79). Free the GTT first (stop the other GPU workloads, or reboot if nothing holds it), or lower HALOGEN_KV_POOL_POSITIONS / HALOGEN_MAX_TOK to fit ${free_gib} GiB." >&2
+    # 0.13.3 (public issue #95): NAME THE CARVE-OUT HERE, where the refusal is.
+    # The engine has had this check for some time and it prints a warning with
+    # the number in it, but it runs AFTER the weights load, which is after
+    # this refusal, so the one diagnostic that explains a small GTT never
+    # ran for the operator who needed it. GTT is sized by the kernel from
+    # the memory total it sees at boot, so a firmware carve-out shrinks it
+    # before anything on the host can report the memory as missing, and the
+    # operator is told to free GTT that was never occupied. The reporter had
+    # stopped his desktop session and dropped his caches before filing.
+    local carve_b=0 carve_gib=0 memtotal_gib=0
+    for f in /sys/class/drm/card*/device/mem_info_vram_total; do
+      [ -r "$f" ] || continue
+      local v; v=$(cat "$f" 2>/dev/null || echo 0)
+      [ "${v:-0}" -gt "$carve_b" ] && carve_b=$v
+    done
+    carve_gib=$(awk -v b="$carve_b" 'BEGIN{printf "%.1f", b/1073741824}')
+    # The same test override the engine's copy of this check has taken since
+    # for the same reason: the failure needs a BIOS change to
+    # reproduce, and a warning nobody has seen fire is not a warning.
+    [ -n "${HALOGEN_UMA_CARVEOUT_GIB:-}" ] && carve_gib=$HALOGEN_UMA_CARVEOUT_GIB
+    memtotal_gib=$(awk '/MemTotal/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
+    if awk -v c="$carve_gib" 'BEGIN{exit !(c >= 8.0)}'; then
+      echo "  LIKELY CAUSE: ${carve_gib} GiB of this machine's RAM is carved out for the iGPU in firmware, and the OS reports only ${memtotal_gib} GiB as a result. GTT is sized from that smaller total, which is why only ${total_gib} GiB of it exists." >&2
+      echo "  This server does not want a carve-out at all: it drives the GPU through GTT and allocates from the same unified memory whichever way the BIOS option is left, so a large one buys it nothing and costs it the file cache the model's lookup table is read through." >&2
+      echo "  Set the UMA frame buffer size (or dedicated graphics memory) to its explicit MINIMUM rather than Auto, and start again. Measured: on a GMKtec EVO-X2, Auto took 64 GiB of a 128 GB machine and the weights could not load until it was changed." >&2
+    else
+      echo "  This host reports ${memtotal_gib} GiB of RAM in total. This server needs about 124 GiB of addressable unified memory for the checkpoint, so if that figure is far below what is physically installed, check the BIOS for an iGPU memory carve-out: it is taken before Linux boots and nothing on the host reports the memory as missing." >&2
+    fi
     exit 1
   fi
 }
