@@ -119,7 +119,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -157,7 +157,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -395,6 +395,24 @@ repeated retries." A request that sends either field still wins.
 
 If a reply looks empty or cut off, read `finish_reason` first: `"stop"` means
 you have the whole answer, `"length"` means you ran out of budget.
+
+**A quoted end-of-turn marker no longer ends the reply, since 0.13.4.** The
+tokenizer has one token for `<|im_end|>`, so a model that writes or reads a
+ChatML chat template in its reasoning writes the real end-of-turn token, and
+through 0.13.3 the reply ended right there: `finish_reason: "stop"`, no
+content and no tool call, on 15-25% of one agent's turns (#84). Inside the
+thinking block that token is now kept as text and generation goes on;
+inside an open tool call it is kept up to four times a reply (a template
+written through a file-writing tool). The other half of the same report is
+a model that writes a complete tool call inside its thinking block and then
+ends its turn on it: that call is now made, with `finish_reason:
+"tool_calls"`, and its text also stays in `reasoning_content`, where it was
+streamed. A kept `<|im_end|>` and a quoted `<|im_start|>` appear in the text
+literally (they used to vanish, so a quoted template came back with empty
+spans). `usage.completion_tokens_details` carries `end_of_turn_kept` and
+`tool_call_from_reasoning` when either happened, the request line in the log
+says `end of turn kept as text`, and `HALOGEN_EOS_GUARD=0` restores 0.13.3's
+behaviour. An end-of-turn token in the answer itself still ends the reply.
 
 ### Codex and the Responses API
 
@@ -760,7 +778,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -776,7 +794,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -792,7 +810,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -982,8 +1000,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.3 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.3 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.4 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.4 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1126,7 +1144,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1298,7 +1316,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1340,7 +1358,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4 \
   MODE [FILE] [flags]
 ```
 

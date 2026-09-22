@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.4
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -105,6 +105,15 @@ whether it starts and how it behaves:
   cut off by `finish_reason: "length"`; the finished call comes back with
   the arguments you already had. Through 0.13.2 both fields were ignored
   and the model started a fresh reply.
+- **A quoted `<|im_end|>` inside the thinking block no longer ends the
+  reply** (0.13.4, #84). It is kept as text (and inside an open tool call
+  up to four times), and a complete tool call the model wrote inside its
+  thinking block and then ended its turn on is made (`finish_reason:
+  "tool_calls"`, the text also in `reasoning_content`). Both show in
+  `usage.completion_tokens_details` (`end_of_turn_kept`,
+  `tool_call_from_reasoning`); `HALOGEN_EOS_GUARD=0` is the 0.13.3
+  behaviour. Through 0.13.3 either case came back as `finish_reason:
+  "stop"` with nothing in `content` and no tool call.
 - **Images are off until `HALOGEN_VISION_TOWER` is set** (`1` finds the
   sidecar beside the checkpoint). Without it an image is a 400 naming the
   flag.

@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.13.4
+
+One defect, the largest open one in the tracker: agent turns that came back
+empty. No weight change, no kernel change, and nothing in the engine's
+arithmetic: a reply is identical to 0.13.3's up to the token where 0.13.3
+would have ended it. For the report behind it: issue #84
+([@rba](https://github.com/rba)), whose reproduction bundle and his own
+count of 30 failures by shape made this a direct fix.
+
+### Fixed
+
+- **An agent turn could end with nothing in it.** 15-25% of one agent's
+  turns came back `finish_reason: "stop"` with no content, no tool call and
+  every generated token in `reasoning_content`. The tokenizer has a single
+  token for `<|im_end|>`, the marker that ends a turn, so when the model
+  quoted a ChatML chat template in its reasoning (the session was writing
+  one) it wrote the real end-of-turn token and the server ended the reply
+  mid-sentence. The quoted `<|im_start|>` beside it was dropped from the
+  text too, which is why the cut read like plain truncation. Inside the
+  thinking block that token is now kept as text and generation goes on,
+  and inside an open tool call it is kept up to four times a reply, so a
+  template written through a file-writing tool is written whole. The
+  second half of the same report: nearly half of the reporter's failures
+  were a model that wrote a complete tool call **inside** its thinking
+  block and then ended its turn on it, so the call sat in
+  `reasoning_content` and the client had nothing to run. That call is now
+  made (`finish_reason: "tool_calls"`); its text also stays in the
+  reasoning, where it had already been streamed. Measured here on the
+  reporter's public request, 40 seeds at the card's sampling: 8 empty
+  replies on 0.13.3 (4 of each kind), 0 on this release, every one of the
+  8 now a tool call, and none of the 32 that already answered came back
+  empty. A kept `<|im_end|>` and a quoted
+  `<|im_start|>` appear in the text literally.
+  `usage.completion_tokens_details` carries `end_of_turn_kept` and
+  `tool_call_from_reasoning` when either happened, the log's request line
+  says `end of turn kept as text`, `/health.end_of_turn_guard` says whether
+  it is on, and `HALOGEN_EOS_GUARD=0` restores 0.13.3's behaviour. An
+  end-of-turn token in the answer itself still ends the reply, so #89 (the
+  checkpoint ending turns mid-prose at very long context) is a separate
+  issue and stays open.
+
 ## 0.13.3
 
 A prompt-cache regression that cost a busy server whole conversations, a
