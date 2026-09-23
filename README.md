@@ -140,13 +140,17 @@ Docker would create it; through 0.13.1 this block started with the
 `podman run` and failed on a fresh machine.
 
 **The tag is pinned on purpose, and `:latest` exists too.** Every release
-also publishes `ghcr.io/peonist-ai/halogen-flash-server:latest`, so
-substitute that if you would rather always get the newest build and not
-edit this line again. The Quickstart pins a version because a pinned tag is
-what makes a bug report answerable and a bad release reversible: the
-startup log and `/health` both name the version either way, but by the time
-you read a log the tag may have moved under it. Pin in anything durable, use
-`:latest` to try the newest.
+also publishes `ghcr.io/peonist-ai/halogen-flash-server:latest`. A `run`
+does not ask the registry about a tag your machine already has, so a local
+`:latest` stays whatever it was on the day you first pulled it (Podman and
+Docker both behave this way). Add `--pull=always` to the `run` line to
+fetch the newest build on every start, or update by hand with
+`podman pull ghcr.io/peonist-ai/halogen-flash-server:latest`. The
+Quickstart pins a version because a pinned tag is what makes a bug report
+answerable and a bad release reversible: the startup log and `/health` both
+name the version either way, but by the time you read a log the tag may
+have moved under it. Pin in anything durable, use `:latest` to try the
+newest.
 
 Note the models volume is read-**write** here, with no `:ro`, because it is
 being downloaded into. Nothing is fetched on later starts, with one
