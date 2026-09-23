@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.5
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.6
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is

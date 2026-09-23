@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.13.6
+
+One serving fix from a report. No weight change, no kernel change, nothing
+in the engine's numerics. For the report behind it: issue #89
+([@loonylabs-dev](https://github.com/loonylabs-dev)).
+
+### Fixed
+
+- **`/v1/chat/completions` could stop after announcing a step, with no
+  tool call, deep into a long agent session.** Some clients send a turn's
+  text and its tool calls as two assistant messages, the text first and
+  then a message with only the calls. The server rendered those as two
+  turns, the first one closed right after "Now the changes to the command
+  itself:", so a long history taught the model that an announcement ends a
+  turn, and it copied that more often the longer the session ran. It is
+  the same defect 0.13.5 fixed on `/v1/responses`, whose note said Chat
+  Completions clients were not affected: that held only for clients that
+  send each turn as one message. Consecutive assistant messages are now one
+  turn on both routes. Measured on one of our own agent sessions past 100k
+  tokens, sent with the history split that way, resuming each of 14
+  announcements 10 times at temperature 1.0: 85 of 140 ended the turn after
+  the colon on 0.13.5, and 0 of 140 on this release. The bare checkpoint
+  does it as much as the default with the quality sidecar, so switching the
+  sidecar off does not avoid it.
+
 ## 0.13.5
 
 Two serving defects from reports, three fixes to the checkpoint tools, and
