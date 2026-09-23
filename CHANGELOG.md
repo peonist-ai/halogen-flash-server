@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.13.7
+
+One tool-calling fix from a report. No weight change, no kernel change,
+nothing in the engine's numerics. For the report behind it: issue #101
+([@fLiPs-fly](https://github.com/fLiPs-fly)).
+
+### Fixed
+
+- **A whole-number argument to a `"number"` parameter went out as a
+  float.** The model writes tool arguments as plain text and the server
+  turns each into JSON by the parameter's declared type. For `"number"` it
+  always made a float, so `30000` reached the client as `30000.0`. Clients
+  that read such a parameter into an integer type reject that: Codex CLI
+  answered "invalid type: floating point `30000.0`, expected usize", and
+  the model retried the same call: 515 rejected calls in the reporter's
+  session. A whole number now stays a whole number, and a value written
+  with a decimal point or an exponent keeps it. This holds on
+  `/v1/chat/completions` and `/v1/responses`, streamed or not.
+- **`nan` or `inf` in a numeric argument produced invalid JSON.** They were
+  written as `NaN` and `Infinity`, which JSON does not have, so a strict
+  client rejected the whole call. They now arrive as the text the model
+  wrote, which the client's own checks can name.
+- **`7.0` for an `"integer"` parameter went out as `7.0`.** It now goes out
+  as `7`.
+
 ## 0.13.6
 
 One serving fix from a report. No weight change, no kernel change, nothing
