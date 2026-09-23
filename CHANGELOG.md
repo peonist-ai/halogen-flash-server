@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.13.5
+
+Two serving defects from reports, three fixes to the checkpoint tools, and
+a Quickstart note. No weight change, no kernel change, nothing in the
+engine's numerics. For the reports behind it: issue #99
+([@smazurov](https://github.com/smazurov)), #97
+([@loonylabs-dev](https://github.com/loonylabs-dev)) and #95
+([@jarekjaryszew](https://github.com/jarekjaryszew)).
+
+### Fixed
+
+- **`/v1/responses` could stop after announcing a step, with no tool
+  call.** A Responses client sends a turn's progress text and its function
+  call as separate items. The server replayed them as two assistant turns,
+  the first one closed right after the text, so a long history taught the
+  model that "Reading `report.py` now." ends a turn, and it copied that.
+  A turn's text and all of its calls are now one assistant turn, exactly
+  as the same history renders on `/v1/chat/completions`. On the reporter's
+  request: 0 of 3 runs made the call on 0.13.4, 3 of 3 on this release.
+  Chat Completions clients were not affected.
+- **The prompt cache could forget a live conversation to keep a request's
+  own stale entries.** When a conversation asks a new question behind the
+  same document (a harness's side query does this), its resume point is
+  an earlier entry, and the entries of its previous turn sit past it in
+  the same memory. Since 0.13.3 the server would not drop those entries
+  under pressure (the #94 fix, where such entries are another
+  conversation's live history), and it could not move neighbours to make
+  room either, so it forgot the least recently used conversation instead,
+  a 192k one in the report, and each of those forgets the next. Those
+  entries now go first when they are older than that conversation and
+  cheaper to lose than it is to rebuild, and then the no-loss moves apply.
+  #94's case is unchanged: a conversation still being served is newer than
+  any idle one. Measured here on the previous release with three live
+  conversations beside one asking a new question each turn: 12 regions
+  forgotten and every live one cold from the second question; on this
+  release none. The engine log says `forgot the N entries longer than the
+  hit` when it happens.
+- **`ppl` exited 1 without a checkpoint's tuning plan.** Under
+  `-e HALOGEN_MATMUL_TUNING_FILE=` (the no-plan option) a line reached
+  standard output ahead of the JSON. It now exits 0 and `--json` parses.
+- **`ppl --out` wrote nothing.** The per-position NLL file was never handed
+  to the engine. It is now, and it matches the `--ref-out` dump of the same
+  run position by position.
+- **`HALOGEN_BF16_OVERRIDE` engaged silently.** Startup now prints how many
+  tensors it replaced and how many GiB, or that the pattern matched none.
+
+### Documentation
+
+- **The Quickstart starts with the BIOS carve-out.** Set the UMA frame
+  buffer to its explicit minimum, not Auto (#95).
+
 ## 0.13.4
 
 One defect, the largest open one in the tracker: agent turns that came back
