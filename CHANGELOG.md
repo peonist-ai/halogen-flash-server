@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.13.8
+
+One addition from a request. No weight change, and nothing changes for a
+request that does not ask for it. For the request behind it: issue #100
+([@felladrin](https://github.com/felladrin)).
+
+### Added
+
+- **Logprobs at temperature 0, and `top_logprobs`, on the first generated
+  token.** A classifier reads the next-token distribution over a few labels
+  from one forward pass. `logprobs: true` now works at `temperature: 0`, and
+  `top_logprobs` (1 to 20, at any temperature) lists the most likely
+  alternatives, both for the first generated token, so such a request sets
+  `max_tokens: 1`. A request that would need them past the first token is
+  refused with a 400 that says so. A sampled request without `top_logprobs`
+  still carries the chosen token's logprob on every token, as before. On
+  `/v1/chat/completions` and `/v1/completions`, not streamed. The README's
+  Sampling section shows the request shape, with an answer prefix continued
+  by `continue_final_message`.
+- **Each logprob entry names its token.** `token` and `bytes` were `null`;
+  they now carry the token's text and bytes.
+
+### Documentation
+
+- **`:latest` on a machine that already has it.** `run` never refreshes a
+  local tag, so a copy pulled months ago keeps starting. The README now says
+  so and shows `--pull=always` and `podman pull`. Reported in #102
+  ([@mqtt-fan](https://github.com/mqtt-fan)).
+
 ## 0.13.7
 
 One tool-calling fix from a report. No weight change, no kernel change,

@@ -127,7 +127,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -169,7 +169,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -203,9 +203,26 @@ and the tool-call wire format. What follows is the part worth reading first.
 supported. `temperature` absent or 0 is greedy decode. Above 0, the request
 samples from the filtered distribution on the same drafter it would otherwise
 get, so speculation stays on. A `seed` reproduces a request on the same server
-configuration. `top_logprobs`, `logprobs` with `stream: true` and `n > 1` are
-not implemented and are refused with a 400, as is any value outside its defined
-range, rather than clamped. `/health` lists what the running build supports.
+configuration. A sampled request (temperature above 0) with `logprobs: true`
+carries the chosen token's logprob on every token. For scoring, `logprobs` at
+`temperature: 0` and `top_logprobs` (1 to 20, at any temperature) cover the
+first generated token, so those requests set `max_tokens: 1`. `logprobs` with
+`stream: true`, logprobs past the first token at temperature 0, and `n > 1`
+are not implemented and are refused with a 400, as is any value outside its
+defined range, rather than clamped. `/health` lists what the running build
+supports.
+
+**Reading a label's probability** (0.13.8, #100). A classifier reads the
+next-token distribution over a few labels from one forward pass. End the
+messages with the assistant's answer prefix, for example `{"answer": "`, and
+send `continue_final_message: true`, `add_generation_prompt: false`,
+`max_tokens: 1`, `temperature: 0`, `logprobs: true` and `top_logprobs: 20`.
+Each `top_logprobs` entry names a token, its logprob and its bytes. Without
+`continue_final_message` the server opens a new turn after the prefix, and with
+thinking on, the first token is then the start of the reasoning rather than a
+label. With thinking off (`chat_template_kwargs: {"enable_thinking": false}`)
+a request without a prefix scores the label too. The probabilities are the
+model's own and are not calibrated.
 
 **Server-side defaults, and the model card's settings.** This image decodes
 greedy unless a request says otherwise, because greedy is what every
@@ -790,7 +807,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -806,7 +823,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -822,7 +839,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -1012,8 +1029,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.7 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.7 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.8 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.8 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1156,7 +1173,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1328,7 +1345,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1370,7 +1387,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8 \
   MODE [FILE] [flags]
 ```
 

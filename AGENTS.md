@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -105,6 +105,12 @@ whether it starts and how it behaves:
   cut off by `finish_reason: "length"`; the finished call comes back with
   the arguments you already had. Through 0.13.2 both fields were ignored
   and the model started a fresh reply.
+- **Scoring a label takes one forward pass** (0.13.8, #100). Send the answer
+  prefix as the last assistant message with `continue_final_message: true`,
+  `add_generation_prompt: false`, `max_tokens: 1`, `temperature: 0`,
+  `logprobs: true` and `top_logprobs` (up to 20). `logprobs` at temperature 0
+  and `top_logprobs` cover the first generated token only; a request that
+  would need more is a 400.
 - **A quoted `<|im_end|>` inside the thinking block no longer ends the
   reply** (0.13.4, #84). It is kept as text (and inside an open tool call
   up to four times), and a complete tool call the model wrote inside its
