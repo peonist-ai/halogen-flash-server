@@ -18,7 +18,7 @@ silicon.
 | prefill, 32,768-token prompt | **1,424 tok/s** (23.0 s) |
 | prefill, 131,072-token prompt | **1,358 tok/s** (96.5 s) |
 | follow-up turn at 100,000 tokens of context | **~2 s** (prompt cache, on by default) |
-| decode, served with the draft head, at 32,768 tokens of context | **41.7 tok/s** |
+| decode, served with the draft head, at 32,768 tokens of context | **46.0 tok/s** |
 | decode, coding-agent turn, draft head + prompt lookup | **55.7 to 56.3 tok/s** |
 | decode, serial greedy, at 1,500 / 32,768 tokens of context | **37.6 / 34.1 tok/s** |
 
@@ -112,7 +112,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -154,7 +154,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -796,7 +796,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -812,7 +812,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -828,7 +828,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -912,7 +912,7 @@ with byte-identical results.
 | decode, serial greedy @ ctx 8,000 | **36.1 tok/s** |
 | decode, serial greedy @ ctx 32,768 | **34.1 tok/s** |
 | decode, MTP speculation @ ctx 1,500 | **44.8 tok/s** prose, **49.9 tok/s** code (0.6.0 sidecar; 42.4 / 48.3 with the 0.5.x sidecar) |
-| decode, MTP speculation @ ctx 32,768, served | **41.7 tok/s** mean over ten prompts |
+| decode, MTP speculation @ ctx 32,768, served (0.14.0) | **46.0 tok/s** mean over ten prompts (39.9 on 0.13.8 in the same session) |
 | prefill @ 258,794, served, 1M configuration (0.12.0) | **1,114 tok/s** (232 s; 1,086 on 0.11.10) |
 | prefill @ 1,004,581, served, 1M configuration (0.12.0) | **937 tok/s** (17.9 min; 790 and 21.2 min on 0.11.10) |
 | decode, MTP speculation @ ctx 258,794, served, cold (0.12.0) | **45.0 tok/s** (42.9 on 0.11.10) |
@@ -974,11 +974,12 @@ Two levers move these and both are one environment variable:
 The prefill numbers above are the engine's own prefill bench. Through the full
 stack of chat template, tokenizer, HTTP and SSE, the image's own `sweep` mode
 measures **812 tok/s at pp2048 and 1,041 at pp8192**, and `bench` over ten real prompt
-shapes measures **45.3 tok/s mean with speculation** on the 0.6.0 image with
-its sidecar (min 39.5 on chat, max 49.4 on procedural text; 1.63 tokens
-committed per round; the 0.3.0 image read 43.6 on the same instrument, and
-the difference is the draft head's 8-bit projections: these short prompts
-give prompt lookup one to eight rounds a case).
+shapes measures **52.3 tok/s mean with speculation** on the 0.14.0 image
+(min 44.5 on chat, max 58.4 on code; 2.47 tokens committed per round). 0.13.8
+read 44.4 on the same instrument in the same session (1.68 a round); the
+difference is the draft head's wiring, which since 0.14.0 reads the model's
+four residual streams as the reference implementation does and drafts two
+tokens ahead.
 Acceptance depends on how predictable the text is, so quote the mean with the
 prompt set named, never a single shape.
 
@@ -988,8 +989,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.8 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.13.8 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.0 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.0 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1132,7 +1133,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1295,7 +1296,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1337,7 +1338,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.13.8 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.0 \
   MODE [FILE] [flags]
 ```
 

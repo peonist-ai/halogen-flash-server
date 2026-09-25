@@ -130,6 +130,12 @@ BIND="${HALOGEN_BIND:-127.0.0.1}"
 # troubleshooting, which is the only time anyone wants it.
 export HALOGEN_VERBOSE="${HALOGEN_VERBOSE:-0}"
 
+# The checkpoint: HALOGEN_CHECKPOINT set, to anything, wins. The image sets
+# the 4-bit checkpoint; this fallback is the same file, for a caller that
+# unsets the variable.
+: "${HALOGEN_CHECKPOINT:=/models/qwen38-flash-next-w4b.hgn}"
+export HALOGEN_CHECKPOINT
+
 ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
 # 0.3: THE POOL IS SIZED SEPARATELY FROM THE CONTEXT. HALOGEN_KV_POOL_POSITIONS
@@ -247,7 +253,9 @@ kv_budget_note() {
   # is the same header, read here so the warning below can fire before the
   # engine spends 30 s repacking into a start that will refuse.
   local wt="68 GiB" w_gib=68 ft=""
-  if is_gguf; then
+  if ckpt_facts; then
+    wt="${CK_RES_GIB} GiB (read from the checkpoint)"; w_gib=$CK_RES_GIB
+  elif is_gguf; then
     ft=$(gguf_file_type "$HALOGEN_CHECKPOINT")
     case "$ft" in
       15) wt="80 GiB (a K-quant GGUF trunk, file type 15, repacked into RAM)"; w_gib=80 ;;
@@ -423,11 +431,157 @@ gtt_note() {
       echo "  This server does not want a carve-out at all: it drives the GPU through GTT and allocates from the same unified memory whichever way the BIOS option is left, so a large one buys it nothing and costs it the file cache the model's lookup table is read through." >&2
       echo "  Set the UMA frame buffer size (or dedicated graphics memory) to its explicit MINIMUM rather than Auto, and start again. Measured: on a GMKtec EVO-X2, Auto took 64 GiB of a 128 GB machine and the weights could not load until it was changed." >&2
     else
-      echo "  This host reports ${memtotal_gib} GiB of RAM in total. This server needs about 124 GiB of addressable unified memory for the checkpoint, so if that figure is far below what is physically installed, check the BIOS for an iGPU memory carve-out: it is taken before Linux boots and nothing on the host reports the memory as missing." >&2
+      # the weights (the checkpoint's own figure when readable, else 68) +
+      # the pool and prefill arena this start asks for (need_gib above) + the
+      # fixed working memory (4.6) + the engine's 16 GiB pin floor
+      local w=68 hint_gib
+      ckpt_facts && w=$CK_RES_GIB
+      hint_gib=$(awk -v w="$w" -v n="$need_gib" 'BEGIN{printf "%.0f", w + n + 4.6 + 16}')
+      echo "  This host reports ${memtotal_gib} GiB of RAM in total. This server needs about ${hint_gib} GiB of addressable unified memory for the checkpoint, so if that figure is far below what is physically installed, check the BIOS for an iGPU memory carve-out: it is taken before Linux boots and nothing on the host reports the memory as missing." >&2
     fi
     exit 1
   fi
 }
+
+# CHECK THE HOST BEFORE ANYTHING IS DOWNLOADED OR LOADED (public issues #27,
+# #95, #46, #19).
+#
+# A host that cannot run this server used to find out when the engine
+# started, which on a first run is after the whole weights download. These
+# are the failures that happen every time and are cheap to see from inside
+# the container: the GPU not passed in (or WSL2's /dev/dxg where /dev/kfd
+# should be, which is not a supported host), and a GPU that is not gfx1151.
+# Each of those refuses, with the fix. What might still work (a device this
+# user may not be able to open, a missing render node) is a warning, because
+# a false refusal is worse than the engine's own error. A container that
+# cannot read the KFD topology is not refused on the architecture: only a
+# topology that lists GPUs and no gfx1151 is. `_hg_sys` and `_hg_dev` are
+# test roots, as in gtt_note.
+host_preflight() {
+  local sys="${_hg_sys:-/sys}" dev="${_hg_dev:-/dev}" bad=0 p v gpus="" found=0
+  if [ ! -e "$dev/kfd" ]; then
+    if [ -e "$dev/dxg" ]; then
+      echo "halogen: this looks like WSL2: /dev/dxg is here and /dev/kfd is not. WSL2 is not a supported host for this server; run it on Linux on the machine itself." >&2
+    else
+      echo "halogen: there is no /dev/kfd in this container, so the GPU was not passed in." >&2
+      echo "  Add  --device /dev/kfd --device /dev/dri  and, with podman, --group-add keep-groups (with docker: --group-add video --group-add render)." >&2
+    fi
+    bad=1
+  elif [ ! -r "$dev/kfd" ] || [ ! -w "$dev/kfd" ]; then
+    echo "halogen: WARNING /dev/kfd is here but this user may not be able to open it. If the engine cannot find the GPU, check the group mapping: --group-add keep-groups with podman, --group-add video --group-add render with docker." >&2
+  fi
+  if [ "$bad" = 0 ] && ! ls "$dev"/dri/renderD* >/dev/null 2>&1; then
+    echo "halogen: WARNING there is no render node under /dev/dri in this container; pass --device /dev/dri as well as /dev/kfd." >&2
+  fi
+  for p in "$sys"/class/kfd/kfd/topology/nodes/*/properties; do
+    [ -r "$p" ] || continue
+    v=$(awk '$1 == "gfx_target_version" {print $2; exit}' "$p" 2>/dev/null)
+    case "$v" in ""|0) continue ;; esac        # a CPU node reports 0
+    gpus="$gpus $v"
+    [ "$v" = "110501" ] && found=1
+  done
+  if [ -n "$gpus" ] && [ "$found" = 0 ]; then
+    echo "halogen: the GPU here is not a Strix Halo (gfx1151): the kernel reports gfx_target_version$gpus, and this server is built for gfx1151 (110501) only." >&2
+    bad=1
+  fi
+  return "$bad"
+}
+
+# THE DOWNLOAD'S SIZE, so a download that cannot fit refuses before its
+# first byte instead of failing near its end. NEED_BYTES is what the files
+# still to fetch weigh on the Hub (download_plan_bytes); the client's partial
+# files from an interrupted run are already on the disk and count as room.
+download_room_check() {   # download_room_check DIR NEED_BYTES
+  local need_k free_k have_k
+  need_k=$(( (${2:-0} + 1023) / 1024 ))
+  [ "$need_k" -gt 0 ] || return 0
+  free_k=$(df -Pk "$1" 2>/dev/null | awk 'NR == 2 {print $4}')
+  [ -n "$free_k" ] || return 0
+  have_k=$(du -sk "$1"/.cache/huggingface 2>/dev/null | awk '{s += $1} END {print s + 0}')
+  if [ $((free_k + have_k)) -lt "$need_k" ]; then
+    echo "halogen: $1 has $(awk -v k="$free_k" 'BEGIN{printf "%.1f", k/1048576}') GiB free and the download needs about $(awk -v k="$((need_k - have_k))" 'BEGIN{printf "%.1f", k/1048576}') GiB more. Nothing was downloaded." >&2
+    echo "  Free space on the models volume, or mount a larger one, and start again." >&2
+    return 1
+  fi
+  return 0
+}
+
+# THE REPO'S FILES AND THEIR SIZES, "path bytes" a line, from the Hub's own
+# listing (one metadata request). Nothing on any failure: the callers then
+# fetch by the names this image knows and skip the room check.
+hub_list() {   # hub_list REPO
+  local to=""; command -v timeout > /dev/null 2>&1 && to="timeout 60"
+  HF_HUB_OFFLINE=0 HF_HUB_DISABLE_TELEMETRY=1 $to python3 - "$1" 2>/dev/null <<'PY' || true
+import sys
+try:
+    from huggingface_hub import HfApi
+    for f in HfApi().list_repo_tree(sys.argv[1], recursive=True):
+        size = getattr(f, "size", None)
+        if size is not None:
+            print(f.path, size)
+except Exception:
+    pass
+PY
+}
+
+tokenizer_present() {
+  [ -f "$(dirname "$HALOGEN_CHECKPOINT")/tokenizer/tokenizer.json" ] || [ -f "${HALOGEN_TOKENIZER:-/tokenizer}/tokenizer.json" ]
+}
+
+# What a checkpoint on the disk still lacks from the repo, by name, no request
+# made: w4b's quality sidecar; the lookup table's own file for a checkpoint
+# that does not carry it (unless HALOGEN_NGRAM_TABLE points elsewhere).
+companions_missing() {
+  local dir base; dir="$(dirname "$HALOGEN_CHECKPOINT")"; base="$(basename "$HALOGEN_CHECKPOINT")"
+  if [ "$base" = "qwen38-flash-next-w4b.hgn" ]; then
+    [ -f "$dir/${base%.hgn}.overlay.hgn" ] || echo "${base%.hgn}.overlay.hgn"
+  elif [ -z "${HALOGEN_NGRAM_TABLE:-}" ] && ckpt_facts && [ "$CK_HAS_TABLE" = "0" ]; then
+    [ -f "$dir/$NGRAM_TABLE_NAME" ] || echo "$NGRAM_TABLE_NAME"
+  fi
+  return 0
+}
+
+# 0.14: WHAT A DOWNLOAD FETCHES is the chosen checkpoint and what it needs,
+# never the whole repo (it holds more than one checkpoint needs): the
+# checkpoint; its quality sidecar when
+# the repo has one (w4b's); the lookup table's own file for a checkpoint that
+# does not carry it (every one but w4b); the vision tower (0.84 GiB, so
+# HALOGEN_VISION_TOWER=1 works without a second download). The tokenizer is
+# fetched beside them by its folder.
+download_plan() {   # download_plan LISTING -> repo paths, one a line
+  local base side listing="$1"
+  base="$(basename "$HALOGEN_CHECKPOINT")"
+  side="${base%.hgn}.overlay.hgn"
+  echo "$base"
+  if [ -n "$listing" ]; then
+    printf '%s\n' "$listing" | awk -v s="$side" '$1 == s {print $1}'
+    [ "$base" = "qwen38-flash-next-w4b.hgn" ] || [ -n "${HALOGEN_NGRAM_TABLE:-}" ] \
+      || printf '%s\n' "$listing" | awk -v t="$NGRAM_TABLE_NAME" '$1 == t {print $1}'
+    printf '%s\n' "$listing" | awk '$1 == "qwen38-flash-next-vision.hgn" {print $1}'
+  else
+    if [ "$base" = "qwen38-flash-next-w4b.hgn" ]; then echo "$side"
+    elif [ -z "${HALOGEN_NGRAM_TABLE:-}" ]; then echo "$NGRAM_TABLE_NAME"; fi
+    echo "qwen38-flash-next-vision.hgn"
+  fi
+}
+
+# The bytes still to fetch: every planned file (and the tokenizer's when
+# TOK is 1), less the ones already on the disk at their full size. (The plan
+# goes to awk on one line: an awk -v value may not hold a newline, and BSD
+# awk refuses one.)
+download_plan_bytes() {   # download_plan_bytes LISTING DIR PLAN TOK
+  printf '%s\n' "$1" | awk -v dir="$2" -v plan="$(printf '%s ' $3)" -v tok="${4:-1}" '
+    BEGIN { n = split(plan, p, " "); for (i = 1; i <= n; i++) want[p[i]] = 1 }
+    ($1 in want) || (tok == 1 && $1 ~ /^tokenizer\//) {
+      f = dir "/" $1; have = -1
+      cmd = "stat -c %s \"" f "\" 2>/dev/null || stat -f %z \"" f "\" 2>/dev/null"
+      if ((cmd | getline have) <= 0) have = -1
+      close(cmd)
+      if (have + 0 != $2 + 0) s += $2
+    }
+    END { printf "%.0f\n", s + 0 }'
+}
+
 
 # OPTIONAL model download. OFF unless HALOGEN_DOWNLOAD names a repo.
 #
@@ -441,27 +595,64 @@ gtt_note() {
 # interrupted pull continues rather than starting over.
 maybe_download() {
   [ -n "${HALOGEN_DOWNLOAD:-}" ] || return 0
-  [ -f "$HALOGEN_CHECKPOINT" ] && return 0
-  # 0.7.0: a GGUF is the user's file (unsloth's, or their own llama-quantize);
-  # the weights repo does not carry one and this must not fetch 115 GiB of the
-  # engine's checkpoint in its place.
-  if is_gguf_path; then
-    echo "halogen: $HALOGEN_CHECKPOINT is a GGUF and is not there; GGUF files are not downloaded by this image." >&2
-    echo "  Put the file (every shard of a split) in the models volume and point HALOGEN_CHECKPOINT at any shard." >&2
-    exit 1
+  # 0.14: per file, never the whole repo. A checkpoint on the disk is never
+  # fetched again: only what it lacks (its sidecar or table, the tokenizer
+  # when no other one is mounted) is, and only on a writable volume; a
+  # read-only one starts as before (the checks below say what is missing),
+  # and a restart with everything present makes no request.
+  local dir base files="" tok=0 fresh=0
+  dir="$(dirname "$HALOGEN_CHECKPOINT")"; base="$(basename "$HALOGEN_CHECKPOINT")"
+  if [ -f "$HALOGEN_CHECKPOINT" ]; then
+    is_gguf && return 0
+    files=$(companions_missing)
+    tokenizer_present || tok=1
+    { [ -n "$files" ] || [ "$tok" = 1 ]; } && [ -w "$dir" ] || return 0
+  else
+    # 0.7.0: a GGUF is the user's file (unsloth's, or their own
+    # llama-quantize); the weights repo does not carry one and this must not
+    # fetch the engine's checkpoint in its place.
+    if is_gguf_path; then
+      echo "halogen: $HALOGEN_CHECKPOINT is a GGUF and is not there; GGUF files are not downloaded by this image." >&2
+      echo "  Put the file (every shard of a split) in the models volume and point HALOGEN_CHECKPOINT at any shard." >&2
+      exit 1
+    fi
+    if [ ! -w "$dir" ]; then
+      echo "halogen: HALOGEN_DOWNLOAD is set but $dir is not writable." >&2
+      echo "  The models volume must be read-WRITE to download into it." >&2
+      echo "  Mount it as -v <path>:/models  (drop the :ro)." >&2
+      exit 1
+    fi
+    fresh=1
+    tokenizer_present || tok=1
+  fi
+  local listing plan f need=""
+  listing=$("${_hg_hub_list:-hub_list}" "$HALOGEN_DOWNLOAD") || listing=""
+  if [ "$fresh" = 1 ]; then
+    if [ -n "$listing" ] && ! printf '%s\n' "$listing" | awk -v b="$base" '$1 == b {f = 1} END {exit !f}'; then
+      echo "halogen: $HALOGEN_DOWNLOAD has no $base. The checkpoints it holds:" >&2
+      printf '%s\n' "$listing" | awk '$1 ~ /\.hgn$/ && $1 !~ /overlay|vision|mtp|ngram/ {printf "  /models/%s\n", $1}' >&2
+      echo "  Point HALOGEN_CHECKPOINT at one of them." >&2
+      exit 1
+    fi
+    # the plan less what the volume already holds (a shared lookup table,
+    # the tower)
+    for f in $(download_plan "$listing"); do [ -e "$dir/$f" ] || files="$files $f"; done
+  fi
+  plan=$(printf '%s\n' $files)
+  if [ -n "$listing" ]; then
+    need=$(download_plan_bytes "$listing" "$dir" "$plan" "$tok")
+    case "$need" in
+      ""|*[!0-9]*)
+        echo "halogen: WARNING: could not size this download, so the free space on $dir is not checked first." >&2
+        need="" ;;
+      *) download_room_check "$dir" "$need" || exit 1 ;;
+    esac
+  else
+    echo "halogen: the Hub did not list $HALOGEN_DOWNLOAD's files, so the free space on $dir is not checked first." >&2
   fi
 
-  local dir; dir="$(dirname "$HALOGEN_CHECKPOINT")"
-  if [ ! -w "$dir" ]; then
-    echo "halogen: HALOGEN_DOWNLOAD is set but $dir is not writable." >&2
-    echo "  The models volume must be read-WRITE to download into it." >&2
-    echo "  Mount it as -v <path>:/models  (drop the :ro)." >&2
-    exit 1
-  fi
-
-  echo "halogen: $HALOGEN_CHECKPOINT not found."
-  echo "halogen: downloading from $HALOGEN_DOWNLOAD into $dir"
-  echo "         this is tens of GB and will take a while; it resumes if interrupted."
+  echo "halogen: downloading from $HALOGEN_DOWNLOAD into $dir:$(printf ' %s' $plan)$([ "$tok" = 1 ] && echo ' and the tokenizer')${need:+ ($(awk -v b="$need" 'BEGIN{printf "%.1f", b/1073741824}') GiB to fetch)}"
+  [ "$fresh" = 1 ] && echo "         this is tens of GB and will take a while; it resumes if interrupted."
   # HF_HUB_OFFLINE=1 is baked into the image and MUST stay set for serving --
   # it is what stops the front-end reaching for a tokenizer at request time.
   # Override it for this command only. Without this the download fails even
@@ -475,23 +666,35 @@ maybe_download() {
   # lock-wait chatter and the anonymous-request warning are dropped from
   # stderr on the way through; the exit status is the command's own.
   local t0 b0 rep
-  t0=$(date +%s); b0=$(du -sb "$dir" 2>/dev/null | cut -f1); b0=${b0:-0}
-  ( while sleep 30; do
+  t0=$(date +%s); b0=$(du -sb "$dir" 2>/dev/null | cut -f1) || b0=0; b0=${b0:-0}
+  # (its sleep runs in the background and is killed with it, so stopping the
+  # reporter leaves no process holding the log open for up to 30 s)
+  ( s=""; trap '[ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep 30 & s=$!; wait "$s"
       local b now
-      b=$(du -sb "$dir" 2>/dev/null | cut -f1); b=${b:-0}; now=$(date +%s)
+      b=$(du -sb "$dir" 2>/dev/null | cut -f1) || b=0; b=${b:-0}; now=$(date +%s)
       printf 'halogen: downloaded %.1f GB so far (%.0f MB/s average over %d s)\n' \
         "$(( b - b0 ))e-9" "$(( (b - b0) / (now - t0 + 1) ))e-6" "$(( now - t0 ))" 2>/dev/null || true
     done ) &
   rep=$!
-  if ! HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
-       hf download "$HALOGEN_DOWNLOAD" --local-dir "$dir" \
+  # the files by name, then the tokenizer's folder (one call cannot take both)
+  # shellcheck disable=SC2086
+  if ! { { [ -z "$plan" ] || HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
+             "${_hg_hf:-hf}" download "$HALOGEN_DOWNLOAD" $plan --local-dir "$dir"; } \
+         && { [ "$tok" != 1 ] || HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
+             "${_hg_hf:-hf}" download "$HALOGEN_DOWNLOAD" --include "tokenizer/*" --local-dir "$dir"; }; } \
        2> >(grep --line-buffered -vE 'hf update|hf skills|HF_TOKEN|gitignore\.lock|A new version of' >&2); then
-    kill "$rep" 2>/dev/null || true
-    echo "halogen: download FAILED. Nothing was started." >&2
-    echo "  Re-run to resume, or fetch it yourself and mount it." >&2
-    exit 1
+    kill "$rep" 2>/dev/null || true; wait "$rep" 2>/dev/null || true
+    if [ "$fresh" = 1 ]; then
+      echo "halogen: download FAILED. Nothing was started." >&2
+      echo "  Re-run to resume, or fetch it yourself and mount it." >&2
+      exit 1
+    fi
+    echo "halogen: fetching$(printf ' %s' $plan) did not complete; starting on what the volume holds (re-run to resume)." >&2
+    return 0
   fi
-  kill "$rep" 2>/dev/null || true
+  kill "$rep" 2>/dev/null || true; wait "$rep" 2>/dev/null || true
 
   # Verify rather than trust: a failed transfer can leave a plausible-looking
   # tree, and an engine that starts on a truncated checkpoint fails much later
@@ -502,7 +705,8 @@ maybe_download() {
     ls -la "$dir" >&2
     exit 1
   fi
-  echo "halogen: download complete ($(du -h "$HALOGEN_CHECKPOINT" | cut -f1))"
+  [ "$fresh" = 1 ] && echo "halogen: download complete ($(du -h "$HALOGEN_CHECKPOINT" | cut -f1))"
+  return 0
 }
 
 # 0.6.0: THE SIDECAR CHANGED UNDER THE SAME NAME. It gained the draft head's
@@ -575,7 +779,82 @@ tuning_plan_copy() {
   fi
 }
 
+# 0.14: WHAT THE CHECKPOINT HOLDS, READ FROM ITS OWN HEADER. The engine's
+# figure (its tensor table and the overlay it would load, the lookup table
+# excluded) replaces the "68 GiB" every .hgn was assumed to be (w4b with its
+# sidecar is 67.99). CK_RES_GIB and CK_HAS_TABLE are set once;
+# a GGUF, a file not yet on disk or an engine without the mode leaves them
+# empty and every caller keeps its old estimate.
+CK_RES_GIB="" CK_HAS_TABLE="" CK_OWN_PREC="" CK_FOR=""
+ckpt_facts() {
+  if [ "${CK_FOR:-}" = "${HALOGEN_CHECKPOINT:-}" ]; then   # asked already for this file
+    [ -n "${CK_RES_GIB:-}" ]
+    return
+  fi
+  CK_FOR="${HALOGEN_CHECKPOINT:-}"; CK_RES_GIB=""; CK_HAS_TABLE=""; CK_OWN_PREC=""
+  [ -f "${HALOGEN_CHECKPOINT:-}" ] || return 1
+  is_gguf && return 1
+  local out line
+  out=$("${_hg_flash_serve:-/usr/local/bin/flash_serve}" --resident-gib "$HALOGEN_CHECKPOINT" 2>/dev/null) || return 1
+  # the LAST line of exactly "<GiB> <table 0|1> <own precision 0|1>" (an
+  # older engine printed two fields: the third then reads as 0)
+  line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01])?$' | tail -n 1)
+  [ -n "$line" ] || return 1
+  CK_RES_GIB=$(echo "$line" | awk '{print $1}')
+  CK_HAS_TABLE=$(echo "$line" | awk '{print $2}')
+  CK_OWN_PREC=$(echo "$line" | awk '{print ($3 == "" ? 0 : $3)}')
+  return 0
+}
+
+# 0.14: A CHECKPOINT WITHOUT THE LOOKUP TABLE takes it from its own file
+# (HALOGEN_NGRAM_TABLE), so checkpoints can share one 47.7 GiB table. Set,
+# the flag wins. Unset, the file beside the checkpoint is used when it is
+# there; otherwise the start is refused here, naming what is missing, rather
+# than by the engine a minute into its load.
+NGRAM_TABLE_NAME="qwen38-flash-next-ngram.hgn"
+check_ngram_table() {
+  ckpt_facts || return 0
+  [ "$CK_HAS_TABLE" = "0" ] || return 0
+  if [ -n "${HALOGEN_NGRAM_TABLE:-}" ]; then
+    [ -f "$HALOGEN_NGRAM_TABLE" ] && return 0
+    echo "halogen: HALOGEN_NGRAM_TABLE=$HALOGEN_NGRAM_TABLE is not there." >&2
+    exit 1
+  fi
+  local t dir; dir="$(dirname "$HALOGEN_CHECKPOINT")"; t="$dir/$NGRAM_TABLE_NAME"
+  # a checkpoint on the disk without its table (copied by hand, or a download
+  # that stopped between the two): fetched when a download is allowed
+  local tried=""
+  if [ ! -f "$t" ] && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$dir" ]; then
+    local listing sz
+    listing=$("${_hg_hub_list:-hub_list}" "$HALOGEN_DOWNLOAD") || listing=""
+    sz=$(printf '%s\n' "$listing" | awk -v t="$NGRAM_TABLE_NAME" '$1 == t {print $2}')
+    echo "halogen: fetching the lookup table $NGRAM_TABLE_NAME from $HALOGEN_DOWNLOAD ($(if [ -n "$sz" ]; then awk -v b="$sz" 'BEGIN{printf "%.1f GiB", b/1073741824}'; else echo "about 48 GiB; the free space is not checked first"; fi); it resumes if interrupted)"
+    [ -z "$sz" ] || download_room_check "$dir" "$sz" || exit 1
+    HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
+      "${_hg_hf:-hf}" download "$HALOGEN_DOWNLOAD" "$NGRAM_TABLE_NAME" --local-dir "$dir" \
+      2> >(grep --line-buffered -vE 'hf update|hf skills|HF_TOKEN|gitignore\.lock|A new version of' >&2) || true
+    tried=1
+  fi
+  if [ -f "$t" ]; then
+    export HALOGEN_NGRAM_TABLE="$t"
+    echo "halogen: the checkpoint's lookup table is its own file: $t"
+    return 0
+  fi
+  if [ -n "$tried" ]; then
+    echo "halogen: fetching $NGRAM_TABLE_NAME from $HALOGEN_DOWNLOAD did not complete, and $HALOGEN_CHECKPOINT does not carry the table." >&2
+    echo "  Start again to resume it, or put the file in the models volume beside the checkpoint." >&2
+    exit 1
+  fi
+  echo "halogen: $HALOGEN_CHECKPOINT does not carry the model's lookup table, and $NGRAM_TABLE_NAME is not beside it." >&2
+  echo "  Put the table file in the models volume beside the checkpoint, point HALOGEN_NGRAM_TABLE at it," >&2
+  echo "  or start once with HALOGEN_DOWNLOAD set and the volume read-write." >&2
+  exit 1
+}
+
 need_ckpt() {
+  host_preflight || {
+    echo "halogen: this container cannot run the server as started; nothing was downloaded or loaded." >&2
+    exit 1; }
   maybe_download
   tuning_plan_copy
   [ -f "$HALOGEN_CHECKPOINT" ] || {
@@ -584,6 +863,7 @@ need_ckpt() {
     echo "  or point:  -e HALOGEN_CHECKPOINT=/models/<file>.hgn (or any shard of a GGUF)" >&2
     exit 1; }
   if is_gguf; then check_gguf; else check_sidecar; fi
+  check_ngram_table
   check_vision
   kv_budget_note
   gtt_note
@@ -727,6 +1007,12 @@ check_sidecar() {
         return 0 ;;
   esac
   local side="${HALOGEN_CHECKPOINT%.hgn}.overlay.hgn"
+  # 0.14: a checkpoint that carries its own precision choices (the engine's
+  # third --resident-gib field) takes no sidecar
+  if ckpt_facts && [ "$CK_OWN_PREC" = "1" ] && [ ! -f "$side" ]; then
+    echo "halogen: $HALOGEN_CHECKPOINT carries its own precision choices: no quality sidecar applies and none is looked for"
+    return 0
+  fi
   # 0.12.1: a `convert`ed GGUF trunk carries the GGUF model id in its header
   # (bytes 40..103 of the .hgn); the sidecar is the w4b checkpoint's and
   # does not apply to it, so the warning below would be wrong here.
@@ -1067,9 +1353,15 @@ memlock_note() {
   [ "${HALOGEN_WEIGHTS_LOCK:-0}" = "1" ] || return 0
   local hard; hard=$(ulimit -H -l 2>/dev/null || echo "?")
   case "$hard" in unlimited|"?") return 0 ;; esac
-  # ulimit -l is in KiB; 70 GiB of weights + sidecar + tower is the ask
-  if [ "$hard" -lt 75000000 ] 2>/dev/null; then
-    echo "halogen: WARNING HALOGEN_WEIGHTS_LOCK=1 asks the engine to mlock about 68 GiB of weights, but this container's hard memlock limit is ${hard} KiB." >&2
+  # ulimit -l is in KiB; the weights (the checkpoint's own figure when it can
+  # be read, else 68 GiB) + ~2 GiB for the tower and slack is the ask
+  local w_gib=68 need_k=75000000
+  if ckpt_facts; then
+    w_gib=$CK_RES_GIB
+    need_k=$(awk -v r="$CK_RES_GIB" 'BEGIN{printf "%.0f", (r + 2) * 1048576}')
+  fi
+  if [ "$hard" -lt "$need_k" ] 2>/dev/null; then
+    echo "halogen: WARNING HALOGEN_WEIGHTS_LOCK=1 asks the engine to mlock about ${w_gib} GiB of weights, but this container's hard memlock limit is ${hard} KiB." >&2
     echo "  A rootless container cannot exceed the host user's hard limit, so --ulimit memlock=-1:-1 did not take effect. On the host: ulimit -H -l; if it is not unlimited, add" >&2
     echo "    <user> hard memlock unlimited" >&2
     echo "    <user> soft memlock unlimited" >&2
@@ -1348,7 +1640,9 @@ inspect|verify|ppl|niah)
   [ -f "$FILE" ] || { echo "halogen $MODE: $FILE is not there (mount the models volume and name a file inside it, or set HALOGEN_CHECKPOINT)" >&2; exit 1; }
   if [ "$MODE" = ppl ] || [ "$MODE" = niah ]; then
     tuning_plan_copy
-    if [ "$(head -c 4 "$FILE" 2>/dev/null)" = "GGUF" ]; then need_head "$(dirname "$FILE")"; fi
+    if [ "$(head -c 4 "$FILE" 2>/dev/null)" = "GGUF" ]; then need_head "$(dirname "$FILE")"
+    else HALOGEN_CHECKPOINT="$FILE" check_ngram_table >&2   # 0.14: stdout is the tool's (--json)
+    fi
     echo "halogen $MODE: $FILE under this image's engine environment (tuning plan: ${HALOGEN_MATMUL_TUNING_FILE:-none}; quality sidecar: ${HALOGEN_CK_OVERLAY:-beside the checkpoint, if any}; trunk pinned: ${HALOGEN_FLASH_PIN_TRUNK:-1})" >&2
     # the two modes that read text go through the Python front end: it
     # tokenizes --corpus with the mounted tokenizer, builds the retrieval

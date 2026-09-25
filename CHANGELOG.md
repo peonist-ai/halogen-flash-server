@@ -1,5 +1,84 @@
 # Changelog
 
+## 0.14.0
+
+Fixes and one addition from five reports, and a better draft head. No weight change. At
+temperature 0 the output is still byte-identical to serial greedy decode,
+and the same as 0.13.8's. For the reports behind
+it: issues #104 ([@OffsiteGuru](https://github.com/OffsiteGuru)), #106 and
+#107 ([@loonylabs-dev](https://github.com/loonylabs-dev)), #93
+([@tatianyi](https://github.com/tatianyi)) and #108
+([@jtsylve](https://github.com/jtsylve)).
+
+### Fixed
+
+- **A streamed chat completion now opens with the role.** No chunk carried
+  `delta.role`. Clients that take a chunk's role from it, such as
+  LangChain's OpenAI client (and so LibreChat), treated every chunk as a
+  generic message and silently dropped tool calls. The first chunk is now
+  `{"role": "assistant", "content": ""}`, as OpenAI, vLLM and llama.cpp
+  send. `/v1/completions` and `/v1/responses` are unchanged.
+- **A request that a stop string ends now reports its real timings.**
+  `timings.prompt_ms` and `predicted_ms` read 0 and `cached_tokens` was
+  missing. They are now the engine's own figures, and the request line and
+  `/metrics` count the request. A stop string made of several tokens could
+  also leave its first pieces at the end of the text. It no longer does.
+- **The GGUF importer applies its conversions for every tensor type.** Three
+  conversions (the DeltaNet value-head order, `ssm_a` to `A_log`, and the
+  +1 norms) were applied for some tensor types and skipped for others, so a
+  GGUF built with an unusual recipe could load with wrong weights and no
+  error. Every community file we know of used the handled types.
+- **A GGUF whose lookup table is Q8_0, Q5_0 or Q5_1 is read as stored.**
+  `convert` refused such a file. Serving one directly was worse: the table
+  was read as IQ4_NL whatever its type. A Q4_K_M, Q5_K or Q6_K recipe
+  produces one of these three types, so the model received wrong n-gram
+  embeddings with no error. Both paths now read the three types, and refuse
+  a type they do not know.
+
+### Added
+
+- **Per-request disk restore figures.** With `HALOGEN_CACHE_DIR` set,
+  `timings.disk_restore_n` and `timings.disk_restore_ms` say how many
+  tokens of the cached prefix came from disk and how long the restore took.
+  Both are 0 for a RAM hit.
+- **Why a request missed the cache.** When a request prefills 1,024 tokens
+  or more, the request line names the closest earlier request and where the
+  two part ways: the prompt differs, the reply differs, or the whole earlier
+  request is a prefix the server no longer holds. `timings.prefix_n` gives
+  the shared length.
+- **The host is checked before anything is downloaded or loaded.** A
+  container started without `--device /dev/kfd`, on WSL2, or on a GPU that
+  is not Strix Halo's is refused at once with the flag or the reason. A
+  download is refused, before its first byte, when the volume lacks the room
+  for it.
+
+### Changed
+
+- **The draft head reads the model's four residual streams as the reference
+  implementation does, and drafts two tokens ahead.** It proposes more
+  tokens that the model accepts: 2.47 committed a round against 1.68. On
+  ten served prompt shapes that is 52.3 tokens per second against 44.4
+  (+18%), and 46.0 against 39.9 (+15%) at 32,000 tokens of context,
+  measured on the reference machine in one session with 0.13.8.
+  `HALOGEN_MTP_DEPTH` sets how many tokens it proposes (default 2; 3 is
+  faster on code generation and slower on agent and prose traffic). The
+  output at temperature 0 is unchanged by either.
+- **`HALOGEN_DOWNLOAD` fetches only what the chosen checkpoint needs**: the
+  checkpoint, its quality sidecar, the vision tower and the tokenizer. The
+  speed sidecar is no longer fetched, and the GGUF draft head is fetched
+  only when a GGUF needs it, as before.
+- **A fixed `seed` gives different text than on 0.13.8** when the draft head
+  is on. The drafts changed (the wiring above, and a fix so a request
+  served from the prompt cache drafts exactly as its cold run did), and a
+  speculative sample depends on its drafts. Each answer is still a sample from the same
+  distribution, and greedy requests are unaffected.
+- **The memory fit uses the checkpoint's real size** (67.99 GiB with its
+  sidecar, not an assumed 67.7). On a 128 GB machine with
+  `HALOGEN_VISION_TOWER=1` the KV pool now starts at 262,144 positions
+  instead of 524,288, which still holds one conversation at the full
+  262,144 context. Other settings that take a few GiB more can do the same;
+  the startup log's `kv pool:` line says which pool you got.
+
 ## 0.13.8
 
 One addition from a request. No weight change, and nothing changes for a
