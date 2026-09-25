@@ -4,10 +4,13 @@
 
 # halogen-flash-server
 
-**halogen™ runs Qwen3.8-Flash-Next on AMD Strix Halo, and every kernel in it
-is written for this one GPU and this one model family.** No general-purpose
-runtime, no portability layer, no fallback path. That is why it can do things
-a general engine cannot, and why it runs on exactly one piece of silicon.
+**halogen™ is the fastest way to run Qwen3.8-Flash-Next on AMD Strix Halo,
+and it does not get there by spending fewer bits.**
+
+Every kernel is written for this one GPU and this one model family. No
+general-purpose runtime, no portability layer, no fallback path. That is why it
+can do things a general engine cannot, and why it runs on exactly one piece of
+silicon.
 
 | measured on the reference machine | halogen-flash |
 |---|---|
