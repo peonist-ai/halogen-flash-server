@@ -248,7 +248,11 @@ set it to `1` to look for the file next to the checkpoint:
 ```
 
 With no tower the image path is absent rather than disabled, so a text-only
-deployment behaves exactly as it did before this release. `/health` reports
+deployment behaves exactly as it did before this release. The tower takes
+about 2 GiB of RAM, and on a 128 GB machine that is the difference between a
+524,288-position KV pool and 262,144 (one conversation at the full context
+still fits; the startup log says which you got, see *Check what pool you
+actually got* below). `/health` reports
 whether images are accepted and, when they are not, why; an image sent to a
 server without a tower is a 400 naming the flag.
 
@@ -1666,13 +1670,16 @@ chat in a 1M-position pool runs at short-chat speed, and three conversations
 at 250k each generate at about 17 tokens per second apiece.
 
 **Check what pool you actually got.** The fit at startup budgets `MemTotal`
-less the resident weights (67.7 GiB) and `HALOGEN_HOST_RESERVE_GIB` (20), and
-a 524,288 pool at `HALOGEN_MAX_TOK=32768` needs about 36.7 GiB (14.4 for the
-pool, 20.6 for the arena and the slots, 1.7 of margin). A 128 GB machine
-whose `MemTotal` reads 125 GiB fits it; one that reads 122.7 GiB (a
-`crashkernel` reservation of 2 GB is enough) does not, and the pool halves
-to 262,144 with the line `kv pool: 524288 positions need ~36.7 GiB ...
-LOWERING THE POOL TO 262144` in the startup log. Every request line since
+less the resident weights (68.0 GiB for the 4-bit checkpoint and its
+sidecar, read from the checkpoint itself since 0.14) and
+`HALOGEN_HOST_RESERVE_GIB` (20), and
+a 524,288 pool at `HALOGEN_MAX_TOK=32768` needs about 36.5 GiB (14.4 for the
+pool, 20.6 for the arena and the slots, 1.5 of margin). A 128 GB machine
+whose `MemTotal` reads 125 GiB fits it with the vision tower off; one that
+reads 122.7 GiB (a `crashkernel` reservation of 2 GB is enough), or the same
+machine with the tower on, does not, and the pool halves to 262,144 with the
+line `kv pool: 524288 positions need ~35.0 GiB (plus 1.5 of margin) and host
+RAM cannot spare it. LOWERING THE POOL TO 262144` in the startup log. Every request line since
 0.11.5 ends with `pool N/<positions>`, so a grep settles it. On such a
 machine `HALOGEN_MAX_TOK=16384` gives back 8.8 GiB (about 9% of prefill
 speed) and 524,288 fits; at `8192` even 786,432 does (issue #75).
