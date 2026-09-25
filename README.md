@@ -4,51 +4,34 @@
 
 # halogen-flash-server
 
-**halogen™ is the fastest way to run Qwen3.8-Flash-Next on AMD Strix Halo,
-and it does not get there by spending fewer bits.**
+**halogen™ runs Qwen3.8-Flash-Next on AMD Strix Halo, and every kernel in it
+is written for this one GPU and this one model family.** No general-purpose
+runtime, no portability layer, no fallback path. That is why it can do things
+a general engine cannot, and why it runs on exactly one piece of silicon.
 
-Every kernel is written for this one GPU and this one model family. No
-general-purpose runtime, no portability layer, no fallback path. That is why it
-can do things a general engine cannot, and why it runs on exactly one piece of
-silicon.
+| measured on the reference machine | halogen-flash |
+|---|---|
+| prefill, 8,192-token prompt | **1,246 tok/s** (6.6 s) |
+| prefill, 32,768-token prompt | **1,424 tok/s** (23.0 s) |
+| prefill, 131,072-token prompt | **1,358 tok/s** (96.5 s) |
+| follow-up turn at 100,000 tokens of context | **~2 s** (prompt cache, on by default) |
+| decode, served with the draft head, at 32,768 tokens of context | **41.7 tok/s** |
+| decode, coding-agent turn, draft head + prompt lookup | **55.7 to 56.3 tok/s** |
+| decode, serial greedy, at 1,500 / 32,768 tokens of context | **37.6 / 34.1 tok/s** |
 
-On a 32K prompt with a 256-token answer, against the fastest numbers anyone
-else has published for this model on this hardware:
+Every row is from [Measured](#measured), which gives the conditions: AMD Ryzen
+AI Max+ 395, 128 GB, ROCm 7.14.0, the image's default configuration, and about
+85 W of sustained package power. Read them before comparing a number from
+another machine, particularly the power envelope and the IOMMU setting.
+Prefill barely decays with depth: 131,072 tokens run at 95% of the 32,768
+rate.
 
-| | precision | prefill | decode | **total** |
-|---|---|---|---|---|
-| **halogen-flash 0.5.3** | **5.53 bpw** | **23.0 s** | **6.1 s** | **29.1 s** |
-| [EngramHalo.cpp](https://github.com/Aristo94/EngramHalo.cpp) | 3.71 bpw | 103.7 s | 14.3 s | 118.0 s |
-| [ROCmFP4](https://huggingface.co/kingjones777/Qwen3.8-Flash-Next-ROCmFP4-STRIX-GGUF) | 5.51 bpw | 104.7 s | 13.2 s | 117.9 s |
-| [CIRU-IU4](https://huggingface.co/jcbtc/Qwen3.8-Flash-CIRU-STRIX-IU4) | 5.96 bpw | 143.7 s | 11.0 s | 154.7 s |
-
-**Roughly 4x faster end to end than the best of them.** Prefill is where that
-is won, and on any prompt with real context prefill is most of the wall clock.
-The one runtime carrying more bits than we do is the slowest of the three, and
-the fastest of them runs at 3.71 bpw, two thirds of our precision.
-
-Our two cells are the rows published under [Measured](#measured), which is also
-where the conditions are: 32,768 tokens at 1,424 tok/s, then 256 tokens at the
-served speculative rate of 41.7 tok/s. Read those conditions before comparing,
-particularly the power envelope. The competitor rows are their own published
-figures on their own machines, and [Against the
-alternatives](#against-the-alternatives) says what differs.
-
-Bits per weight is measured from the checkpoint's own tensor table rather than
-quoted from a format name. It is 5.53 bpw across all 179.55B parameters, or
-4.55 bpw across the trunk and experts with the FP8 n-gram lookup table set
-aside. [`docs/QUANT.md`](docs/QUANT.md) gives the breakdown by tensor family
-and says how the figure is derived, so it can be checked with arithmetic rather
-than taken on trust.
-
-**On the decode column, which is the soft one.** Those are the published
-figures at this depth, and for two of the three we cannot tell whether
-speculative decoding was on. EngramHalo's 14.3 s is explicitly its
-non-speculative number; its speculative rate at 32K is not published, and
-interpolating its own curve suggests something nearer 9 s. Hand every
-competitor its best plausible speculative decode and the totals still land
-around 110 s against our 31.1 s. The prefill column is the one carrying the
-claim, and it has no such ambiguity.
+**Precision: 5.53 bpw**, measured from the checkpoint's own tensor table rather
+than quoted from a format name. That is across all 179.55B parameters, or 4.55
+bpw across the trunk and experts with the FP8 n-gram lookup table set aside.
+[`docs/QUANT.md`](docs/QUANT.md) gives the breakdown by tensor family and says
+how the figure is derived, so it can be checked with arithmetic rather than
+taken on trust.
 
 At temperature 0, output is byte-identical to serial greedy decode.
 Speculation here is a pure speed optimization, verified on every release, not
@@ -59,7 +42,7 @@ covers both.
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
 point it at the file you already have (unsloth's `UD-IQ4_XS`, say) and it
 runs on these kernels, with the same speculation and the same identity
-guarantee. Same file, faster runtime, no conversion step. See [Bring your own
+guarantee, and no conversion step. See [Bring your own
 GGUF](#bring-your-own-gguf) for which files, and for the numbers.
 
 There is a [Discord](https://discord.gg/bcm6QknaV6) for questions, for
@@ -79,8 +62,7 @@ the changelog can credit them. See [Community](#community).
 - **[Give it a machine of its own](#give-it-a-machine-of-its-own)**: what this
   server holds, what that leaves for anything else, and
   [the recipes if you must share it](#if-you-must-share-it)
-- **[Measured](#measured)**: prefill and decode,
-  [against the alternatives](#against-the-alternatives), and
+- **[Measured](#measured)**: prefill and decode, and
   [end to end over HTTP](#served-throughput-end-to-end-over-http)
 - **[Quality](#quality-what-is-measured-and-what-is-not)**: what is measured,
   and what is not
@@ -951,10 +933,9 @@ with several conversations generating at once the scheduler batches them
 instead (the concurrency table below is unchanged by it).
 
 Decode barely moves with depth. Serial gives up about 7% going from 1,500 to
-32,768 tokens of context, a 22x increase. The 32,768 served figure is the one
-to compare against other runtimes' depth curves, and it is measured through the
-full HTTP stack rather than on a raw token fixture, which is the harder
-condition.
+32,768 tokens of context, a 22x increase. The 32,768 served figure is
+measured through the full HTTP stack rather than on a raw token fixture, which
+is the harder condition.
 
 Two levers move these and both are one environment variable:
 
@@ -980,35 +961,6 @@ Two levers move these and both are one environment variable:
   Measured over a 20-turn session growing to 108,000 tokens, every turn after
   the first landed between 2.0 and 2.3 s. See
   [Choosing a cache mode](#choosing-a-cache-mode) for when to change it.
-
-### Against the alternatives
-
-Three other runtimes publish figures for this model on this hardware. All are
-llama.cpp derivatives or forks of one.
-
-| prefill, tok/s | CIRU-IU4 | ROCmFP4 | EngramHalo | **halogen-flash** | vs best |
-|---|---|---|---|---|---|
-| @ 8,192 | 373 | 385 | 436 | **1,246** | **2.9x** |
-| @ 32,768 | 228 | 313 | 316 | **1,424** | **4.5x** |
-| @ 131,072 | 121 | 196 | 174 | **1,358** | **6.9x** |
-
-**The shape matters more than the ratio.** Every one of them decays hard with
-depth. Ours does not: 1,246 at 8K, 1,424 at 32K, 1,358 at 131K. Their own documentation puts it plainly enough. A 156K
-prompt takes EngramHalo about twelve minutes. We prefill 131K in 96 seconds.
-
-Decode is the closer row. Against the fastest of them we are roughly 1.2x on
-code and 1.7x on prose at short context, and the comparison at depth is muddied
-by their speculative numbers mostly not being published.
-
-**These are published figures, not a head-to-head we ran.** Every number in
-the competitor columns is from their own model card or repository, on their
-machine, at their quantization and their settings. We have not run their
-builds. Their conditions differ from ours in ways that matter: EngramHalo
-measures on a 96 GB machine rather than 128 GB, runs a q8_0 KV cache, and
-quantizes the n-gram lookup table harder than we do, to 26.8 GiB against our
-47.7 GiB. Keeping that table on disk is not one of the differences: we do the
-same, by default and with no way to turn it off. Treat the prefill gap as real
-and the decode rows as indicative.
 
 ### Served throughput, end to end over HTTP
 
@@ -1296,15 +1248,6 @@ decode is about 3% slower (25.2 against 26.0 tok/s at short context) and the
 draft head accepts about as often (49% against 45% on prose). It carries the
 same 4 GiB of draft head and tokenizer and the same refusals; every
 speculative stream is byte-identical to serial greedy on it too.
-
-**Against llama.cpp on the same bytes, same machine, same session** (their
-`strix-halo` branch, built and run at their settings on stock ROCm 7.14, so
-their numbers here are below their own published figures; the ratios are
-about this file on a stock box, and the decode ratio is the durable one):
-prefill **1.9x at 8,192 and 2.7x at 32,768**; serial decode 1.1x at short
-context and 1.3x at 32K; with the draft head 1.3 to 1.4x; on coding-agent
-turns with both drafters **1.9x**. The identity guarantee holds on their file:
-every speculative stream's tokens were byte-identical to serial greedy.
 
 **Startup.** The repack reads the whole file once, on eight threads
 (`HALOGEN_GGUF_THREADS`): **18 s from a cold disk on the reference machine,
