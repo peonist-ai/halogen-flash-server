@@ -57,7 +57,8 @@ the changelog can credit them. See [Community](#community).
 
 ## Contents
 
-- **[Quickstart](#quickstart)**, then **[Using it](#using-it)**:
+- **[Quickstart](#quickstart)**, including optional
+  [network isolation](#network-isolation-podman), then **[Using it](#using-it)**:
   [sampling](#sampling), [images](#images),
   [token budgets](#token-budgets-and-why-an-empty-answer-means-you-ran-out),
   [Codex and the Responses API](#codex-and-the-responses-api),
@@ -172,6 +173,46 @@ first log line, the API warns at startup when the engine's differs, and
 `/health` reports both under `version`. (The text `<|image_pad|>` written in
 a message is not a placeholder and, since 0.6.2, is served as text; see #39.)
 
+### Network isolation (Podman)
+
+To restrict ordinary outbound traffic, create an internal Podman bridge network
+once, as the same (non-root) user who will run the container:
+
+```bash
+podman network create --driver bridge --internal halogen-jail
+```
+
+Your client can still run MCP tools or web search itself and send their results
+back in the next request.
+
+Fetch the weights on the host first. Then optionally bind the API to the host's
+LAN address rather than to every interface. Here `192.168.1.2` is an
+**example**: replace it with the actual IP of the machine running the container.
+
+```bash
+hf download peonist-ai/halogen-qwen3.8-flash-next --local-dir ~/halogen-models
+
+HALOGEN_LAN_IP=192.168.1.2
+
+podman run --rm \
+  --name halogen \
+  --network halogen-jail \
+  -p "${HALOGEN_LAN_IP}:8731:8731" \
+  --device /dev/kfd --device /dev/dri --group-add keep-groups \
+  --ipc=host --ulimit memlock=-1:-1 \
+  -v ~/halogen-models:/models:ro \
+  ghcr.io/peonist-ai/halogen-flash-server:0.11.10
+```
+
+`--internal` removes the bridge's route to external networks while keeping
+published ports usable. Do not set `HALOGEN_DOWNLOAD` in this configuration.
+Weights and any updated sidecar must be fetched on the host.
+
+**Binding to a LAN IP is not a source-address allowlist.** If only clients in,
+for example, `192.168.1.0/24` should connect, enforce that separately in the
+host firewall. The internal network restricts normal container egress; it does
+not remove the GPU device access or `--ipc=host` used above, and it does not
+isolate the container from other containers attached to that network.
 ---
 
 ## Using it
