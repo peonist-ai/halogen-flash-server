@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.14.1
+
+Fixes from two reports, and a faster prefill. No weight change. At
+temperature 0 the output is still byte-identical to serial greedy decode.
+For the reports behind it: issues #110
+([@loonylabs-dev](https://github.com/loonylabs-dev)) and #111
+([@apartje](https://github.com/apartje)).
+
+### Fixed
+
+- **A `stop` string no longer matches an `<|im_end|>` the server kept as
+  text inside the model's reasoning** (kept since 0.13.4), so a client that
+  sent the model's end tokens as stop strings no longer gets an empty turn.
+  With no tools to call, a reply that writes a `</tool_call>` in its
+  reasoning keeps thinking instead of ending empty. An empty stop string is
+  ignored instead of failing the request.
+- **`continue_final_message` returns only what it generated.** With tools
+  declared, the partial used to be repeated at the start of `content`, and
+  a tool call the partial had already closed was made again. A call the
+  partial opened and the continuation closed is still made, and so is a
+  call the model writes inside its reasoning when the continued message
+  ends there.
+- **`continue_final_message` with thinking on answers in `content`** when
+  the prompt ends outside the think block. The continuation used to come
+  back as `reasoning_content` with `content` empty, and the thinking budget
+  could write its closing sentence into it.
+- **Q5_0 is read.** 0.14.0 said a GGUF whose lookup table is Q5_0 was
+  read, but the type check refused Q5_0 before the table was reached. Q5_0
+  is now read exactly on every tensor a `llama-quantize` Q4_K_M or Q4_K_S
+  stores it on, and so is a K-quant `ssm_out`, stored as the bf16 the
+  engine computes it in. A public Q4_K_M of this model now converts with
+  nothing refused. `Q6_K` on `ssm_out` is still refused.
+
+### Changed
+
+- **Prefill uses a new routed-expert kernel.** It is groundwork for
+  upcoming format changes, and prompts process faster. Prefill numerics
+  change at rounding level on prompts of 64 tokens or more, so logprobs
+  and near-tie tokens can differ slightly from 0.14.0. A fixed `seed` can
+  give different text than on 0.14.0 for the same reason.
+
 ## 0.14.0
 
 Fixes and one addition from five reports, and a better draft head. No weight change. At

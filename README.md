@@ -112,7 +112,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -154,7 +154,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -796,7 +796,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -812,7 +812,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -828,7 +828,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -989,8 +989,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.0 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.0 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.1 bench serial,mtp 256 low 3
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.1 sweep -p 8192,32768 -n 128
 ```
 
 ---
@@ -1133,7 +1133,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1155,12 +1155,13 @@ bit map (`UD-IQ4_XS`, `UD-Q4_K_XL`) and nobody else's: bartowski's and
 mradermacher's IQ4_XS files were refused by name on their first DeltaNet
 tensor (issue #20, the census by @Syakyr). **Since 0.12.1 every one of those
 types is read on every tensor**, so bartowski's `IQ4_XS` loads as it is
-(measured below), and so does any `llama-quantize` output in those types
-with one exception: a K-quant or `Q6_K` on `ssm_out` is refused, because
-the engine reorders that tensor's columns in 128-wide blocks at load and
-those formats' scale groups are 256 wide (bartowski's `Q4_K_M` has that
-shape, and `Q5_0` on its down experts besides; his `IQ4_XS` and `IQ4_NL`
-do not). `Q4_1`, `Q5_0`, `Q2_K`,
+(measured below), and so does any `llama-quantize` output in those types.
+**Since 0.14.1 `Q5_0` is read too**, exactly, on every tensor a `Q4_K_M` or
+`Q4_K_S` stores it on (the lookup table and the down experts among them),
+and so is a K-quant on `ssm_out`. The engine reorders that tensor's
+columns in 128-wide blocks at load and those formats' scale groups are 256
+wide, so a K-quant `ssm_out` is stored as the bf16 the engine computes it
+in. `Q6_K` on `ssm_out` is still refused. `Q4_1`, `Q2_K`,
 `Q3_K` and the IQ2/IQ1 families stay **refused by name at startup**, before
 anything is loaded, because reading them needs kernels for their block
 layouts rather than a repack, and a lossy fallback would make "the same
@@ -1174,8 +1175,9 @@ bf16 on the device (X GiB)` at startup), which decode reads at 16 bits a
 weight instead of 4.5 or 5.5. bartowski's `IQ4_XS` has twelve such tensors
 (the attention output projections, 0.35 GiB); mradermacher's `i1-IQ4_XS`
 has forty-eight, including the largest DeltaNet projection of every layer
-(1.8 GiB). The kernel that removes this is on the list; the numbers below
-include the cost as it stands.
+(1.8 GiB). A `Q4_K_M`'s K-quant `ssm_out` (36 tensors) is read at 16 bits
+the same way. The kernel that removes this is on the list; the numbers
+below include the cost as it stands.
 
 **bartowski's `IQ4_XS` and mradermacher's `i1-IQ4_XS`, measured** (0.12.1,
 the reference machine, unsloth's `UD-IQ4_XS` in the same session as the
@@ -1296,7 +1298,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1338,7 +1340,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.1 \
   MODE [FILE] [flags]
 ```
 
