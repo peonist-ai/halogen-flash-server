@@ -14,9 +14,9 @@ silicon.
 
 | measured on the reference machine | halogen-flash |
 |---|---|
-| prefill, 8,192-token prompt | **1,246 tok/s** (6.6 s) |
-| prefill, 32,768-token prompt | **1,424 tok/s** (23.0 s) |
-| prefill, 131,072-token prompt | **1,358 tok/s** (96.5 s) |
+| prefill, 8,192-token prompt | **1,584 tok/s** (5.2 s) |
+| prefill, 32,768-token prompt | **1,567 tok/s** (20.9 s) |
+| prefill, 131,072-token prompt | **1,517 tok/s** (86.4 s) |
 | follow-up turn at 100,000 tokens of context | **~2 s** (prompt cache, on by default) |
 | decode, served with the draft head, at 32,768 tokens of context | **46.0 tok/s** |
 | decode, coding-agent turn, draft head + prompt lookup | **55.7 to 56.3 tok/s** |
@@ -26,7 +26,7 @@ Every row is from [Measured](#measured), which gives the conditions: AMD Ryzen
 AI Max+ 395, 128 GB, ROCm 7.14.0, the image's default configuration, and about
 85 W of sustained package power. Read them before comparing a number from
 another machine, particularly the power envelope and the IOMMU setting.
-Prefill barely decays with depth: 131,072 tokens run at 95% of the 32,768
+Prefill barely decays with depth: 131,072 tokens run at 97% of the 32,768
 rate.
 
 **Precision: 5.53 bpw**, measured from the checkpoint's own tensor table rather
@@ -878,10 +878,11 @@ Prefill is a cold single-call prefill of real text; decode is greedy at
 temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
 2-3% more time-to-first-token, because the draft head prefills too. The prefill
-rows are 0.5.3's measurements. The control was this same binary with the
-previous release's ordering step selected, so the two arms differ in one thing
-and nothing else; it ran in the same session, on the plan this image bakes, and
-it reproduced the rows it replaces to within 1.4%. The serial decode rows are 0.2.0's and have not moved since:
+rows are 0.14.1's measurements, two runs each. The control was this same
+binary with 0.14.0's prefill kernels selected, so the two arms differ in
+those kernels and nothing else; it ran in the same session, on the plan this
+image bakes, at a median 2,220 MHz and 85 W, and it read 1.3 to 2.4 percent
+above the 0.5.3 rows it replaces. The serial decode rows are 0.2.0's and have not moved since:
 the releases between them changed the scheduler, the memory layout and one
 host-side sort, not the decode kernels. 0.6.0 moves the speculative rows
 twice, and both moves are draft-side: the sidecar now carries the draft
@@ -902,11 +903,11 @@ unit at decode and was a fifth of a 1M prefill pass, and its scoring kernel
 re-read the block keys once per 16 query rows; both are rewritten in 0.12.0
 with byte-identical results.
 
-| | halogen-flash 0.5.3 |
+| | halogen-flash |
 |---|---|
-| prefill @ 8,192 | **~1,246 tok/s** (TTFT 6.6 s) |
-| prefill @ 32,768 | **~1,424 tok/s** (TTFT 23.0 s) |
-| prefill @ 131,072 | **1,358 tok/s** (96.5 s) |
+| prefill @ 8,192 (0.14.1) | **1,584 tok/s** (TTFT 5.2 s; 1,268 on 0.14.0) |
+| prefill @ 32,768 (0.14.1) | **1,567 tok/s** (TTFT 20.9 s; 1,442 on 0.14.0) |
+| prefill @ 131,072 (0.14.1) | **1,517 tok/s** (86.4 s; 1,390 and 94.3 s on 0.14.0) |
 | follow-up turn at 100,000 tokens of context | **~2 s** (prompt cache on, the default) |
 | decode, serial greedy @ ctx 1,500 | **37.6 tok/s** |
 | decode, serial greedy @ ctx 8,000 | **36.1 tok/s** |
@@ -973,13 +974,16 @@ Two levers move these and both are one environment variable:
 
 The prefill numbers above are the engine's own prefill bench. Through the full
 stack of chat template, tokenizer, HTTP and SSE, the image's own `sweep` mode
-measures **812 tok/s at pp2048 and 1,041 at pp8192**, and `bench` over ten real prompt
-shapes measures **52.3 tok/s mean with speculation** on the 0.14.0 image
-(min 44.5 on chat, max 58.4 on code; 2.47 tokens committed per round). 0.13.8
-read 44.4 on the same instrument in the same session (1.68 a round); the
-difference is the draft head's wiring, which since 0.14.0 reads the model's
-four residual streams as the reference implementation does and drafts two
-tokens ahead.
+measures **1,502 tok/s at pp8192 and 1,499 at pp32768** on 0.14.1 with the
+prompt cache off (1,237 and 1,385 on 0.14.0 in the same session). With the
+cache on, the default, a cold request reads 1,415 and 1,530; it also stores
+that request's state for the next turn. `bench`
+over ten real prompt shapes measures **52.5 tok/s mean with speculation** on
+0.14.1 (min 43.8 on chat, max 58.4 on code; 2.46 tokens committed per round;
+52.7 on 0.14.0 in the same session). 0.13.8 read 44.4 on the same instrument
+(1.68 a round); the difference is the draft head's wiring, which since
+0.14.0 reads the model's four residual streams as the reference
+implementation does and drafts two tokens ahead.
 Acceptance depends on how predictable the text is, so quote the mean with the
 prompt set named, never a single shape.
 
@@ -990,8 +994,12 @@ Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
 podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.1 bench serial,mtp 256 low 3
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.1 sweep -p 8192,32768 -n 128
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.14.1 sweep -p 8192,32768 -n 128
 ```
+
+Run the sweep with the prompt cache off, as above. It repeats one prompt per
+size, so with the cache on the repeats are cache hits and the printed mean
+is hundreds of times the real prefill rate.
 
 ---
 
@@ -1232,7 +1240,7 @@ its quality sidecar is the other arm; MTP on in both):
 | held in RAM | 68 GiB | 72 GiB (the 8-bit dense layers, repacked) |
 | perplexity, three corpora | | **0.7 to 2.1% better** |
 | fixture agreement with transformers | 182/192 | 184/192 |
-| prefill 8,192 / 32,768 | 1,246 / 1,424 tok/s | 1,246 / 1,423 (within 1%) |
+| prefill 8,192 / 32,768, served (0.14.1) | 1,502 / 1,499 tok/s | 1,485 / 1,465 (within 2.5%) |
 | decode, serial, short context | 35.4 tok/s | 25.4 (**-28%**) |
 | decode, draft head + prompt lookup, coding-agent turns | 55-57 tok/s | 42-45 |
 
