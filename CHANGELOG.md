@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.14.2
+
+Fixes from two reports. No weight change. At temperature 0 the output is
+still byte-identical to serial greedy decode. For the reports behind it:
+issues #112 ([@tatianyi](https://github.com/tatianyi)) and #113
+([@charti](https://github.com/charti)).
+
+### Fixed
+
+- **An image in a Responses tool result reaches the model as an image.** A
+  `function_call_output` whose `output` is a content array (a text part and
+  an `input_image`, as a coding agent's file-read tool returns a
+  screenshot) was turned into JSON text, so the image's base64 was read as
+  hundreds of thousands of text tokens and the request was refused as too
+  long. It is now rendered as the chat route already rendered a `tool`
+  message with an image.
+- **A sampled reply can no longer spend its whole budget on a loop of
+  `<|im_end|>` markers inside its reasoning.** The server keeps at most 16
+  end-of-turn tokens as text inside the think block (kept since 0.13.4).
+  The 17th closes the block with the same closing text the thinking budget
+  uses, and the model answers. `usage.completion_tokens_details.reasoning_closed_by`
+  is then `end_of_turn_guard`. Without a thinking budget or answer room on
+  the request, the 17th ends the turn.
+
+### Changed
+
+- **A sampled request that omits `top_k` or `top_p` now uses the model's
+  values, 20 and 0.95** (from its `generation_config.json`), as vLLM does.
+  Before, an omitted filter meant no filter, and at temperature 1 with a
+  presence penalty the output could drift into mixed-script text. A value
+  the request sends still wins, and so do `HALOGEN_TOP_K` and
+  `HALOGEN_TOP_P`. `HALOGEN_TOP_K=0` and `HALOGEN_TOP_P=1` restore the old
+  unfiltered default. Greedy requests are unchanged. `/health` reports the
+  values in force under `sampling.filter_defaults`.
+- **With the vision tower off, `/v1/responses` refuses a tool result that
+  carries an image** (400, naming `HALOGEN_VISION_TOWER`), as the chat
+  route already did. It used to serve the base64 as text.
+- **A tool result array with only text parts is rendered as its text**, not
+  as JSON.
+
 ## 0.14.1
 
 Fixes from two reports, and a faster prefill. No weight change. At

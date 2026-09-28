@@ -112,7 +112,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 That is the whole thing. It fetches the weights on first start (118 GiB, so
@@ -154,7 +154,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -187,7 +187,9 @@ and the tool-call wire format. What follows is the part worth reading first.
 `presence_penalty`, `frequency_penalty`, `logit_bias` and `logprobs` are
 supported. `temperature` absent or 0 is greedy decode. Above 0, the request
 samples from the filtered distribution on the same drafter it would otherwise
-get, so speculation stays on. A `seed` reproduces a request on the same server
+get, so speculation stays on. A sampled request that omits `top_k` or `top_p`
+gets the model's own values, 20 and 0.95 (since 0.14.2, #112). Before, an
+omitted filter meant no filter. A `seed` reproduces a request on the same server
 configuration. A sampled request (temperature above 0) with `logprobs: true`
 carries the chosen token's logprob on every token. For scoring, `logprobs` at
 `temperature: 0` and `top_logprobs` (1 to 20, at any temperature) cover the
@@ -223,7 +225,9 @@ them:
 
 `HALOGEN_TEMPERATURE`, `HALOGEN_TOP_P`, `HALOGEN_TOP_K`, `HALOGEN_MIN_P`,
 `HALOGEN_PRESENCE_PENALTY` and `HALOGEN_FREQUENCY_PENALTY` each set the value a
-request gets when it omits that field. The rule is one sentence: a field the
+request gets when it omits that field. Without them, a sampled request that
+omits `top_k` or `top_p` gets the model's 20 and 0.95, and `HALOGEN_TOP_K=0` or
+`HALOGEN_TOP_P=1` turns that filter off. The rule is one sentence: a field the
 request sends always wins, a default fills only a field the request omits, and
 a request that sends `temperature: 0` decodes greedy and takes none of the
 sampling defaults. With a temperature default set, a request that sends no
@@ -421,7 +425,11 @@ through 0.13.3 the reply ended right there: `finish_reason: "stop"`, no
 content and no tool call, on 15-25% of one agent's turns (#84). Inside the
 thinking block that token is now kept as text and generation goes on;
 inside an open tool call it is kept up to four times a reply (a template
-written through a file-writing tool). The other half of the same report is
+written through a file-writing tool). Since 0.14.2 at most 16 are kept in the
+thinking block (#112). The 17th closes the block with the thinking budget's
+closing text and the model answers, so a sampled reply caught in a loop of
+markers does not spend its budget there. `reasoning_closed_by` then reads
+`end_of_turn_guard`. The other half of the same report is
 a model that writes a complete tool call inside its thinking block and then
 ends its turn on it: that call is now made, with `finish_reason:
 "tool_calls"`, and its text also stays in `reasoning_content`, where it was
@@ -455,7 +463,10 @@ Streaming and non-streaming both work, `function_call` and
 `function_call_output` round trip, and `tools` entries that are not functions
 (`web_search`, and the `namespace` wrapper, whose nested functions are used)
 are ignored rather than rejected. `instructions` and any `developer` turns are
-folded into the system prompt.
+folded into the system prompt. A `function_call_output` whose output is a
+content array with an `input_image` passes the image to the model (since
+0.14.2, #113). That needs the vision tower. Without it the request is refused
+with a 400.
 
 **Reasoning is returned** (since 0.7.0; #44). The model's thinking goes out
 as a `reasoning` output item ahead of the message, its text as a
@@ -796,7 +807,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -812,7 +823,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -828,7 +839,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -993,8 +1004,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.1 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.14.1 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.2 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.14.2 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1141,7 +1152,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1306,7 +1317,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1348,7 +1359,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2 \
   MODE [FILE] [flags]
 ```
 

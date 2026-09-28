@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -112,8 +112,9 @@ whether it starts and how it behaves:
   and `top_logprobs` cover the first generated token only; a request that
   would need more is a 400.
 - **A quoted `<|im_end|>` inside the thinking block no longer ends the
-  reply** (0.13.4, #84). It is kept as text (and inside an open tool call
-  up to four times), and a complete tool call the model wrote inside its
+  reply** (0.13.4, #84). It is kept as text (at most 16 times in the block
+  since 0.14.2, when the 17th closes it, and inside an open tool call up to
+  four times), and a complete tool call the model wrote inside its
   thinking block and then ended its turn on is made (`finish_reason:
   "tool_calls"`, the text also in `reasoning_content`). Both show in
   `usage.completion_tokens_details` (`end_of_turn_kept`,
@@ -122,7 +123,10 @@ whether it starts and how it behaves:
   "stop"` with nothing in `content` and no tool call.
 - **Images are off until `HALOGEN_VISION_TOWER` is set** (`1` finds the
   sidecar beside the checkpoint). Without it an image is a 400 naming the
-  flag.
+  flag. That includes an image in a `/v1/responses` tool result (0.14.2).
+- **A sampled request that omits `top_k` or `top_p` gets 20 and 0.95**, the
+  model's own values (0.14.2, #112). `HALOGEN_TOP_K=0` or `HALOGEN_TOP_P=1`
+  turns that off.
 - **The prompt cache is on** (`HALOGEN_PROMPT_CACHE=2`): a follow-up turn
   prefills only its new tokens. It saves its place at the end of the
   system prompt, at the start of the request's last message (0.12.1: a
