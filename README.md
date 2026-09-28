@@ -61,7 +61,8 @@ the changelog can credit them. See [Community](#community).
   [sampling](#sampling), [images](#images),
   [token budgets](#token-budgets-and-why-an-empty-answer-means-you-ran-out),
   [Codex and the Responses API](#codex-and-the-responses-api),
-  [from an agent harness](#from-an-agent-harness)
+  [from an agent harness](#from-an-agent-harness),
+  [as a classifier](#using-it-as-a-classifier)
 - **[Give it a machine of its own](#give-it-a-machine-of-its-own)**: what this
   server holds, what that leaves for anything else, and
   [the recipes if you must share it](#if-you-must-share-it)
@@ -197,19 +198,8 @@ first generated token, so those requests set `max_tokens: 1`. `logprobs` with
 `stream: true`, logprobs past the first token at temperature 0, and `n > 1`
 are not implemented and are refused with a 400, as is any value outside its
 defined range, rather than clamped. `/health` lists what the running build
-supports.
-
-**Reading a label's probability** (0.13.8, #100). A classifier reads the
-next-token distribution over a few labels from one forward pass. End the
-messages with the assistant's answer prefix, for example `{"answer": "`, and
-send `continue_final_message: true`, `add_generation_prompt: false`,
-`max_tokens: 1`, `temperature: 0`, `logprobs: true` and `top_logprobs: 20`.
-Each `top_logprobs` entry names a token, its logprob and its bytes. Without
-`continue_final_message` the server opens a new turn after the prefix, and with
-thinking on, the first token is then the start of the reasoning rather than a
-label. With thinking off (`chat_template_kwargs: {"enable_thinking": false}`)
-a request without a prefix scores the label too. The probabilities are the
-model's own and are not calibrated.
+supports. To read the probability of a few labels, see [Using it as a
+classifier](#using-it-as-a-classifier).
 
 **Server-side defaults, and the model card's settings.** This image decodes
 greedy unless a request says otherwise, because greedy is what every
@@ -626,6 +616,16 @@ tokens, S s` every 30 s of a long answer, so a 160k-token compaction that
 takes minutes is visible while it runs rather than only in the `serve_api:`
 line at its end. `/health` reports `busy_for_s` while a request is in
 flight.
+
+### Using it as a classifier
+
+The model can score a fixed set of labels in one forward pass. End the prompt
+where the label goes, ask for `max_tokens: 1` with `logprobs` and
+`top_logprobs`, and read the probability the model gives each label. There is
+no text to parse and nothing is generated past that one token.
+[docs/CLASSIFY.md](docs/CLASSIFY.md) has a complete request, a Python
+function that returns each label's probability, how to choose labels, and how
+to lay out the prompt so the cache reuses everything but the item.
 
 ## Give it a machine of its own
 

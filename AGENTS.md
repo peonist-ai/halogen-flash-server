@@ -111,6 +111,8 @@ whether it starts and how it behaves:
   `logprobs: true` and `top_logprobs` (up to 20). `logprobs` at temperature 0
   and `top_logprobs` cover the first generated token only; a request that
   would need more is a 400.
+  [docs/CLASSIFY.md](docs/CLASSIFY.md) is the full recipe: choosing labels,
+  reading the reply, and the prompt layout the cache reuses.
 - **A quoted `<|im_end|>` inside the thinking block no longer ends the
   reply** (0.13.4, #84). It is kept as text (at most 16 times in the block
   since 0.14.2, when the 17th closes it, and inside an open tool call up to
