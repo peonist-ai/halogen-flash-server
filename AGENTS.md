@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -49,8 +49,12 @@ podman run --rm -p 8731:8731 \
 
 - On Docker, `--group-add keep-groups` is `--group-add video --group-add render`.
 - `HALOGEN_DOWNLOAD` fetches on first start and re-fetches nothing after
-  (except a stale 2.4 GiB sidecar). Unset, the container opens no outbound
+  (except w4b's stale 2.4 GiB sidecar). Unset, the container opens no outbound
   connection.
+- **The default checkpoint is v2 (0.15).** An unset `HALOGEN_CHECKPOINT`
+  serves v2, except on a volume that holds only 0.14's w4b, which keeps
+  serving w4b and downloads nothing. `HALOGEN_FLASH_PIN_TRUNK=0` applies to
+  w4b only.
 - If you split the engine and the API into two containers, **run both from
   the same image tag**. Each prints its version on its first log line and
   `/health` reports both.
@@ -124,7 +128,7 @@ whether it starts and how it behaves:
   behaviour. Through 0.13.3 either case came back as `finish_reason:
   "stop"` with nothing in `content` and no tool call.
 - **Images are off until `HALOGEN_VISION_TOWER` is set** (`1` finds the
-  sidecar beside the checkpoint). Without it an image is a 400 naming the
+  vision file beside the checkpoint). Without it an image is a 400 naming the
   flag. That includes an image in a `/v1/responses` tool result (0.14.2).
 - **A sampled request that omits `top_k` or `top_p` gets 20 and 0.95**, the
   model's own values (0.14.2, #112). `HALOGEN_TOP_K=0` or `HALOGEN_TOP_P=1`

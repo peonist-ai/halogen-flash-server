@@ -8,6 +8,21 @@ Qwen3.8-Flash-Next is 125B parameters plus a 51B-parameter n-gram embedding
 table, 335 GiB at BF16 and 173 GiB at FP8, against 124 GB of unified memory.
 The question was never whether to quantize, only where to spend the bits.
 
+## The v2 checkpoint (0.15 on)
+
+| | |
+|---|---|
+| file | **62.1 GiB**, 4.16 bits a weight on average |
+| experts and the rest of the model | 4-bit |
+| the mixing layers between them | 6-bit |
+| draft head's dense projections | 8-bit |
+| n-gram lookup table | its own file, FP8, 47.7 GiB, a lookup that is paged rather than held resident |
+
+It stays closer to the original model's outputs than w4b plus its sidecar
+did, and holds about 3.5 GiB less.
+
+# 0.14's checkpoint, w4b
+
 ## The base checkpoint
 
 | | |

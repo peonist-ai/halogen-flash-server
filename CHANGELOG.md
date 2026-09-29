@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.15.0
+
+A new default checkpoint. At temperature 0 the output is still
+byte-identical to serial greedy decode.
+
+### Changed
+
+- **The default checkpoint is `qwen38-flash-next-v2.hgn`.** It is one file
+  with no sidecar. It stays closer to the original model's outputs than
+  0.14's checkpoint and its sidecar, and it holds about 3.5 GiB less in
+  memory. The model's lookup table is now its own file,
+  `qwen38-flash-next-ngram.hgn`, beside it. A start with `HALOGEN_DOWNLOAD`
+  set fetches both.
+- **An upgrade keeps the checkpoint you already have.** With
+  `HALOGEN_CHECKPOINT` unset, a volume that holds
+  `qwen38-flash-next-w4b.hgn` and not v2 goes on serving w4b and downloads
+  nothing. The startup log says how to switch. A new, empty volume gets v2.
+- **`HALOGEN_FLASH_PIN_TRUNK=0` applies to w4b only.** v2 refuses it at
+  startup and says so.
+
+### Fixed
+
+- **`halogen verify` and `halogen inspect` read v2.**
+
 ## 0.14.2
 
 Fixes from two reports. No weight change. At temperature 0 the output is

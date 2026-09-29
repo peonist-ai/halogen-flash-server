@@ -113,10 +113,10 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
-That is the whole thing. It fetches the weights on first start (118 GiB, so
+That is the whole thing. It fetches the weights on first start (about 111 GiB, so
 give it a while; the transfer resumes if interrupted; since 0.13.2 the log
 says how many gigabytes have arrived every 30 seconds instead of counting
 files) and serves an OpenAI-compatible endpoint on `:8731`, reachable from
@@ -141,10 +141,19 @@ newest.
 Note the models volume is read-**write** here, with no `:ro`, because it is
 being downloaded into. Nothing is fetched on later starts, with one
 exception: a start with `HALOGEN_DOWNLOAD` set and the volume writable
-re-fetches the 2.4 GiB quality sidecar when the one on disk predates the image
-(0.6.0 changed that file; the 115 GiB checkpoint is never re-fetched). With
+re-fetches w4b's 2.4 GiB quality sidecar when the one on disk predates the
+image (0.6.0 changed that file; a checkpoint is never re-fetched). With
 `HALOGEN_DOWNLOAD` unset the container opens no outbound connections at all,
 and says at startup if the sidecar is the older one.
+
+**Upgrading from 0.14 or earlier.** Your volume holds 0.14's checkpoint,
+`qwen38-flash-next-w4b.hgn` and its sidecar. With `HALOGEN_CHECKPOINT`
+unset, 0.15 keeps serving that file and downloads nothing. The startup log
+says a newer default is available. To move to it, start once with
+`-e HALOGEN_CHECKPOINT=/models/qwen38-flash-next-v2.hgn` and
+`HALOGEN_DOWNLOAD` set, and the first start fetches v2 and its lookup
+table (about 110 GiB). Once v2 runs, the w4b files can be deleted, and
+later starts pick v2 without the variable.
 
 **If you would rather fetch the weights yourself:**
 
@@ -155,7 +164,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -690,7 +699,7 @@ startup [   4.9 s] free(1) and MemAvailable will report about 80.4 GiB
 **Believe the first line.** `free`, `MemAvailable`, and every monitoring tool
 that reads them, count this server's locked weights as reclaimable page cache,
 so they overstate the memory available on this host by the size of the model,
-about 68 GiB. No kernel field reports the difference (`Mlocked` and
+about 62 GiB (68 with w4b). No kernel field reports the difference (`Mlocked` and
 `Unevictable` both stay at zero across the load), which is why the server has
 to print the correction itself. With `HALOGEN_WEIGHTS_LOCK=1` (below) the
 weights are locked in the kernel's sense too, `Mlocked` and `Unevictable`
@@ -717,7 +726,7 @@ above. Options, in the order worth trying:
   It is a last resort, not a tuning option. Through 0.12.1 it did not work
   at the shipped settings at all (the first request ended the server with
   `internal sizing error in the per-forward arena`, issue #83); since
-  0.12.2 it does.
+  0.12.2 it does. It applies to w4b only. v2 refuses it at startup.
 
 - **`HALOGEN_WEIGHTS_LOCK=1`** (0.13.2, opt-in) is for the other direction:
   a host that is already short. "Reclaimable page cache" above is not only
@@ -766,7 +775,7 @@ holds cannot be moved. If you need to reclaim it, stop the server.
 
 ### If you must share it
 
-The 68 GiB of weights are pinned and do not move. Everything else the server
+The weights (about 62 GiB, 68 with w4b) are pinned and do not move. Everything else the server
 takes is decided by three settings, so sharing the machine means choosing
 how much of the other half you keep. What each configuration takes is the
 engine's own fit arithmetic (the same model the startup uses to size the
@@ -807,7 +816,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -823,7 +832,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -839,7 +848,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
@@ -1004,8 +1013,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.14.2 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.14.2 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.15.0 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.15.0 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1090,8 +1099,27 @@ has the BF16 baseline.
 
 **You are running the quality build by default.** There is nothing to enable.
 
-The checkpoint ships as two files, and the engine picks the second one up on
-its own when it sits beside the first:
+The checkpoint is one file, with the model's lookup table beside it:
+
+```
+qwen38-flash-next-v2.hgn        62.1 GiB   the checkpoint
+qwen38-flash-next-ngram.hgn     47.7 GiB   the lookup table (paged, not held in memory)
+```
+
+Its weights are 4.16 bits each on average: the experts and the rest of the
+model at 4 bits, the small mixing layers between them at 6 bits, and the
+draft head's projections at 8. It stays closer to the original model's
+outputs than 0.14's checkpoint did, measured on real agent sessions, and
+holds about 3.5 GiB less in memory. **Which families are stored at which
+precision is written out in [`docs/QUANT.md`](docs/QUANT.md).**
+
+**0.14's checkpoint still loads.** `qwen38-flash-next-w4b.hgn` and its
+quality sidecar (the two files below) run as before, named with
+`HALOGEN_CHECKPOINT`. On a volume that holds only them, they are what an
+unset `HALOGEN_CHECKPOINT` serves (see "Upgrading" above).
+
+**With w4b:** the checkpoint ships as two files, and the engine picks the
+second one up on its own when it sits beside the first:
 
 ```
 qwen38-flash-next-w4b.hgn              115.55 GiB   the checkpoint
@@ -1152,7 +1180,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1255,6 +1283,8 @@ its quality sidecar is the other arm; MTP on in both):
 | decode, serial, short context | 35.4 tok/s | 25.4 (**-28%**) |
 | decode, draft head + prompt lookup, coding-agent turns | 55-57 tok/s | 42-45 |
 
+The checkpoint column is 0.14's w4b. v2 holds about 62 GiB.
+
 The quality row is the interesting one: unsloth's file keeps the dense layers
 at 8 bits and crushes the experts to about 3.4 bits, and that beats our
 calibrated 4-bit dense layers over 4.5-bit experts. The decode row is the
@@ -1317,7 +1347,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1359,7 +1389,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.14.2 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.0 \
   MODE [FILE] [flags]
 ```
 

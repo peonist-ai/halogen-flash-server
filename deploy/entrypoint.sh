@@ -130,10 +130,28 @@ BIND="${HALOGEN_BIND:-127.0.0.1}"
 # troubleshooting, which is the only time anyone wants it.
 export HALOGEN_VERBOSE="${HALOGEN_VERBOSE:-0}"
 
-# The checkpoint: HALOGEN_CHECKPOINT set, to anything, wins. The image sets
-# the 4-bit checkpoint; this fallback is the same file, for a caller that
-# unsets the variable.
-: "${HALOGEN_CHECKPOINT:=/models/qwen38-flash-next-w4b.hgn}"
+# The checkpoint: HALOGEN_CHECKPOINT set, to anything, wins. Unset (0.15):
+# v2 (one file, its own precision choices, no sidecar; the lookup table is
+# its own file beside it), EXCEPT on a volume that holds w4b
+# and not v2, the volume an image upgrade finds: there w4b is served, nothing
+# is fetched, and legacy_note says how to switch (an upgrade must not start
+# a 118 GB download before the server comes up). The image bakes no
+# HALOGEN_CHECKPOINT, so "unset" is the caller's, not the image's.
+default_checkpoint() {   # default_checkpoint MODELS_DIR -> the path to serve
+  if [ ! -f "$1/qwen38-flash-next-v2.hgn" ] && [ -f "$1/qwen38-flash-next-w4b.hgn" ]; then
+    echo "$1/qwen38-flash-next-w4b.hgn"
+  else
+    echo "$1/qwen38-flash-next-v2.hgn"
+  fi
+}
+resolve_checkpoint() {   # resolve_checkpoint MODELS_DIR: sets HALOGEN_CHECKPOINT (when unset) and LEGACY_W4B
+  LEGACY_W4B=0
+  if [ -z "${HALOGEN_CHECKPOINT:-}" ]; then
+    HALOGEN_CHECKPOINT="$(default_checkpoint "$1")"
+    case "$HALOGEN_CHECKPOINT" in */qwen38-flash-next-w4b.hgn) LEGACY_W4B=1 ;; esac
+  fi
+}
+resolve_checkpoint /models
 export HALOGEN_CHECKPOINT
 
 ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
@@ -863,6 +881,7 @@ need_ckpt() {
     echo "  or point:  -e HALOGEN_CHECKPOINT=/models/<file>.hgn (or any shard of a GGUF)" >&2
     exit 1; }
   if is_gguf; then check_gguf; else check_sidecar; fi
+  legacy_note
   check_ngram_table
   check_vision
   kv_budget_note
@@ -993,6 +1012,21 @@ check_vision() {
 # It WARNS rather than fails. `HALOGEN_CK_OVERLAY=none` is a legitimate
 # configuration (the measurement control), and so is choosing not to download
 # the sidecar.
+# 0.15: on a volume that holds only w4b, the default serves it; say so, once,
+# and how to move to v2 (DRAFT wording, the user reviews it with the release)
+legacy_note() {
+  [ "${LEGACY_W4B:-0}" = 1 ] || return 0
+  echo "halogen: this volume holds qwen38-flash-next-w4b.hgn and not the newer default,"
+  echo "  qwen38-flash-next-v2.hgn (higher quality, less memory). w4b is served and nothing is downloaded."
+  if [ -n "${HALOGEN_DOWNLOAD:-}" ]; then
+    echo "  To switch, start with -e HALOGEN_CHECKPOINT=/models/qwen38-flash-next-v2.hgn. That start"
+    echo "  downloads v2 and its lookup table (about 110 GiB). Once v2 runs, the w4b files can be removed."
+  else
+    echo "  To switch, put qwen38-flash-next-v2.hgn and qwen38-flash-next-ngram.hgn in this volume, then"
+    echo "  start with -e HALOGEN_CHECKPOINT=/models/qwen38-flash-next-v2.hgn. Once v2 runs, the w4b files"
+    echo "  can be removed."
+  fi
+}
 check_sidecar() {
   case "${HALOGEN_CK_OVERLAY:-}" in
     none|0)
