@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -60,6 +60,14 @@ podman run --rm -p 8731:8731 \
   `/health` reports both.
 - The engine's own port (`HALOGEN_PORT`, 8730) has **no authentication**.
   Keep it unpublished; only `HALOGEN_API_PORT` (8731) is for clients.
+- **Three wires on 8731**: OpenAI chat and completions
+  (`/v1/chat/completions`, `/v1/completions`), the Responses API
+  (`/v1/responses`, for Codex), and since 0.15.1 the Anthropic Messages API
+  (`/v1/messages` and `/v1/messages/count_tokens`, for Claude Code with
+  `ANTHROPIC_BASE_URL=http://HOST:8731` and any `ANTHROPIC_API_KEY`).
+  `/health` lists the routes under `endpoints`. On Fedora the `--ipc=host`
+  in the run line is what lets the container map `/dev/kfd` under SELinux;
+  without it, `setsebool -P container_use_devices true`.
 
 ## Before you change a setting
 
@@ -71,11 +79,12 @@ whether it starts and how it behaves:
   Slots share one pool; one slot allocates as much as four. An "out of
   memory" at startup means the pool did not fit: `262144` is the small
   layout, `524288` the default. `HALOGEN_MAX_TOK=16384` gives back about
-  8.8 GiB of working memory for ~9% of prefill speed when the pool cannot
-  go lower. Never raise `HALOGEN_MAX_TOK` to the context. If the machine
+  4.4 GiB of working memory (1.5 on w4b) for ~9% of prefill speed when the
+  pool cannot go lower. Never raise `HALOGEN_MAX_TOK` to the context. If the machine
   must also run other things, the README's [If you must share
   it](README.md#if-you-must-share-it) has what each layout takes and a
-  run command for each; the weights (68 GiB) are pinned in every one.
+  run command for each; the weights (62 GiB, 68 with w4b) are pinned in
+  every one.
 - **A request reserves `prompt + max_tokens` positions when admitted** and
   waits in arrival order when the pool cannot hold it. A large default
   budget costs concurrency. Above `HALOGEN_MAX_TOKENS_CAP`
@@ -93,6 +102,9 @@ whether it starts and how it behaves:
   room`) the reply's `usage.completion_tokens_details` carries
   `reasoning_closed_at` and `reasoning_closed_by` (`answer_room` or
   `max_thinking_tokens`); a reply the model closed itself has neither.
+  `HALOGEN_THINKING_BUDGET_MESSAGE` (0.15.1) sets the sentence written before
+  `</think>` when the server closes the block. `reasoning_effort: "max"`
+  is `xhigh`.
 - **The chat template is probed at startup** (0.12.2): a template without
   a working `enable_thinking` branch (a tokenizer mounted from another
   repository) refuses to start with one sentence naming the file;
@@ -132,7 +144,10 @@ whether it starts and how it behaves:
   flag. That includes an image in a `/v1/responses` tool result (0.14.2).
 - **A sampled request that omits `top_k` or `top_p` gets 20 and 0.95**, the
   model's own values (0.14.2, #112). `HALOGEN_TOP_K=0` or `HALOGEN_TOP_P=1`
-  turns that off.
+  turns that off. `repetition_penalty` (0.15.1) follows vLLM's rule on
+  sampled requests; on a greedy request any value but 1 is a 400. The
+  presence and frequency penalties count the thinking block too, so a
+  frequency penalty of 1.0 garbles a long reasoning reply.
 - **The prompt cache is on** (`HALOGEN_PROMPT_CACHE=2`): a follow-up turn
   prefills only its new tokens. It saves its place at the end of the
   system prompt, at the start of the request's last message (0.12.1: a
@@ -151,7 +166,8 @@ whether it starts and how it behaves:
   out once as a standalone checkpoint.
 - **This server holds most of a 128 GB host.** Read the startup line `host
   memory left for everything else` and believe it: `free` and `MemAvailable`
-  overstate free memory by about 68 GiB, the size of the locked weights.
+  overstate free memory by about 62 GiB (68 with w4b), the size of the
+  locked weights.
   Another large process beside it, or a pool that leaves under about 10 GiB,
   turns into minutes-long stalls that look like a hang. The pool is the
   lever.

@@ -61,6 +61,7 @@ the changelog can credit them. See [Community](#community).
   [sampling](#sampling), [images](#images),
   [token budgets](#token-budgets-and-why-an-empty-answer-means-you-ran-out),
   [Codex and the Responses API](#codex-and-the-responses-api),
+  [Claude Code and the Messages API](#claude-code-and-the-anthropic-messages-api),
   [from an agent harness](#from-an-agent-harness),
   [as a classifier](#using-it-as-a-classifier)
 - **[Give it a machine of its own](#give-it-a-machine-of-its-own)**: what this
@@ -86,6 +87,7 @@ the changelog can credit them. See [Community](#community).
 - **[Troubleshooting](#troubleshooting)**:
   [will not start](#if-the-server-will-not-start-out-of-memory),
   [starts but crawls](#if-the-server-starts-but-crawls-on-long-prompts),
+  [Fedora and SELinux](#if-the-load-fails-on-fedora-with-memory-critical-error),
   [the host settings we measured
   on](#the-host-settings-these-numbers-were-measured-on)
 - **[What this release is not](#what-this-release-is-not)**,
@@ -113,7 +115,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -164,7 +166,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -194,8 +196,8 @@ and the tool-call wire format. What follows is the part worth reading first.
 ### Sampling
 
 `temperature`, `top_p`, `top_k`, `min_p`, `seed`,
-`presence_penalty`, `frequency_penalty`, `logit_bias` and `logprobs` are
-supported. `temperature` absent or 0 is greedy decode. Above 0, the request
+`presence_penalty`, `frequency_penalty`, `repetition_penalty`, `logit_bias`
+and `logprobs` are supported. `temperature` absent or 0 is greedy decode. Above 0, the request
 samples from the filtered distribution on the same drafter it would otherwise
 get, so speculation stays on. A sampled request that omits `top_k` or `top_p`
 gets the model's own values, 20 and 0.95 (since 0.14.2, #112). Before, an
@@ -210,6 +212,26 @@ defined range, rather than clamped. `/health` lists what the running build
 supports. To read the probability of a few labels, see [Using it as a
 classifier](#using-it-as-a-classifier).
 
+**`repetition_penalty`, since 0.15.1.** It follows vLLM's rule. Every token
+that already appears in the prompt or in the reply so far has its logit
+divided by the factor when the logit is positive, and multiplied by it
+otherwise. This runs after `logit_bias` and before the presence and
+frequency penalties, which count the reply only. `1` is off, and a value
+above 1 discourages repeats. It applies to sampled requests. A greedy
+request that sends a value other than 1 is a 400, because greedy decoding
+here is byte-identical to serial decode and a penalty would change that
+(vLLM applies it to greedy decoding too). `1` is accepted on a greedy
+request, since the model card lists it. Before 0.15.1 the field was
+accepted and ignored.
+
+**The penalties count the reasoning too.** `presence_penalty` and
+`frequency_penalty` count every token of the reply, the thinking block
+included, as vLLM and the OpenAI API do (llama.cpp counts only the last 64
+tokens, so the same values are much milder there). With
+`frequency_penalty` 1.0 a long reasoning reply loses its punctuation within
+about a thousand tokens and turns into word lists (issue #112). The model
+card's thinking settings use no penalty.
+
 **Server-side defaults, and the model card's settings.** This image decodes
 greedy unless a request says otherwise, because greedy is what every
 byte-identical guarantee below is made on. The model's authors recommend
@@ -223,7 +245,8 @@ them:
 ```
 
 `HALOGEN_TEMPERATURE`, `HALOGEN_TOP_P`, `HALOGEN_TOP_K`, `HALOGEN_MIN_P`,
-`HALOGEN_PRESENCE_PENALTY` and `HALOGEN_FREQUENCY_PENALTY` each set the value a
+`HALOGEN_PRESENCE_PENALTY`, `HALOGEN_FREQUENCY_PENALTY` and
+`HALOGEN_REPETITION_PENALTY` each set the value a
 request gets when it omits that field. Without them, a sampled request that
 omits `top_k` or `top_p` gets the model's 20 and 0.95, and `HALOGEN_TOP_K=0` or
 `HALOGEN_TOP_P=1` turns that filter off. The rule is one sentence: a field the
@@ -252,15 +275,14 @@ set it to `1` to look for the file next to the checkpoint:
 
 With no tower the image path is absent rather than disabled, so a text-only
 deployment behaves exactly as it did before this release. The tower takes
-about 2 GiB of RAM, and on a 128 GB machine that is the difference between a
-524,288-position KV pool and 262,144 (one conversation at the full context
-still fits; the startup log says which you got, see *Check what pool you
-actually got* below). `/health` reports
+about 2 GiB of RAM, which the startup's pool fit counts, and the startup log
+says what pool you got (see *Check what pool you actually got* below). `/health` reports
 whether images are accepted and, when they are not, why; an image sent to a
 server without a tower is a 400 naming the flag.
 
-Both `/v1/chat/completions` and `/v1/responses` take an image content part in
-the usual OpenAI shape, carrying a `data:` URL or bare base64:
+`/v1/chat/completions` and `/v1/responses` take an image content part in the
+usual OpenAI shape, carrying a `data:` URL or bare base64. Since 0.15.1
+`/v1/messages` takes an Anthropic `image` block with a `base64` source.
 
 ```json
 {"role": "user", "content": [
@@ -311,10 +333,10 @@ room to spare. Send more when you want more, up to `HALOGEN_MAX_TOKENS_CAP`
 truncation, so ask for what you need and the server will tell you if it is too
 much. Hard reasoning problems can genuinely exceed 8192: pass a larger budget,
 or `"reasoning_effort": "low"` to make the model think less. Accepted efforts
-are `minimal`, `low`, `medium`, `high` and `xhigh`; the model's own default is
-`xhigh`. The chat template itself knows three levels, so the five names fold
-onto them: `minimal` and `low` are `low`, `medium` is `medium`, `high` and
-`xhigh` are `xhigh`, and the startup line and `/health` report the level the
+are `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. The model's own
+default is `xhigh`. The chat template itself knows three levels, so the
+names fold onto them: `minimal` and `low` are `low`, `medium` is `medium`,
+`high`, `xhigh` and `max` are `xhigh` (`max` since 0.15.1), and the startup line and `/health` report the level the
 template will see (#71 asked why `high` printed as `xhigh`; #76 asked for
 the middle one to be said). `medium` is the one step down from the default. `"reasoning_effort": "none"` turns thinking off for that request
 (the same as `chat_template_kwargs: {"enable_thinking": false}`, and
@@ -330,6 +352,17 @@ greedy decoding at 100k+ of context can loop inside the block and spend the
 whole budget there (issue #56: 32,000 tokens of reasoning and an empty
 answer); the model card's sampling settings above are the cure, and the
 budget bounds the damage when a client sends none. Unset, nothing changes.
+
+**The closing sentence can be set, since 0.15.1** (#114).
+`HALOGEN_THINKING_BUDGET_MESSAGE`, like llama-server's
+`--reasoning-budget-message`, replaces Qwen's sentence in the text the
+server writes before `</think>` whenever it closes the block itself. That
+happens at `max_thinking_tokens`, at the answer room below, and at the
+end-of-turn guard. Set and empty, the block closes with `</think>` alone. Unset, it is
+Qwen's sentence, as before. The forced tokens count against `max_tokens`.
+The server refuses to start on a message that holds a chat marker such as
+`</think>` or `<|im_end|>` (the model would read it as a control token),
+or on one longer than 512 tokens.
 
 **The answer room, since 0.11.0.** Thinking no longer consumes the whole
 budget. When a request sends no thinking budget of its own, the server closes
@@ -438,6 +471,14 @@ spans). `usage.completion_tokens_details` carries `end_of_turn_kept` and
 `tool_call_from_reasoning` when either happened, the request line in the log
 says `end of turn kept as text`, and `HALOGEN_EOS_GUARD=0` restores 0.13.3's
 behaviour. An end-of-turn token in the answer itself still ends the reply.
+
+**A document that quotes the chat markers.** A prompt is tokenized whole,
+so `<|im_end|>` or `</think>` written in a message reaches the model as the
+real control token, as it does on vLLM. A model translating or summarizing
+such a document can copy the token and end its reply there (issue #115).
+Break each marker in the source text, for example `<| im_end |>`. Since
+0.15.1 a request with thinking off counts no reasoning tokens even when its
+reply writes `</think>`.
 
 ### Codex and the Responses API
 
@@ -574,6 +615,50 @@ feature off (the 400 of 0.7.0 comes back).
 Verified against the Codex CLI driving real tasks end to end, and separately
 against the official `openai` Python SDK, which parses every event into its own
 typed models.
+
+### Claude Code and the Anthropic Messages API
+
+Since 0.15.1 the server also speaks the **Anthropic Messages API** at
+`POST /v1/messages`, with `POST /v1/messages/count_tokens` beside it, so
+Claude Code and the `anthropic` SDKs can use it directly:
+
+```bash
+export ANTHROPIC_BASE_URL=http://<your-server>:8731
+export ANTHROPIC_API_KEY=anything
+claude
+```
+
+The server checks neither the key nor the model name, and replies name the
+model that served them. It was built from what Claude Code actually sends:
+streamed replies with `thinking`, `text` and `tool_use` blocks, tool
+results, a system prompt in text blocks, and `system` turns inside
+`messages`, which become user text. `thinking` (enabled, adaptive or
+disabled, and `budget_tokens` as the thinking budget), `output_config.effort`
+(as `reasoning_effort`), `output_config.format` (a JSON schema, as
+structured output), `tool_choice` and `stop_sequences` are read. Images
+work with the vision tower on. Errors come back in the Messages error
+shape, and `GET /v1/models` carries the Messages API's model fields too.
+
+**Thinking round trips.** A thinking block's `signature` carries the
+reasoning itself. A client that sends the block back, as Claude Code does on
+every tool turn, replays exactly what the model wrote, even with
+`display: "omitted"`, where the block's text is empty. The next prompt then
+starts with the last one, and the prompt cache resumes it.
+
+**`cache_control`.** The prompt cache needs no marks. A request's last
+`cache_control` mark inside `messages` is used as one more resume point, so
+a later request that shares the conversation up to the mark resumes from
+it. `usage.cache_read_input_tokens` says how much of the prompt came from
+the cache, and `input_tokens` counts the rest.
+
+**Not served.** Anthropic's server-side tools, such as web search and code
+execution, are dropped with a log line, and your own tools are used. A PDF
+document block is a 400. The Batches and Files APIs are not there. Fields the server
+does not use, such as `context_management`, are accepted and named once in
+the log.
+
+Verified against Claude Code running tool round trips end to end, and
+separately against the official `anthropic` Python SDK.
 
 ---
 
@@ -785,14 +870,17 @@ pool), and it does not depend on the machine; what is left does, so read the
 
 | configuration | device side | halogen takes | what you give up |
 |---|---|---|---|
-| the Quickstart defaults: pool 524,288, 4 slots, `MAX_TOK` 32768 | ~35 GiB | ~103 GiB | nothing |
-| pool 262,144, 2 slots | ~28 GiB | ~96 GiB | one full-length conversation resident at a time |
-| pool 262,144, 2 slots, `MAX_TOK` 16384 | ~19 GiB | ~87 GiB | the above, and prefill about 9% slower |
-| context 131,072, pool 131,072, 2 slots, `MAX_TOK` 16384 | ~16 GiB | ~84 GiB | the above, and half the context |
+| the Quickstart defaults: pool 524,288, 4 slots, `MAX_TOK` 32768 | ~27 GiB | ~89 GiB | nothing |
+| pool 262,144, 2 slots | ~20 GiB | ~82 GiB | one full-length conversation resident at a time |
+| pool 262,144, 2 slots, `MAX_TOK` 16384 | ~15 GiB | ~77 GiB | the above, and prefill about 9% slower |
+| context 131,072, pool 131,072, 2 slots, `MAX_TOK` 16384 | ~12 GiB | ~74 GiB | the above, and half the context |
 
-A GGUF adds to the "takes" column: unsloth's `UD-IQ4_XS` holds 72 GiB of
-weights instead of 68, and the K-quant `UD-Q4_K_XL` 78 to 80 GiB, so add 4
-or 12 GiB to every row. The engine refuses the last pin when it would leave
+The rows are the default checkpoint (0.15.1's startup figures). With w4b
+add 6 GiB to every row, and 3 more to the two `MAX_TOK` 16384 rows. Its
+experts keep about 6 GiB of scratch at any `MAX_TOK`. A GGUF is sized like
+w4b and adds to it. Unsloth's `UD-IQ4_XS` holds 72 GiB of weights instead
+of 68, and the K-quant `UD-Q4_K_XL` 78 to 80 GiB, so add 4 or 12 GiB to
+the w4b figures. The engine refuses the last pin when it would leave
 under 16 GiB, and on a 122 GiB box the K-quant at the Quickstart's `MAX_TOK`
 lands 2 GiB under that floor (issue #80); `HALOGEN_MAX_TOK=16384` is the
 row that fits it. Since 0.11.9 the pre-flight check reads the GGUF's file
@@ -816,7 +904,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -832,7 +920,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -848,8 +936,17 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
+
+**Beside other GPU servers, count the hardware queues.** Another project
+measured that the iGPU stays 100% busy at idle, drawing about 30 W instead
+of 4, once more than 8 hardware compute queues are open across all
+processes. This server holds 2. `GPU_MAX_HW_QUEUES` caps how many a HIP
+process opens, so start the other GPU servers with `GPU_MAX_HW_QUEUES=1`
+or `2` to keep the total at 8 or fewer. Each
+process's queues are listed in `/sys/class/kfd/kfd/proc/<pid>/queues/`,
+and a `type` of 0 is a compute queue.
 
 Two things hold for all of them. The lookup table (the n-gram embedding,
 47.7 GiB, read from the file on demand) lives in the page cache, not in the
@@ -1013,8 +1110,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.15.0 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.15.0 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.15.1 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.15.1 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1180,7 +1277,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1347,7 +1444,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1389,7 +1486,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.1 \
   MODE [FILE] [flags]
 ```
 
@@ -1704,14 +1801,15 @@ that used to be one: `HALOGEN_CTX` is the most a single request may use, and
 across all conversations. The four slots share that pool rather than each
 owning a copy, so a slot adds only about 115 MB of its own state and the pool
 is what has to fit on the device. Attention state costs about 28 KiB per
-position including its scratch. Measured on a 128 GB machine:
+position including its scratch. Device memory below is 0.15.1's startup
+line on a 128 GB machine, the default checkpoint and four slots:
 
 | pool | holds at once | device memory | measured |
 |---|---|---|---|
-| 262,144 | one full conversation, or four at 65k | 27.8 GB | 0.2.0's layout |
-| **524,288 (default)** | **two full conversations, or four at 131k** | **35.0 GB** | **starts and serves; the 0.3.1 default** |
-| 786,432 | three full conversations, or four at 196k | 42.2 GB | three 250k conversations resident and generating, memory flat. **0.3.0's default, and too close to the ceiling on some machines** |
-| 1,048,576 | four full conversations, or eight at 131k | ~41 GB with `HALOGEN_MAX_TOK=16384` | the 1M configuration's layout; ~49 GB at the default arena, which does not start |
+| 262,144 | one full conversation, or four at 65k | 19.8 GiB | 0.2.0's layout |
+| **524,288 (default)** | **two full conversations, or four at 131k** | **27.0 GiB** | **starts and serves; the 0.3.1 default** |
+| 786,432 | three full conversations, or four at 196k | 34.2 GiB | three 250k conversations resident and generating, memory flat |
+| 1,048,576 | four full conversations, or eight at 131k | 36.9 GiB with `HALOGEN_MAX_TOK=16384` | the 1M configuration's layout. At the default `MAX_TOK` it is 41.4 GiB, which a 128 GB machine fits only with a smaller `HALOGEN_HOST_RESERVE_GIB` (below) |
 
 A request reserves its prompt plus `max_tokens` positions when it is admitted
 (the chat default budget is 8,192 tokens, so a 30,000-token conversation
@@ -1722,19 +1820,21 @@ chat in a 1M-position pool runs at short-chat speed, and three conversations
 at 250k each generate at about 17 tokens per second apiece.
 
 **Check what pool you actually got.** The fit at startup budgets `MemTotal`
-less the resident weights (68.0 GiB for the 4-bit checkpoint and its
-sidecar, read from the checkpoint itself since 0.14) and
-`HALOGEN_HOST_RESERVE_GIB` (20), and
-a 524,288 pool at `HALOGEN_MAX_TOK=32768` needs about 36.5 GiB (14.4 for the
-pool, 20.6 for the arena and the slots, 1.5 of margin). A 128 GB machine
-whose `MemTotal` reads 125 GiB fits it with the vision tower off; one that
-reads 122.7 GiB (a `crashkernel` reservation of 2 GB is enough), or the same
-machine with the tower on, does not, and the pool halves to 262,144 with the
-line `kv pool: 524288 positions need ~35.0 GiB (plus 1.5 of margin) and host
-RAM cannot spare it. LOWERING THE POOL TO 262144` in the startup log. Every request line since
-0.11.5 ends with `pool N/<positions>`, so a grep settles it. On such a
-machine `HALOGEN_MAX_TOK=16384` gives back 8.8 GiB (about 9% of prefill
-speed) and 524,288 fits; at `8192` even 786,432 does (issue #75).
+less the resident weights (62.1 GiB for the default checkpoint, 68.0 for
+w4b and its sidecar, read from the checkpoint itself) and
+`HALOGEN_HOST_RESERVE_GIB` (20). A 524,288 pool at `HALOGEN_MAX_TOK=32768`
+needs about 29 GiB: 14.4 for the pool, 12.4 for the working memory and the
+slots, and about 2 of margin, which also covers the vision tower's scratch.
+A 128 GB machine fits that on either checkpoint. A 1,048,576 pool needs
+about 43.4 GiB at 32,768 and 39.0 at `HALOGEN_MAX_TOK=16384`, so on a
+machine whose `MemTotal` reads 121 to 125 GiB the default checkpoint gets
+it at 16,384, and `HALOGEN_HOST_RESERVE_GIB=18` gets it at 32,768 at the
+cost of that much file cache (issue #117). When the fit lowers the pool,
+the startup log says `LOWERING THE POOL TO N`. It halves from what you asked
+for, so ask for 786,432 directly if three conversations is what you want.
+Every request line since 0.11.5 ends with `pool N/<positions>`, so a grep
+settles it. Through 0.15.0 the fit overestimated the working memory by
+about 8 GiB, and a pool that fits came out halved (issue #117).
 
 **Sizing for a fan-out harness** (a parent that runs subagents in parallel,
 issue #75). Every live conversation holds `prompt + max_tokens` between its
@@ -1949,11 +2049,12 @@ are the two levers; stopping other resident workloads is the third.
 
 `HALOGEN_MAX_TOK` (default 32,768, capped at the context) is the widest single
 prefill call, and it sizes the working memory the server holds beside the
-pool, which is a good deal more than the GEMM arena alone: the startup
-line's `working memory` reads **21.3 GiB at 32,768 and 12.5 GiB at 16,384**
-on the 0.11.4 image. Halving it gives back 8.8 GiB for
-about 9% of prefill speed, a long prompt read in more pieces, and the
-answer byte-identical. That made it the lever on the same reporter's next
+pool. The startup line's `working memory` reads **12.6 GiB at 32,768 and
+8.1 GiB at 16,384** on 0.15.1 with the default checkpoint, and 12.5 and
+11.0 with w4b, whose experts keep about 6 GiB of scratch at any setting
+(21.3 and 12.5 on the 0.11.4 image of the table below). Halving it gives
+back about 4.4 GiB on the default checkpoint for about 9% of prefill speed,
+a long prompt read in more pieces, and the answer byte-identical. That made it the lever on the same reporter's next
 two boxes (issue #35), both shared with other work and both already
 auto-lowered to one full conversation of pool, so the pool could not go
 lower without cutting what one request may use (box A / box B):
@@ -2175,11 +2276,12 @@ The knob is the pool:
 -e HALOGEN_KV_POOL_POSITIONS=262144
 ```
 
-That is 27.8 GB, the same layout 0.2.0 ran, and it still serves four
-conversations at once. `524288` is 35.0 GB and is the default. If it still
-will not start, halve the prefill call as well with `-e HALOGEN_MAX_TOK=16384`,
-which gives back about 8.8 GiB (the startup line's working memory, 21.3 to
-12.5 GiB) for about 9% of prefill speed; the [memory
+That is about 20 GiB on the device, the same layout 0.2.0 ran, and it still
+serves four conversations at once. `524288` is about 27 GiB and is the
+default. If it still will not start, halve the prefill call as well with
+`-e HALOGEN_MAX_TOK=16384`, which gives back about 4.4 GiB on the default
+checkpoint (the startup line's working memory goes from 12.6 to 8.1 GiB,
+and w4b gives back 1.5) for about 9% of prefill speed; the [memory
 section](#context-and-memory-one-kv-pool-several-conversations) has the
 measured table.
 
@@ -2307,6 +2409,22 @@ report. The two lines worth sending on their own are:
 docker logs <container> 2>&1 | grep -E '^(dmalloc|kv pool):'
 ```
 
+### If the load fails on Fedora with "Memory critical error"
+
+Fedora enforces SELinux, and its policy does not let a container map
+`/dev/kfd` unless the `container_use_devices` boolean is on, which it is not
+by default. A load then fails early with `Memory critical error by agent
+node-0 ... Reason: Memory in use`, and `sudo ausearch -m avc -ts recent`
+shows `denied { map }` on `/dev/kfd`. Every run line here carries
+`--ipc=host`, and Podman runs a container that shares the host's IPC
+namespace without SELinux separation (`spc_t` rather than `container_t`),
+which is why they work on our Fedora host with the boolean off. If you
+leave `--ipc=host` out, turn the boolean on instead:
+
+```
+sudo setsebool -P container_use_devices true
+```
+
 ### The host settings these numbers were measured on
 
 **Native Linux only.** This server runs on the amdgpu/KFD driver stack and
@@ -2361,7 +2479,7 @@ Pasting the 128 GB row onto a 64 GB machine asks the driver for more GTT than
 the machine has. **Neither flag is required.** Measured on a second 128 GB
 machine on a stock kernel command line: the kernel's default GTT is half of
 RAM (60.6 GiB there), this server at the Quickstart defaults uses about
-35 GiB of it (the weights are registered host memory and do not count
+27 GiB of it (the weights are registered host memory and do not count
 against GTT), and the Quickstart served from that default without either
 flag. Ours are set because we set them on day one, not because the server
 needs them.
@@ -2408,6 +2526,16 @@ Check what you are on with:
 ```
 cat /proc/cmdline
 ```
+
+**The power profile.** Our numbers were measured at about 85 W of sustained
+package power. Some machines expose an ACPI platform profile and ship it at
+`balanced`. One owner's machine held about 70 W there and about 127 W under
+`performance`, and decoded faster at the higher limit (measured on another
+engine). Check with `cat /sys/firmware/acpi/platform_profile` (the choices
+are in `platform_profile_choices`). If it reads `balanced` and you want to
+compare with the numbers here, set it with
+`echo performance | sudo tee /sys/firmware/acpi/platform_profile`. Neither
+of our machines exposes the file.
 
 ---
 

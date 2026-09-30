@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.15.1
+
+Fixes from four reports, and the Anthropic Messages API. No weight change.
+At temperature 0 the output is still byte-identical to serial greedy
+decode. For the reports behind it: issues #112
+([@tatianyi](https://github.com/tatianyi)), #114
+([@disarticulate](https://github.com/disarticulate)), #115
+([@xuyongroger](https://github.com/xuyongroger)) and #117
+([@kripper](https://github.com/kripper)).
+
+### Added
+
+- **The Anthropic Messages API.** `POST /v1/messages` and
+  `POST /v1/messages/count_tokens` let Claude Code and the `anthropic` SDKs
+  use the server directly. Set `ANTHROPIC_BASE_URL` to the server and any
+  API key. Streaming, tool calls, thinking blocks, `system` turns inside
+  `messages` and images (with the vision tower on) all work. A thinking
+  block's signature carries the reasoning, so a block the client sends back
+  replays exactly what the model wrote, even when its display was omitted.
+  A request's last `cache_control` mark becomes one more place the prompt
+  cache can resume from. `/v1/models` carries the Messages model fields.
+- **`repetition_penalty`, with vLLM's rule.** Tokens already in the prompt
+  or the reply are made less likely. It runs after `logit_bias` and before
+  the presence and frequency penalties. It applies to sampled requests, and
+  a greedy request that sends a value other than 1 is a 400.
+  `HALOGEN_REPETITION_PENALTY` sets a server default. The field used to be
+  accepted and ignored.
+- **`HALOGEN_THINKING_BUDGET_MESSAGE`** (#114) sets the sentence the server
+  writes before `</think>` when it closes the think block itself. That
+  happens at the thinking budget, at the answer room and at the end-of-turn
+  guard. Unset, the sentence is Qwen's, as before.
+- **`reasoning_effort: "max"`** is accepted and means `xhigh`. It was a 400.
+
+### Fixed
+
+- **The startup pool fit sized the working memory about 8 GiB too high**
+  (#117), so a pool that fits came out halved. With #117's settings the
+  default checkpoint now gets 524,288 positions, and 1,048,576 with
+  `HALOGEN_MAX_TOK=16384`. The fit reads from the checkpoint whether its
+  experts need w4b's fixed scratch. The container's pre-flight estimates
+  use the same figures, and its GTT check no longer refuses a host that
+  has the room.
+- **A chat request with thinking off counts no reasoning tokens** (#115).
+  A reply that wrote `</think>` as text, such as a translation of a
+  document that quotes it, reported everything before it as reasoning. The
+  text itself was already all in `content`.
+- **`HALOGEN_VISION_TOWER=0` turns the tower off.** It used to exit the
+  container, because 0 was read as a file path. `no`, `false` and `off`
+  work too.
+- **The penalties stay current on a very long reply.** Past about 20,000
+  distinct tokens the penalty list stopped updating without a word. It now
+  holds the whole vocabulary.
+
+### Documentation
+
+- Claude Code and the Messages API, `repetition_penalty`, and the thinking
+  block's closing sentence.
+- The presence and frequency penalties count the thinking block, so a
+  frequency penalty of 1.0 garbles a long reasoning reply (#112).
+- A document that quotes the chat markers can end a reply early, and how
+  to send one (#115).
+- Three host notes: Fedora's SELinux and `/dev/kfd`, the ACPI power
+  profile, and hardware queues beside other GPU servers.
+- The memory figures in the pool and sharing tables are 0.15.1's startup
+  lines.
+
 ## 0.15.0
 
 A new default checkpoint. At temperature 0 the output is still

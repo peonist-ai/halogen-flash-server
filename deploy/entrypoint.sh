@@ -164,8 +164,9 @@ ENG_CTX="${HALOGEN_CTX:-262144}"
 # 42.2 GiB; 0.3.1 lowered it after that failed to start on a machine whose
 # device ceiling was about 40 GiB.) The device budget is the limit
 # (~46 GiB on a 128 GB machine): each 262,144 positions cost ~7.2 GiB, and
-# the prefill arena (HALOGEN_MAX_TOK) 16.7 GiB at 32,768 or 8.4 GiB at
-# 16,384, which is what makes a 1M-position pool fit. The pool also takes
+# the working memory beside the pool (work_split below) ~12.5 GiB at
+# HALOGEN_MAX_TOK 32,768 or 8 to 11 GiB at 16,384, which is what makes a
+# 1M-position pool fit. The pool also takes
 # RAM the page cache would otherwise hold for the n-gram table, so a cold
 # prompt whose rows are not cached pays disk reads; a smaller pool leaves
 # more cache.
@@ -189,7 +190,7 @@ fi
 # PAST THE NATIVE CONTEXT THE DEFAULTS CHANGE, AND THIS SAYS SO. Measured on
 # a 128 GB machine: the engine's device-side budget stops at ~47 GiB with
 # the weights pinned, and 1,048,576 of KV is ~25 GiB of it, so the per-call
-# prefill arena (16.7 GiB at max-tok 32,768) has to halve, and the prompt
+# prefill arena (sized by max-tok 32,768) has to halve, and the prompt
 # cache's snapshot (26.6 GiB of host memory at 1M) does not fit beside it.
 # The image BAKES HALOGEN_MAX_TOK=32768 and HALOGEN_PROMPT_CACHE=2 into its
 # environment, so "unset" cannot mean "the user did not choose": past the
@@ -281,12 +282,12 @@ kv_budget_note() {
       *)  wt="72 GiB or more (a GGUF trunk of file type ${ft:-unknown}, repacked into RAM; measured for types 30 and 15 only)"; w_gib=72 ;;
     esac
   fi
-  # The working memory beside the pool, as measured on 0.11.4 (issue #35):
-  # 21.3 GiB at HALOGEN_MAX_TOK 32768 and 12.5 at 16384, so a fixed 4.6 plus
-  # a prefill arena linear in max_tok. This line said "11 GiB of scratch"
-  # until 0.11.9, a number from before the arena was measured.
-  local scratch_gib tower_gib=0
-  scratch_gib=$(awk -v mt="$ENG_MAX_TOK" 'BEGIN{printf "%.1f", 4.6 + 16.7 * mt / 32768}')
+  # The working memory beside the pool (work_split). This line said "11 GiB
+  # of scratch" until 0.11.9, a number from before the arena was measured,
+  # and 4.6 + 16.7 per 32k until 0.15.1 (0.11.4's measurement, issue #35).
+  local scratch_gib tower_gib=0 ws
+  ws=$(work_split)
+  scratch_gib=$(echo "$ws" | awk '{printf "%.1f", $1 + $2}')
   [ -n "${HALOGEN_VISION_TOWER:-}" ] && [ "${HALOGEN_VISION_TOWER:-0}" != "0" ] && tower_gib=0.84
   w_gib=$(awk -v w="$w_gib" -v s="$scratch_gib" -v t="$tower_gib" 'BEGIN{printf "%.1f", w + s + t}')
   used_gib=$(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.1f", (t-a)/1048576}' /proc/meminfo 2>/dev/null || echo "0")
@@ -317,7 +318,7 @@ kv_budget_note() {
   # box this reads 129 against 119 for the K-quant (it refused at 14.4) and
   # 120 against 119 for UD-IQ4_XS (it booted with 17.6 left): "close to".
   awk -v kv="$kv_gib" -v cg="$cache_gib" -v av="$avail_gib" -v w="$w_gib" 'BEGIN{ if (av != "?" && kv+cg+w+16 > av)
-    print "halogen: WARNING: that budget is close to or over what this host has free (the engine refuses the last pin under 16 GiB of MemAvailable).\n  If startup ends in \"checkpoint: refusing to pin\" or \"HIP ... out of memory\", lower HALOGEN_MAX_TOK to 16384 (the working memory, about 9 GiB back for about 9% of prefill speed)\n  or HALOGEN_KV_POOL_POSITIONS (the pool, ~29.5 KiB a position); a 1,048,576-position pool fits only with HALOGEN_MAX_TOK=16384." > "/dev/stderr" }'
+    print "halogen: WARNING: that budget is close to or over what this host has free (the engine refuses the last pin under 16 GiB of MemAvailable).\n  If startup ends in \"checkpoint: refusing to pin\" or \"HIP ... out of memory\", lower HALOGEN_MAX_TOK to 16384 (the working memory, about 4 GiB back on the default checkpoint and 1.6 on w4b, for about 9% of prefill speed)\n  or HALOGEN_KV_POOL_POSITIONS (the pool, ~29.5 KiB a position); a 1,048,576-position pool fits only with HALOGEN_MAX_TOK=16384." > "/dev/stderr" }'
 }
 
 # The GGUF's `general.file_type` (u32) from the first shard's header, or
@@ -393,12 +394,14 @@ gtt_note() {
     return 0
   fi
   # The pool and the O(1) state, as kv_budget_note sizes them, plus the
-  # prefill arena (16.7 GiB at HALOGEN_MAX_TOK 32768, linear in it). The
-  # rest of the working memory (~4.6 GiB measured on 0.11.4, issue #35) is
-  # left out on purpose: this refuses only what certainly does not fit.
-  local need_gib
-  need_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v mt="$ENG_MAX_TOK" \
-    'BEGIN{printf "%.1f", (pool=="0"?s*c*26624:p*29500+s*120586240)/1073741824 + mt/32768*16.7}')
+  # prefill arena (work_split's first figure). The rest of the working
+  # memory is left out on purpose: this refuses only what certainly does
+  # not fit. (Until 0.15.1 the arena here was 16.7 GiB at 32768, twice what
+  # the v2 format holds, so a host with the room could be refused.)
+  local need_gib arena_gib
+  arena_gib=$(work_split | awk '{print $1}')
+  need_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v a="$arena_gib" \
+    'BEGIN{printf "%.1f", (pool=="0"?s*c*26624:p*29500+s*120586240)/1073741824 + a}')
   local used_gib total_gib free_gib
   used_gib=$(awk -v u="$used" 'BEGIN{printf "%.1f", u/1073741824}')
   total_gib=$(awk -v t="$total" 'BEGIN{printf "%.1f", t/1073741824}')
@@ -451,10 +454,11 @@ gtt_note() {
     else
       # the weights (the checkpoint's own figure when readable, else 68) +
       # the pool and prefill arena this start asks for (need_gib above) + the
-      # fixed working memory (4.6) + the engine's 16 GiB pin floor
-      local w=68 hint_gib
+      # rest of the working memory (work_split) + the engine's 16 GiB pin floor
+      local w=68 hint_gib rest_gib
       ckpt_facts && w=$CK_RES_GIB
-      hint_gib=$(awk -v w="$w" -v n="$need_gib" 'BEGIN{printf "%.0f", w + n + 4.6 + 16}')
+      rest_gib=$(work_split | awk '{print $2}')
+      hint_gib=$(awk -v w="$w" -v n="$need_gib" -v r="$rest_gib" 'BEGIN{printf "%.0f", w + n + r + 16}')
       echo "  This host reports ${memtotal_gib} GiB of RAM in total. This server needs about ${hint_gib} GiB of addressable unified memory for the checkpoint, so if that figure is far below what is physically installed, check the BIOS for an iGPU memory carve-out: it is taken before Linux boots and nothing on the host reports the memory as missing." >&2
     fi
     exit 1
@@ -802,26 +806,49 @@ tuning_plan_copy() {
 # excluded) replaces the "68 GiB" every .hgn was assumed to be (w4b with its
 # sidecar is 67.99). CK_RES_GIB and CK_HAS_TABLE are set once;
 # a GGUF, a file not yet on disk or an engine without the mode leaves them
-# empty and every caller keeps its old estimate.
-CK_RES_GIB="" CK_HAS_TABLE="" CK_OWN_PREC="" CK_FOR=""
+# empty and every caller keeps its old estimate. 0.15.1: CK_GATHER is 1 when
+# the experts take the gather path (w4b; a GGUF too), 0 for the v2 format,
+# and picks the working-memory figures below (work_gib).
+CK_RES_GIB="" CK_HAS_TABLE="" CK_OWN_PREC="" CK_GATHER="" CK_FOR=""
 ckpt_facts() {
   if [ "${CK_FOR:-}" = "${HALOGEN_CHECKPOINT:-}" ]; then   # asked already for this file
     [ -n "${CK_RES_GIB:-}" ]
     return
   fi
-  CK_FOR="${HALOGEN_CHECKPOINT:-}"; CK_RES_GIB=""; CK_HAS_TABLE=""; CK_OWN_PREC=""
+  CK_FOR="${HALOGEN_CHECKPOINT:-}"; CK_RES_GIB=""; CK_HAS_TABLE=""; CK_OWN_PREC=""; CK_GATHER=""
   [ -f "${HALOGEN_CHECKPOINT:-}" ] || return 1
   is_gguf && return 1
   local out line
   out=$("${_hg_flash_serve:-/usr/local/bin/flash_serve}" --resident-gib "$HALOGEN_CHECKPOINT" 2>/dev/null) || return 1
-  # the LAST line of exactly "<GiB> <table 0|1> <own precision 0|1>" (an
-  # older engine printed two fields: the third then reads as 0)
-  line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01])?$' | tail -n 1)
+  # the LAST line of exactly "<GiB> <table 0|1> <own precision 0|1>
+  # <experts gather 0|1>" (an older engine printed two or three fields: the
+  # third then reads as 0, the fourth as 1)
+  line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01]){0,2}$' | tail -n 1)
   [ -n "$line" ] || return 1
   CK_RES_GIB=$(echo "$line" | awk '{print $1}')
   CK_HAS_TABLE=$(echo "$line" | awk '{print $2}')
   CK_OWN_PREC=$(echo "$line" | awk '{print ($3 == "" ? 0 : $3)}')
+  CK_GATHER=$(echo "$line" | awk '{print ($4 == "" ? 1 : $4)}')
   return 0
+}
+
+# 0.15.1: THE WORKING MEMORY BESIDE THE POOL, as the engine's startup ledger
+# measures it (its `memory:` line) at four slots, in two parts: the prefill
+# arena, which a start certainly allocates, and the rest. It depends on the
+# checkpoint's experts. Gathered experts (w4b, a GGUF) reserve the gather's
+# decode worst case (6.0 GiB) at any HALOGEN_MAX_TOK: 9.8 / 10.9 / 12.5 GiB
+# at 4096 / 16384 / 32768. The v2 format's arena scales with it alone: 8.1 /
+# 12.5 at 16384 / 32768. A file whose header is not read counts as a
+# gather. The engine's pool fit uses the same two models. Prints
+# "<arena GiB> <rest GiB>".
+work_split() {
+  local g=1
+  ckpt_facts && g=${CK_GATHER:-1}
+  if [ "$g" = "0" ]; then
+    awk -v mt="$ENG_MAX_TOK" 'BEGIN{printf "%.1f 3.8\n", 8.8 * mt / 32768}'
+  else
+    awk -v mt="$ENG_MAX_TOK" 'BEGIN{printf "%.1f 3.5\n", 6.0 + 3.1 * mt / 32768}'
+  fi
 }
 
 # 0.14: A CHECKPOINT WITHOUT THE LOOKUP TABLE takes it from its own file
@@ -976,6 +1003,13 @@ check_vision() {
         echo "halogen: a vision sidecar is present but NOT loaded: $side"
         echo "         set HALOGEN_VISION_TOWER=$side to accept images."
       fi
+      return 0 ;;
+    0|no|false|off)
+      # 0.15.1: off, as `0` means for every other switch here (and for the
+      # engine's own pool fit); it was read as a file path and the container
+      # exited ("HALOGEN_VISION_TOWER=0 does not exist").
+      echo "halogen: vision OFF (HALOGEN_VISION_TOWER=${HALOGEN_VISION_TOWER})"
+      unset HALOGEN_VISION_TOWER
       return 0 ;;
     1|auto|yes|true)
       # A convenience, and it says what it resolved to rather than guessing
