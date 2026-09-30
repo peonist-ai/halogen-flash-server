@@ -19,7 +19,8 @@ The question was never whether to quantize, only where to spend the bits.
 | n-gram lookup table | its own file, FP8, 47.7 GiB, a lookup that is paged rather than held resident |
 
 It stays closer to the original model's outputs than w4b plus its sidecar
-did, and holds about 3.5 GiB less.
+did, and holds about 5.9 GiB less than that pair (62.1 GiB pinned against
+68.0; about 3.5 GiB less than w4b's base file alone).
 
 # 0.14's checkpoint, w4b
 

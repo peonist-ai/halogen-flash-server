@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.15.2
+
+Fixes from four reports and our own testing, and short prompts read
+faster. No weight change. At temperature 0 the output is still
+byte-identical to serial greedy decode. For the reports behind it: issues
+#118 and #119 ([@citizenanalog](https://github.com/citizenanalog)), #120 and
+#121 ([@g30ff1rl](https://github.com/g30ff1rl)).
+
+### Changed
+
+- **Short prompts are read faster on the default checkpoint.** Their
+  results can differ from 0.15.1's in the last digits, as with any change
+  of kernel.
+
+### Added
+
+- **`HALOGEN_ADMIT_TICKS`** (#120) sets how many generation steps the
+  conversations already generating get between two pieces of a prompt being
+  read in beside them. Answers are unchanged; a larger value delays that
+  prompt's first token.
+- **`HALOGEN_PREFILL_KEEP_TRUNK`**, an opt-in that keeps the default
+  checkpoint's trunk unpacked in memory (about 5.5 GiB) so longer prompts
+  are read faster. The startup pool fit counts it, and the server refuses
+  to start rather than fail later when the memory is not there.
+
+### Fixed
+
+- **`bench` and `sweep` now send temperature 0** (#118). A server default
+  such as `HALOGEN_TEMPERATURE=0.7` had turned a run printed as greedy into
+  a sampled one, and the identity check then failed on correct output.
+- **`ppl` with `HALOGEN_VISION_TOWER=1` set** (#119) failed with
+  `checkpoint: cannot open 1`. The modes that never take images (`ppl`,
+  `niah`, `inspect`, `verify`, `bench`, `sweep`) now drop the setting and
+  say so.
+- **The line for a request waiting for room** (#121) now gives the free
+  positions, the largest free gap, and whether the room is missing or only
+  split.
+- **The startup `memory:` line counts the vision tower** when it is on. Its
+  scratch is added at the first image.
+- **On a kernel built without the GPU driver's shared virtual memory
+  support**, the refusal to register the model file now says so.
+- `HALOGEN_CK_OVERLAY=none` on a checkpoint with its own precision now says
+  it has no effect.
+
+### Documentation
+
+- **The kernel requirement is two properties, not a version:** AMD's two
+  gfx1151 fixes (Linux 6.18.4 or later, or Ubuntu's backports) and a kernel
+  built with `CONFIG_HSA_AMD_SVM`. Fedora kernels before 6.18.7-200 lack the
+  second (#37). "7.0 or newer" was an inference from one report.
+- The default checkpoint holds about 5.9 GiB less than 0.14's w4b with its
+  sidecar (3.5 GiB was against w4b's base file alone).
+- The README's speed table is labelled as w4b's measurements.
+
 ## 0.15.1
 
 Fixes from four reports, and the Anthropic Messages API. No weight change.

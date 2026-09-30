@@ -201,6 +201,12 @@ def ask(prompt, drafter, seed=None):
         # hold, but it must still be REPRODUCIBLE, or a t/s difference and a
         # different-text difference become impossible to tell apart.
         b.update(temperature=TEMP, top_p=TOPP, seed=seed)
+    else:
+        # Greedy is SENT, not implied (public issue #118): a request without
+        # a temperature takes the server's HALOGEN_TEMPERATURE, so under a
+        # sampling default the run sampled while this bench printed "greedy"
+        # and the identity check failed on correct output.
+        b["temperature"] = 0.0
     body = json.dumps(b).encode()
     req = urllib.request.Request(API + "/v1/chat/completions", body,
                                  {"content-type": "application/json"})

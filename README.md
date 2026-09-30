@@ -115,7 +115,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -166,7 +166,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -876,8 +876,10 @@ pool), and it does not depend on the machine; what is left does, so read the
 | context 131,072, pool 131,072, 2 slots, `MAX_TOK` 16384 | ~12 GiB | ~74 GiB | the above, and half the context |
 
 The rows are the default checkpoint (0.15.1's startup figures). With w4b
-add 6 GiB to every row, and 3 more to the two `MAX_TOK` 16384 rows. Its
-experts keep about 6 GiB of scratch at any `MAX_TOK`. A GGUF is sized like
+add 6 GiB to the "halogen takes" column in every row: that is its weights,
+68.0 GiB pinned against 62.1. In the two `MAX_TOK` 16384 rows add 3 more to
+both columns, because its experts keep about 6 GiB of scratch at any
+`MAX_TOK`; at 32768 the device side is the same. A GGUF is sized like
 w4b and adds to it. Unsloth's `UD-IQ4_XS` holds 72 GiB of weights instead
 of 68, and the K-quant `UD-Q4_K_XL` 78 to 80 GiB, so add 4 or 12 GiB to
 the w4b figures. The engine refuses the last pin when it would leave
@@ -904,7 +906,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -920,7 +922,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -936,7 +938,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -989,8 +991,10 @@ and the drafted figure below, consistently on both, which is the signature of a
 lower envelope rather than a disagreement about the engine. Prefill reproduced
 on that same machine.
 
-The shipped checkpoint and its quality sidecar, in the image's default
-configuration: full 262,144 context, prompt cache on, tuned GEMM plan loaded.
+**These rows are w4b's**, 0.14's checkpoint with its quality sidecar (the
+default until 0.15.0), in the image's default configuration of their
+release; they were not re-measured on the default checkpoint since 0.15.0,
+which served at the same speed or faster in a same-session comparison: full 262,144 context, prompt cache on, tuned GEMM plan loaded.
 Prefill is a cold single-call prefill of real text; decode is greedy at
 temperature 0. Prefill is measured by the engine's own
 prefill bench; a served request with the default speculative drafter pays about
@@ -1110,8 +1114,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.15.1 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.15.1 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.15.2 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.15.2 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1207,7 +1211,7 @@ Its weights are 4.16 bits each on average: the experts and the rest of the
 model at 4 bits, the small mixing layers between them at 6 bits, and the
 draft head's projections at 8. It stays closer to the original model's
 outputs than 0.14's checkpoint did, measured on real agent sessions, and
-holds about 3.5 GiB less in memory. **Which families are stored at which
+holds about 5.9 GiB less in memory than that checkpoint with its sidecar. **Which families are stored at which
 precision is written out in [`docs/QUANT.md`](docs/QUANT.md).**
 
 **0.14's checkpoint still loads.** `qwen38-flash-next-w4b.hgn` and its
@@ -1277,7 +1281,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1444,7 +1448,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1486,7 +1490,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2 \
   MODE [FILE] [flags]
 ```
 
@@ -2435,14 +2439,28 @@ registration is refused there, and the server does not reach readiness. If
 you are on that stack, the same hardware booted into Linux is the path that
 works.
 
-**Kernel 7.0 or newer.** The checkpoint is a read-only file mapping registered
-with the GPU as read-only, and that registration needs kernel support. The
-reference host runs 7.1.8 (Fedora 43 Server); every install reported working
-here is on 7.0.0 or later; on 6.18.6
-([#37](https://github.com/peonist-ai/halogen-flash-server/issues/37)) the
-driver refuses every read-only mapping with `invalid argument` and the server
-cannot pin the weights. We have not bisected the exact kernel that added it;
-7.0 is the oldest we have seen work.
+**A kernel with AMD's gfx1151 fixes, built with KFD's shared virtual memory
+support.** The checkpoint is a read-only file mapping registered with the GPU
+in place, and the kernel must provide two things. The first is AMD's two
+gfx1151 fixes to the KFD driver (the VGPR size in the queue creation check,
+and the export of `cwsr_size` and `ctl_stack_size`); AMD's Strix Halo page puts
+the floor at Linux 6.18.4, Ubuntu 24.04 HWE `6.17.0-19.19~24.04.2`, or Ubuntu
+24.04 OEM `6.14.0-1018`, each or later. The second is `CONFIG_HSA_AMD_SVM`
+(which needs `CONFIG_DEVICE_PRIVATE`): ROCm registers a read-only mapping
+through KFD's SVM interface, and its fallback always asks for writable pages,
+which a read-only file cannot give, so without SVM every read-only
+registration fails, whatever its size. Fedora built `6.18.6-200.fc43` without
+it ([#37](https://github.com/peonist-ai/halogen-flash-server/issues/37) was
+that kernel) and turned it on in `6.18.7-200.fc43`; Ubuntu's kernels have it.
+Both can be read without a container, on the KFD node whose
+`gfx_target_version` is `110501`
+(`/sys/class/kfd/kfd/topology/nodes/<n>/properties`): `capability` has bit
+`0x08000000` set when SVM is built in, and the fixes are in when a
+`cwsr_size` line exists and equals `ctl_stack_size + (simd_count / 2) * 479232`.
+A refused registration names a missing SVM bit. Hosts seen working: Fedora
+43's 7.1.8 (the reference host), Ubuntu's 7.0.0, and reports on 6.18.38. An
+earlier version of this
+page said "7.0 or newer"; that was an inference from #37 alone.
 
 Everything in [Measured](#measured) was measured on a machine booted like this,
 and the same command line has been in place unchanged for the whole life of

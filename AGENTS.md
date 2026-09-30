@@ -10,7 +10,7 @@ An OpenAI-compatible server for Qwen3.8-Flash-Next on AMD Strix Halo
 (gfx1151), shipped as a container image:
 `ghcr.io/peonist-ai/halogen-flash-server:<version>`. The weights are
 `peonist-ai/halogen-qwen3.8-flash-next` on Hugging Face (118 GiB, tokenizer
-included). Native Linux on the amdgpu/KFD stack, kernel 7.0 or newer. **WSL2
+included). Native Linux on the amdgpu/KFD stack, a kernel with AMD's gfx1151 fixes built with `CONFIG_HSA_AMD_SVM` (the README's host section says how to check both). **WSL2
 is not a supported host.** One GPU, one model family.
 
 **The engine is closed source and is not in this repository.** This tree
@@ -41,7 +41,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.15.2
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -238,7 +238,7 @@ What resolves most reports on the first exchange (from
    number is per stream or aggregate.
 
 Check the [CHANGELOG](CHANGELOG.md) and the open issues first: many reports
-are a fixed version. An unsupported host (WSL2, a kernel before 7.0, another
+are a fixed version. An unsupported host (WSL2, a kernel without SVM support or AMD's gfx1151 fixes, another
 GPU) is documented, not a bug. Security issues go to the maintainers directly,
 not to a public issue. A question rather than a bug, or a number from the
 machine you are running on, belongs on the

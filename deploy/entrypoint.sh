@@ -312,7 +312,11 @@ kv_budget_note() {
   # are larger than the engine's own checkpoint's: ~72 GiB for unsloth's
   # UD-IQ4_XS against ~68 for the .hgn, ~80 for UD-Q4_K_XL (#80). `w_gib`
   # is that plus the working memory and the tower; the engine prints the
-  # exact figures. The pin floor (16 GiB of MemAvailable at the last pin) is
+  # exact figures. The tower's 0.84 is its WEIGHTS, pinned at load like the
+  # trunk's, so they count against the pin floor below; its scratch comes at
+  # the first image, after every pin. (The engine's pool fit is a different
+  # question, the device budget, and charges weights plus scratch inside its
+  # 1.5 GiB margin: max(1.5, tower). Both are right for what they check.) The pin floor (16 GiB of MemAvailable at the last pin) is
   # the check that ends a start that is over, so it is in the sum and the
   # warning names it and the lever that gave #80's box back 9 GiB. On #80's
   # box this reads 129 against 119 for the K-quant (it refused at 14.4) and
@@ -380,7 +384,9 @@ PY
 # so "in use and nobody holds it" is readable from here. The weights do not
 # count here (a read-only file mapping registered in place, not a GTT
 # allocation); what the engine puts in GTT is the pool and its working
-# memory, about 36 GiB at the shipped defaults.
+# memory, about 27 GiB at the shipped defaults (0.15.x: the pool's 14.4, the
+# working memory's 12.5, about 0.3 more; before 0.15.0 about 42, the working
+# memory then being 21.4 plus a 6.0 GiB expert arena the ledger missed).
 gtt_note() {
   local sys="${_hg_sys:-/sys}" f used="" total="" holders
   for f in "$sys"/class/drm/card*/device/mem_info_gtt_used; do
@@ -809,26 +815,29 @@ tuning_plan_copy() {
 # empty and every caller keeps its old estimate. 0.15.1: CK_GATHER is 1 when
 # the experts take the gather path (w4b; a GGUF too), 0 for the v2 format,
 # and picks the working-memory figures below (work_gib).
-CK_RES_GIB="" CK_HAS_TABLE="" CK_OWN_PREC="" CK_GATHER="" CK_FOR=""
+CK_RES_GIB="" CK_HAS_TABLE="" CK_OWN_PREC="" CK_GATHER="" CK_KEPT="" CK_FOR=""
 ckpt_facts() {
   if [ "${CK_FOR:-}" = "${HALOGEN_CHECKPOINT:-}" ]; then   # asked already for this file
     [ -n "${CK_RES_GIB:-}" ]
     return
   fi
-  CK_FOR="${HALOGEN_CHECKPOINT:-}"; CK_RES_GIB=""; CK_HAS_TABLE=""; CK_OWN_PREC=""; CK_GATHER=""
+  CK_FOR="${HALOGEN_CHECKPOINT:-}"; CK_RES_GIB=""; CK_HAS_TABLE=""; CK_OWN_PREC=""; CK_GATHER=""; CK_KEPT=""
   [ -f "${HALOGEN_CHECKPOINT:-}" ] || return 1
   is_gguf && return 1
   local out line
   out=$("${_hg_flash_serve:-/usr/local/bin/flash_serve}" --resident-gib "$HALOGEN_CHECKPOINT" 2>/dev/null) || return 1
   # the LAST line of exactly "<GiB> <table 0|1> <own precision 0|1>
-  # <experts gather 0|1>" (an older engine printed two or three fields: the
-  # third then reads as 0, the fourth as 1)
-  line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01]){0,2}$' | tail -n 1)
+  # <experts gather 0|1> <kept GiB>" (an older engine printed two to four
+  # fields: the third then reads as 0, the fourth as 1, the fifth as 0.0).
+  # The fifth (0.15.2) is what HALOGEN_PREFILL_KEEP_TRUNK=1 keeps unpacked, 0.0
+  # with the flag off.
+  line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01]){0,2}( [0-9]+\.[0-9])?$' | tail -n 1)
   [ -n "$line" ] || return 1
   CK_RES_GIB=$(echo "$line" | awk '{print $1}')
   CK_HAS_TABLE=$(echo "$line" | awk '{print $2}')
   CK_OWN_PREC=$(echo "$line" | awk '{print ($3 == "" ? 0 : $3)}')
   CK_GATHER=$(echo "$line" | awk '{print ($4 == "" ? 1 : $4)}')
+  CK_KEPT=$(echo "$line" | awk '{print ($5 == "" ? 0 : $5)}')
   return 0
 }
 
@@ -842,12 +851,13 @@ ckpt_facts() {
 # gather. The engine's pool fit uses the same two models. Prints
 # "<arena GiB> <rest GiB>".
 work_split() {
-  local g=1
-  ckpt_facts && g=${CK_GATHER:-1}
+  local g=1 k=0
+  ckpt_facts && { g=${CK_GATHER:-1}; k=${CK_KEPT:-0}; }
+  # 0.15.2: HALOGEN_PREFILL_KEEP_TRUNK=1 keeps the trunk unpacked, working memory too
   if [ "$g" = "0" ]; then
-    awk -v mt="$ENG_MAX_TOK" 'BEGIN{printf "%.1f 3.8\n", 8.8 * mt / 32768}'
+    awk -v mt="$ENG_MAX_TOK" -v k="$k" 'BEGIN{printf "%.1f %.1f\n", 8.8 * mt / 32768, 3.8 + k}'
   else
-    awk -v mt="$ENG_MAX_TOK" 'BEGIN{printf "%.1f 3.5\n", 6.0 + 3.1 * mt / 32768}'
+    awk -v mt="$ENG_MAX_TOK" -v k="$k" 'BEGIN{printf "%.1f %.1f\n", 6.0 + 3.1 * mt / 32768, 3.5 + k}'
   fi
 }
 
@@ -995,6 +1005,18 @@ check_gguf() {
 # a path that does not exist (the engine would refuse later, after minutes of
 # loading), the value `1`/`auto` from someone who expected a discovery
 # feature, and a tower sitting unused beside the checkpoint.
+# Public issue #119: the modes that never take an image drop the vision
+# setting instead of passing it on. Only the serving modes resolve `1` to the
+# sidecar's path (check_vision below); here the engine was handed the literal
+# value, opened a checkpoint named `1`, and `ppl` died after reserving its
+# working memory.
+text_only_mode() {
+  if [ -n "${HALOGEN_VISION_TOWER:-}" ]; then
+    echo "halogen $1: HALOGEN_VISION_TOWER is ignored in this mode (text only)" >&2
+    unset HALOGEN_VISION_TOWER
+  fi
+}
+
 check_vision() {
   local side="$(dirname "$HALOGEN_CHECKPOINT")/qwen38-flash-next-vision.hgn"
   case "${HALOGEN_VISION_TOWER:-}" in
@@ -1064,8 +1086,15 @@ legacy_note() {
 check_sidecar() {
   case "${HALOGEN_CK_OVERLAY:-}" in
     none|0)
-      echo "halogen: HALOGEN_CK_OVERLAY=${HALOGEN_CK_OVERLAY}, so the BARE checkpoint runs."
-      echo "         That is the measurement control, not the shipped precision."
+      # 0.15.2: a checkpoint that carries its own precision (v2, a
+      # converted GGUF) has no sidecar to leave out, so the switch changes
+      # nothing there and the line says so instead of "bare".
+      if ckpt_facts && [ "$CK_OWN_PREC" = "1" ]; then
+        echo "halogen: HALOGEN_CK_OVERLAY=${HALOGEN_CK_OVERLAY} has no effect: $HALOGEN_CHECKPOINT carries its own precision and takes no sidecar."
+      else
+        echo "halogen: HALOGEN_CK_OVERLAY=${HALOGEN_CK_OVERLAY}, so the BARE checkpoint runs."
+        echo "         That is the measurement control, not the shipped precision."
+      fi
       return 0 ;;
     "") : ;;                       # default: the sidecar beside the checkpoint
     *)  [ -f "$HALOGEN_CK_OVERLAY" ] || {
@@ -1605,6 +1634,7 @@ all)
 bench|sweep)
   MODE="$1"
   shift || true
+  text_only_mode "$MODE"
   need_ckpt; need_tokenizer; check_defaults
   BENCH_LOG=/tmp/halogen-api.log
   : > "$BENCH_LOG"
@@ -1702,6 +1732,7 @@ inspect|verify|ppl|niah)
   # the tool and exits with its status.
   MODE="$1"
   shift || true
+  text_only_mode "$MODE"
   FILE=""
   if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then FILE="$1"; shift; fi
   [ -n "$FILE" ] || FILE="$HALOGEN_CHECKPOINT"

@@ -52,9 +52,11 @@ def post(api, body, timeout=1800):
 
 
 def ask(api, prompt, max_tokens, drafter, effort):
+    # temperature 0 is SENT (public issue #118): an omitted one takes the
+    # server's HALOGEN_TEMPERATURE, and a sampled sweep is a different speed.
     body = {"messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens, "enable_thinking": False,
-            "reasoning_effort": effort}
+            "reasoning_effort": effort, "temperature": 0.0}
     if drafter:
         body["drafter"] = drafter
     return post(api, body)
