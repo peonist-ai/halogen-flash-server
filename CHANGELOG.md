@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.3
+
+Prompts are read faster. No weight change. At temperature 0 the output is
+still byte-identical to serial greedy decode.
+
+### Changed
+
+- **Prompts of every length are read faster on both checkpoints.** Their
+  results can differ from 0.15.2's in the last digits, as with any change
+  of kernel.
+
 ## 0.15.2
 
 Fixes from four reports and our own testing, and short prompts read
