@@ -21,6 +21,7 @@ holds the deployment surface only:
 | [README.md](README.md) | how to run it, what it measures, every design choice a user meets |
 | [docs/FLAGS.md](docs/FLAGS.md) | every `HALOGEN_*` variable: default, and whether it changes the output |
 | [docs/QUANT.md](docs/QUANT.md) | the precision of every tensor family in the shipped checkpoint |
+| [docs/NPU.md](docs/NPU.md), [deploy/host/](deploy/host/) | the small models on the NPU, and the host unit that holds the GPU's fabric clock |
 | [docker-compose.yml](docker-compose.yml), [deploy/entrypoint.sh](deploy/entrypoint.sh) | the split topology and the container's startup |
 | [tools/](tools/) | the benchmark scripts the README's numbers come from |
 | [CHANGELOG.md](CHANGELOG.md) | what each release changed, with the issue that drove it |
@@ -41,7 +42,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -55,6 +56,17 @@ podman run --rm -p 8731:8731 \
   serves v2, except on a volume that holds only 0.14's w4b, which keeps
   serving w4b and downloads nothing. `HALOGEN_FLASH_PIN_TRUNK=0` applies to
   w4b only.
+- **A smaller checkpoint, opt in (0.16.0):**
+  `HALOGEN_CHECKPOINT=/models/qwen38-flash-next-ht43.hgn` holds about 8 GiB
+  less in memory than v2, reads prompts somewhat slower, and decodes with the
+  draft head a few percent slower. `HALOGEN_DOWNLOAD` fetches it.
+- **Small models on the NPU (0.16.0):** `HALOGEN_NPU_MODELS` serves
+  `decider-0.8b`, `qwen3-embedding-0.6b`, `qwen3-reranker-0.6b` or a
+  fine-tune of one of them (`/models/<dir>`) beside the Flash model on 8731.
+  The start refuses unless the GPU's fabric clock is held (run as root with
+  `-v /sys:/host/sys`, or install `deploy/host/`'s unit). Unset, nothing
+  changes. [docs/NPU.md](docs/NPU.md) has the host, the flags and the
+  request shapes.
 - If you split the engine and the API into two containers, **run both from
   the same image tag**. Each prints its version on its first log line and
   `/health` reports both.

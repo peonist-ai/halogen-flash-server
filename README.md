@@ -63,7 +63,8 @@ the changelog can credit them. See [Community](#community).
   [Codex and the Responses API](#codex-and-the-responses-api),
   [Claude Code and the Messages API](#claude-code-and-the-anthropic-messages-api),
   [from an agent harness](#from-an-agent-harness),
-  [as a classifier](#using-it-as-a-classifier)
+  [as a classifier](#using-it-as-a-classifier),
+  [small models on the NPU](#small-models-on-the-npu)
 - **[Give it a machine of its own](#give-it-a-machine-of-its-own)**: what this
   server holds, what that leaves for anything else, and
   [the recipes if you must share it](#if-you-must-share-it)
@@ -115,7 +116,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -166,7 +167,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -721,6 +722,29 @@ no text to parse and nothing is generated past that one token.
 function that returns each label's probability, how to choose labels, and how
 to lay out the prompt so the cache reuses everything but the item.
 
+### Small models on the NPU
+
+The server can also run small models on the Ryzen AI NPU, beside the Flash
+model and behind the same port: decisions (`decider-0.8b`), embeddings
+(`qwen3-embedding-0.6b`) and reranking (`qwen3-reranker-0.6b`), or your own
+fine-tune of one of them. Add the NPU to the Quickstart's command:
+
+```
+  --device /dev/accel/accel0 -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro \
+  -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b \
+```
+
+A request picks a model by its `model`. The host needs the NPU driver and
+XRT, and the GPU's fabric clock held at its top speed. GPU work and NPU work
+at the same time can otherwise hang a Strix Halo machine. Run as root with
+`-v /sys:/host/sys` and the server holds the clock itself while it runs.
+Rootless, the unit in [`deploy/host/`](deploy/host/) holds it at every boot.
+Without either, the server refuses to start and prints the commands for your
+machine. The Flash model runs somewhat slower while the NPU works.
+[docs/NPU.md](docs/NPU.md) has the host's details, the request shapes, and
+how to serve your own fine-tune. Leave `HALOGEN_NPU_MODELS` out and nothing
+changes.
+
 ## Give it a machine of its own
 
 This server holds most of the host once it is loaded: the weights stay resident
@@ -906,7 +930,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -922,7 +946,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -938,7 +962,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -1114,8 +1138,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.15.3 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.15.3 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.16.0 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.16.0 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1214,6 +1238,15 @@ outputs than 0.14's checkpoint did, measured on real agent sessions, and
 holds about 5.9 GiB less in memory than that checkpoint with its sidecar. **Which families are stored at which
 precision is written out in [`docs/QUANT.md`](docs/QUANT.md).**
 
+**A smaller checkpoint, if you need the memory.** `qwen38-flash-next-ht43.hgn`
+stores the experts in fewer bits and holds about 8 GiB less in memory than
+the default (53.7 GiB against 62.1), with the same lookup table. Prompts are
+read about 6 to 10% slower with it, and decode with the draft head runs a few
+percent slower. It is opt in. Start with
+`-e HALOGEN_CHECKPOINT=/models/qwen38-flash-next-ht43.hgn`, and with
+`HALOGEN_DOWNLOAD` set the server fetches it (about 58 GB) beside what the
+volume already holds.
+
 **0.14's checkpoint still loads.** `qwen38-flash-next-w4b.hgn` and its
 quality sidecar (the two files below) run as before, named with
 `HALOGEN_CHECKPOINT`. On a volume that holds only them, they are what an
@@ -1281,7 +1314,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1448,7 +1481,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1490,7 +1523,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.15.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.0 \
   MODE [FILE] [flags]
 ```
 
@@ -2565,8 +2598,8 @@ of our machines exposes the file.
   streams grows slowly.
 - **Speculation is for a conversation on its own.** With two or more
   conversations generating, every stream takes a batched step; the drafter
-  resumes when a stream is alone again. Speculating inside a batch was measured
-  to pay only for exactly two code-heavy streams and is not built.
+  resumes when a stream is alone again. Speculating inside a batch is not
+  built.
 - **No response store.** `/v1/responses` generates and streams; it does not
   keep responses, so `previous_response_id`, retrieval by id and cancellation
   by id are not available. **Cancellation is by disconnect** (since 0.10.2;
@@ -2574,7 +2607,10 @@ of our machines exposes the file.
   connection is cancelled within one decode step, its slot and KV
   reservation are released, and `/health.in_flight` and `/metrics` show it
   at once; the server log prints a "client disconnected" line with the
-  timing. Its prefix stays in the prompt cache, so a retry resumes from it.
+  timing. Since 0.16.0 (#122) that holds while the prompt is still being
+  read too. A long prompt stops within about a second, and the log says how
+  far it got. A prompt read in full stays in the prompt cache, so a retry
+  resumes from it. One cut while being read adds nothing to the cache.
   Before 0.10.2 only streaming requests were cancelled; a non-streaming
   request ran to its natural end (EOS, `max_tokens` or the thinking budget).
 - **Images are read, not generated.** There is no image output, and no audio

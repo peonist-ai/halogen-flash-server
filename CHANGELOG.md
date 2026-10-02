@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.16.0
+
+Small models on the NPU, a smaller checkpoint you can opt into, and fixes
+from three reports and our own testing. The default checkpoint is
+unchanged. At temperature 0 the output is still byte-identical to serial
+greedy decode. For the reports behind it: issues #122
+([@semidark](https://github.com/semidark)), #123
+([@Takayuki-Ishimaru](https://github.com/Takayuki-Ishimaru)) and #124
+([@wszgrcy](https://github.com/wszgrcy), with
+[@pugant](https://github.com/pugant)'s numbers).
+
+### Added
+
+- **Small models on the Ryzen AI NPU**, beside the Flash model and behind
+  the same port: decisions (`decider-0.8b`), embeddings
+  (`qwen3-embedding-0.6b`, `/v1/embeddings`) and reranking
+  (`qwen3-reranker-0.6b`, `/v1/rerank`). Name them in
+  `HALOGEN_NPU_MODELS`, and `HALOGEN_DOWNLOAD` fetches their files. Your own
+  fine-tune of one of them runs from its directory on the models volume.
+  The host needs the NPU driver and XRT, and the GPU's fabric clock held
+  while the two work together. The server holds it itself when run as root
+  with `-v /sys:/host/sys`, and `deploy/host/` has a unit that holds it at
+  every boot for rootless podman. The Flash model runs somewhat slower while
+  the NPU works. See [docs/NPU.md](docs/NPU.md). Leave `HALOGEN_NPU_MODELS`
+  unset and nothing changes.
+- **`qwen38-flash-next-ht43.hgn`, a smaller checkpoint, opt in.** It holds
+  about 8 GiB less in memory than the default. Prompts are read somewhat
+  slower with it, and decode with the draft head a few percent slower.
+  Start with `HALOGEN_CHECKPOINT=/models/qwen38-flash-next-ht43.hgn`. The
+  default is unchanged.
+
+### Fixed
+
+- **A cancel or a disconnect during a long prompt** (#122) now stops it
+  within about a second. It used to wait until the whole prompt was read.
+  A non-streaming request whose client hung up was noticed only at its
+  first token. It is now noticed while the prompt is read too.
+  `HALOGEN_PREFILL_CANCEL=0` restores the old behaviour.
+- **`timings.draft_n` and `/metrics`' `draft_tokens_total`** (#124) now
+  count every token the draft head proposes. Since 0.14.0 the head proposes
+  up to two a round and the count took one, so the accepted count could
+  read above it.
+- **A one- or two-token prompt on `/v1/completions`** stopped the server,
+  in every release since 0.6.0.
+- The startup line on the default checkpoint no longer says "the bare
+  checkpoint runs". That checkpoint carries its own precision and needs no
+  sidecar.
+
+### Documentation
+
+- The README no longer says that speculating inside a batch was measured
+  to pay for two streams only (#123). It says only that it is not built.
+
 ## 0.15.3
 
 Prompts are read faster. No weight change. At temperature 0 the output is
