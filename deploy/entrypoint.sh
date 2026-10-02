@@ -1706,8 +1706,10 @@ npu_fetch() {   # npu_fetch ID DIR PATH... : a model's missing files from the so
   done
   download_room_check "$d" "$need" || return 1
   echo "halogen npu: fetching $id from $repo${rev:+ at $rev}:$(printf ' %s' "$@")"
+  # the Hub client's bars and chatter silenced as the checkpoint's fetch does (0.16.0 printed both)
   # shellcheck disable=SC2086
-  if ! HF_HUB_OFFLINE=0 HF_HUB_DISABLE_TELEMETRY=1 "${_hg_hf:-hf}" download "$repo" "$@" ${rev:+--revision "$rev"} --local-dir "$d" > /dev/null; then
+  if ! HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 "${_hg_hf:-hf}" download "$repo" "$@" ${rev:+--revision "$rev"} --local-dir "$d" > /dev/null \
+       2> >(grep --line-buffered -vE 'hf update|hf skills|HF_TOKEN|gitignore\.lock|A new version of' >&2); then
     echo "halogen npu: fetching $id from $repo failed (see above); nothing was started" >&2
     return 1
   fi
@@ -1750,21 +1752,37 @@ npu_model_ready() {   # npu_model_ready ID DIR [devices]
     return 1
   fi
   if [ "$verify" != 0 ]; then
-    while read -r p sz want; do
-      [ -n "$p" ] || continue
-      got=$(wc -c < "$d/$p" | tr -d ' ')
-      if [ "$got" != "$sz" ]; then
-        echo "halogen npu: $id: $d/$p is $got bytes and this image's record says $sz (an interrupted download?). Remove it and fetch it again (HALOGEN_DOWNLOAD)." >&2
-        return 1
-      fi
-      got=$(${_hg_sha256:-sha256sum} "$d/$p" | awk '{print $1}')
-      if [ "$got" != "$want" ]; then
-        echo "halogen npu: $id: $d/$p is not the file this image has a record of (sha256 ${got:0:16}, expected ${want:0:16}). Remove it and fetch it again (HALOGEN_DOWNLOAD)." >&2
-        return 1
-      fi
-    done <<PINS
+    # 0.16.1: a file that is not the record's is fetched again when a download is allowed (a release that rebuilds a
+    # model's NPU program leaves the previous release's files on every volume that ran it); refused otherwise
+    local stale="" pass
+    for pass in check recheck; do
+      while read -r p sz want; do
+        [ -n "$p" ] || continue
+        [ "$pass" = check ] || case " $stale " in *" $p "*) ;; *) continue ;; esac
+        got=$(wc -c < "$d/$p" | tr -d ' ')
+        if [ "$got" != "$sz" ]; then
+          if [ "$pass" = check ] && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$d" ]; then stale="$stale $p"; continue; fi
+          echo "halogen npu: $id: $d/$p is $got bytes and this image's record says $sz (an interrupted download?). Remove it and fetch it again (HALOGEN_DOWNLOAD)." >&2
+          return 1
+        fi
+        got=$(${_hg_sha256:-sha256sum} "$d/$p" | awk '{print $1}')
+        if [ "$got" != "$want" ]; then
+          if [ "$pass" = check ] && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$d" ]; then stale="$stale $p"; continue; fi
+          echo "halogen npu: $id: $d/$p is not the file this image has a record of (sha256 ${got:0:16}, expected ${want:0:16}). Remove it and fetch it again (HALOGEN_DOWNLOAD)." >&2
+          return 1
+        fi
+      done <<PINS
 $pins
 PINS
+      [ -n "$stale" ] || break
+      if [ "$pass" = check ]; then
+        echo "halogen npu: $id:$stale not the files this image has a record of (another release's?); fetching them again"
+        for p in $stale; do rm -f "$d/$p"; done
+        # shellcheck disable=SC2086
+        npu_fetch "$id" "$d" $stale || return 1
+        for p in $stale; do [ -f "$d/$p" ] || { echo "halogen npu: $id: the fetch left $d/$p missing" >&2; return 1; }; done
+      fi
+    done
     echo "halogen npu: $id: $(printf '%s\n' "$pins" | grep -c .) files checked against this image's record"
   else
     echo "halogen npu: $id: HALOGEN_NPU_VERIFY=0, so the files under $d are not checked against this image's record"
@@ -1830,14 +1848,34 @@ npu_preflight() {   # npu_preflight [GPU]
     echo "  Docker with --user: add --group-add with the device's group id as a number (stat -c %g /dev/accel/accel0 on the host)." >&2
     return 1
   fi
+  # A host whose XRT is a distribution's may hold links under /opt/xilinx/xrt/lib into its system library directory
+  # (#126): mounted here, a link points at a file the container does not have. Name it, and the mounts that carry the
+  # files themselves.
+  local f t="" bad=""
+  for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
+    if [ -L "$x/$f" ] && [ ! -e "$x/$f" ]; then bad="$f"; t=$(readlink "$x/$f"); break; fi
+  done
+  if [ -n "$bad" ]; then
+    echo "halogen npu: /opt/xilinx/xrt/lib/$bad is a link to $t, which is not in this container: the mount carries the host's links, not the files they point at." >&2
+    case "$t" in
+      /*) local td="${t%/*}"
+          echo "  The host's XRT is in $td. Mount its three files instead of /opt/xilinx/xrt, each twice, at /opt/xilinx/xrt/lib/ and at $td/, since they load each other from there:" >&2
+          for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
+            echo "    -v $td/$f:/opt/xilinx/xrt/lib/$f:ro -v $td/$f:$td/$f:ro" >&2
+          done
+          echo "  libxrt_driver_xdna.so.2 is the NPU plugin (Arch and CachyOS: xrt-plugin-amdxdna; Ubuntu: libxrt-npu2): ls -l $td/libxrt_driver_xdna.so.2 on the host must show it." >&2 ;;
+      *) echo "  Mount the directory that holds what the link names, or mount the files themselves (ls -lL /opt/xilinx/xrt/lib on the host)." >&2 ;;
+    esac
+    return 1
+  fi
   if [ ! -e "$x/libxrt_coreutil.so.2" ]; then
     echo "halogen npu: no XRT in this container (/opt/xilinx/xrt/lib/libxrt_coreutil.so.2)." >&2
     echo "  Mount the host's: -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro (the host needs AMD's XRT with its NPU plugin installed there; the container uses the host's so it matches the host's driver)." >&2
-    echo "  A distribution's XRT lives in the system library directory instead (Ubuntu: /usr/lib/x86_64-linux-gnu): mount libxrt_coreutil.so.2, libxrt_core.so.2 and libxrt_driver_xdna.so.2 each twice, at /opt/xilinx/xrt/lib/ and at that same path, since they load each other from there." >&2
+    echo "  A distribution's XRT lives in the system library directory instead (Ubuntu: /usr/lib/x86_64-linux-gnu; Arch and CachyOS: /usr/lib): mount libxrt_coreutil.so.2, libxrt_core.so.2 and libxrt_driver_xdna.so.2 each twice, at /opt/xilinx/xrt/lib/ and at that same path, since they load each other from there." >&2
     return 1
   fi
   if [ ! -e "$x/libxrt_driver_xdna.so.2" ]; then
-    echo "halogen npu: the host's XRT has no NPU plugin (/opt/xilinx/xrt/lib/libxrt_driver_xdna.so.2). Install the one AMD's NPU driver ships (or your distribution's, Ubuntu: libxrt-npu2), on the host." >&2
+    echo "halogen npu: the host's XRT has no NPU plugin (/opt/xilinx/xrt/lib/libxrt_driver_xdna.so.2). Install the one AMD's NPU driver ships (or your distribution's: Ubuntu libxrt-npu2, Arch and CachyOS xrt-plugin-amdxdna), on the host." >&2
     return 1
   fi
   xv=$(basename "$(readlink -f "$x/libxrt_coreutil.so.2" 2>/dev/null || echo "$x/libxrt_coreutil.so.2")")

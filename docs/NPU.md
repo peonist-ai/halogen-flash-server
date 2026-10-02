@@ -48,7 +48,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.1
 ```
 
 `HALOGEN_DOWNLOAD` fetches the NPU models' files too, into `/models/npu`, and the server checks each one's size and
@@ -141,6 +141,14 @@ volume works, but then the conversion runs at every start.
 When one request carries several short inputs (embedding texts, or rerank documents), they run together in one pass.
 Each result is exactly what it would be alone. `HALOGEN_NPU_EMB_BATCH=0` turns this off.
 
+## Many requests at once
+
+The NPU runs one pass at a time. A request takes one pass per input, or one per batch of short inputs. Up to
+`HALOGEN_NPU_QUEUE` passes (64) wait on the NPU. Passes past that wait in the server, so a burst, such as a whole
+knowledge base sent for embedding at once, is answered more slowly, not refused. A request that cannot start within
+`HALOGEN_QUEUE_TIMEOUT` gets `503` with the code `engine_busy` and a `Retry-After` header. Raising `HALOGEN_NPU_QUEUE`
+changes no result.
+
 ## Limits
 
 - The longest input is 4,096 tokens for decisions and embeddings, and 2,048 tokens for a rerank pair. A longer one is
@@ -162,17 +170,21 @@ Each result is exactly what it would be alone. `HALOGEN_NPU_EMB_BATCH=0` turns t
 **Where your XRT lives.** The container needs three XRT libraries from the host: `libxrt_coreutil.so.2`,
 `libxrt_core.so.2` and the NPU plugin `libxrt_driver_xdna.so.2`. AMD's packages put XRT in `/opt/xilinx/xrt`, and the
 command above mounts that directory. A distribution's packages put it in the system library directory
-(`/usr/lib/x86_64-linux-gnu` on Ubuntu). Those libraries look for each other at that path, so mount each one twice:
-once where the image looks for XRT, and once at its own path. Use these mounts in place of the
-`-v /opt/xilinx/xrt:/opt/xilinx/xrt:ro` line:
+(`/usr/lib/x86_64-linux-gnu` on Ubuntu, `/usr/lib` on Arch and CachyOS, whose packages are `xrt` and
+`xrt-plugin-amdxdna`). Those libraries look for each other at that path, so mount each one twice: once where the image
+looks for XRT, and once at its own path. Use these mounts in place of the `-v /opt/xilinx/xrt:/opt/xilinx/xrt:ro`
+line, with `L=/usr/lib` on Arch and CachyOS:
 
 ```
 L=/usr/lib/x86_64-linux-gnu; X=""
 for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
-  X="$X -v $(readlink -f $L/$f):/opt/xilinx/xrt/lib/$f:ro -v $(readlink -f $L/$f):$L/$f:ro"
+  X="$X -v $(readlink -f "$L/$f"):/opt/xilinx/xrt/lib/${f}:ro -v $(readlink -f "$L/$f"):$L/${f}:ro"
 done
 # then: podman run ... $X ...
 ```
+
+Do not mount an `/opt/xilinx/xrt` that holds only links into the system library directory. Inside the container those
+links point at nothing. The server names such a link at start and prints the mounts to use.
 
 **The device flags.** `--device /dev/accel/accel0` passes the NPU in. `--ulimit memlock=-1:-1` lets the NPU engine lock
 the memory the NPU reads. With podman, `--group-add keep-groups` covers it (your user must be in the device's group on

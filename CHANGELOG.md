@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.16.1
+
+Fixes from three reports and our own testing, and faster decode. The
+checkpoints are unchanged. At temperature 0 the output is still
+byte-identical to serial greedy decode. For the reports behind it: issues
+#121 ([@g30ff1rl](https://github.com/g30ff1rl)), #126
+([@ndrewpj](https://github.com/ndrewpj)) and #127
+([@bastooky](https://github.com/bastooky)).
+
+### Fixed
+
+- **A burst of `/v1/embeddings` requests** (#127) now waits for room on
+  the NPU, up to `HALOGEN_QUEUE_TIMEOUT`, instead of answering 503 at once.
+  A request that still cannot get in answers 503 with `Retry-After: 5`, and
+  the rest of its inputs stop waiting. `HALOGEN_NPU_QUEUE` sets how much
+  work the NPU queues.
+- **An XRT library link that points at nothing inside the container**
+  (#126) is now named at start, with the mounts to use. This happens when
+  `/opt/xilinx/xrt/lib` holds links into the system library directory, as
+  hand-made links on Arch and CachyOS do. [docs/NPU.md](docs/NPU.md) covers
+  those distributions.
+- **With the prompt cache on disk (`HALOGEN_CACHE_DIR`)** (#121), a
+  conversation moved in memory while its copy was still being written could
+  restore another conversation's rows after a restart and answer wrongly.
+  The move now waits for the write.
+- **A request waiting for room** (#121) no longer forgets cached
+  conversations whose memory could not have made room for it, so they still
+  resume from cache. When nothing could make room, a request that resumes
+  from another conversation's cached prompt now runs in that space instead
+  of waiting for a running request to finish. That conversation then reads
+  its own history in again.
+- **`HALOGEN_MTP=0`** on its own stopped the server at start. It now starts
+  with prompt lookup off and says so.
+
+### Changed
+
+- **Decode is faster on both checkpoints**, most with several conversations
+  generating at once.
+- **The NPU models answer somewhat faster.** Their device files on the Hub
+  are new builds. The weights are unchanged. A volume that ran 0.16.0's NPU
+  models fetches the new files at its first start under `HALOGEN_DOWNLOAD`,
+  with the volume mounted read-write.
+- The NPU files download without the Hub client's progress bars.
+
 ## 0.16.0
 
 Small models on the NPU, a smaller checkpoint you can opt into, and fixes
