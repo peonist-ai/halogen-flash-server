@@ -71,9 +71,10 @@
 # THE NPU (Ryzen AI), in the default mode: HALOGEN_NPU_MODELS names small
 # models to serve on the NPU beside the Flash model, on the same port; a
 # request's `model` picks one. A bare name is one of ours (decider-0.8b,
-# qwen3-embedding-0.6b, qwen3-reranker-0.6b; fetched under HALOGEN_DOWNLOAD
-# like the main model), a path (/models/<dir>) the user's own fine-tune of
-# one of them, converted once and kept beside it. Needs the host's NPU
+# qwen3-embedding-0.6b, qwen3-reranker-0.6b, qwen3guard-gen-0.6b,
+# qwen3.5-2b; fetched under HALOGEN_DOWNLOAD like the main model), a path
+# (/models/<dir>) the user's own fine-tune of one of them, converted once and
+# kept beside it. Needs the host's NPU
 # driver, its XRT mounted read-only at /opt/xilinx/xrt, --device
 # /dev/accel/accel0, and the GPU's fabric clock held at its top speed (a host
 # step once per boot); the start names the first thing missing. Unset, the
@@ -1571,9 +1572,16 @@ start_api() {
 # each entry is either
 #
 #   a bare name   one of ours (decider-0.8b, qwen3-embedding-0.6b,
-#                 qwen3-reranker-0.6b): its files live under /models/npu/<id>/
+#                 qwen3-reranker-0.6b, qwen3guard-gen-0.6b, qwen3.5-2b): its
+#                 files live under /models/npu/<id>/; its task comes with it
+#                 (decisions, embeddings, rerank, moderation on
+#                 /v1/moderations, and qwen3.5-2b's text generation on
+#                 /v1/chat/completions)
 #                   devices/     the NPU's program for the model (devices.hnpm,
-#                                the .elf files, consts.hnpb)
+#                                the .elf files, consts.hnpb); a model whose
+#                                record line names another's (devices=<id>)
+#                                runs on that model's devices/ instead (the
+#                                embedder, the reranker and the guard share one)
 #                   <id>.hnpw    the weight file
 #                   tokenizer/   the model's own tokenizer.json
 #                 and are fetched, when missing, under the same HALOGEN_DOWNLOAD
@@ -1584,7 +1592,7 @@ start_api() {
 #                 it once at the first start and keeps the result beside it
 #                 (<dir>/halogen-npu.hnpw; a read-only volume converts into the
 #                 container at every start); it is served under its directory's
-#                 name, and its task (decisions, embeddings, rerank) is read from
+#                 name, and its task (decisions, embeddings, rerank, moderation) is read from
 #                 the checkpoint. It runs on its base model's program, so that
 #                 base's devices/ must be there too (fetched alone under
 #                 HALOGEN_DOWNLOAD).
@@ -1613,6 +1621,12 @@ npu_pin_get() {   # npu_pin_get ID KEY -> the model line's KEY= value
 }
 
 npu_pin_files() { awk -v id="$1" '$1 == "file" && $2 == id {print $3, $4, $5}' "$NPU_PINS" 2>/dev/null || true; }
+
+npu_devices_of() {   # npu_devices_of ID -> the model whose devices/ ID runs on (its record's devices=, else itself)
+  local o
+  o=$(npu_pin_get "$1" devices)
+  echo "${o:-$1}"
+}
 
 npu_stat() { stat -c '%A %U:%G' "$1" 2>/dev/null || ls -ld "$1" 2>/dev/null | awk '{print $1, $3 ":" $4}'; }
 # npu_fclk ROOT: the GPU's fabric clock as sysfs shows it (read-only in a container), over every amdgpu device with the
@@ -1718,7 +1732,7 @@ npu_fetch() {   # npu_fetch ID DIR PATH... : a model's missing files from the so
 # one of our models present (fetched when asked) and checked; adds its size to NPU_NEED_K. With "devices", only its
 # devices/ (the program a fine-tune of it runs on)
 npu_model_ready() {   # npu_model_ready ID DIR [devices]
-  local id="$1" d="$2/$1" part="${3:-all}" pins paths p sz want got missing="" verify="${HALOGEN_NPU_VERIFY:-1}" known
+  local id="$1" d="$2/$1" part="${3:-all}" pins paths p sz want got missing="" verify="${HALOGEN_NPU_VERIFY:-1}" known own dk
   case "$id" in ''|*/*|.*) echo "halogen npu: '$id' is not a model id" >&2; return 1 ;; esac
   pins=$(npu_pin_files "$id")
   [ "$part" = devices ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^devices\//')
@@ -1747,7 +1761,9 @@ npu_model_ready() {   # npu_model_ready ID DIR [devices]
     echo "  Start once with HALOGEN_DOWNLOAD set and the models volume mounted read-write, or put the files there." >&2
     return 1
   fi
-  if ! ls "$d/devices/"*.elf > /dev/null 2>&1; then
+  # a model that runs on another's devices/ (devices= in its record) holds none of its own: that one is checked apart
+  own=$(npu_devices_of "$id")
+  if { [ "$part" = devices ] || [ "$own" = "$id" ]; } && ! ls "$d/devices/"*.elf > /dev/null 2>&1; then
     echo "halogen npu: $id: $d/devices/ holds no .elf file (the NPU's program for the model)" >&2
     return 1
   fi
@@ -1788,13 +1804,15 @@ PINS
     echo "halogen npu: $id: HALOGEN_NPU_VERIFY=0, so the files under $d are not checked against this image's record"
   fi
   [ "$part" = devices ] && sz=0 || sz=$(wc -c < "$d/$id.hnpw" | tr -d ' ')
-  NPU_NEED_K=$(( ${NPU_NEED_K:-0} + sz / 1024 + $(du -sk "$d/devices" | awk '{print $1}') ))
+  dk=0
+  { [ "$part" = devices ] || [ "$own" = "$id" ]; } && dk=$(du -sk "$d/devices" | awk '{print $1}')
+  NPU_NEED_K=$(( ${NPU_NEED_K:-0} + sz / 1024 + dk ))
 }
 
 # the user's fine-tune at a path: what it is (the NPU engine reads the checkpoint), its base's program present, and
 # its weight file converted once and kept beside it; sets NPU_FT_NAME / NPU_FT_DEV / NPU_FT_W; adds to NPU_NEED_K
 npu_finetune_ready() {   # npu_finetune_ready PATH
-  local p="${1%/}" bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f
+  local p="${1%/}" bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own
   if [ ! -d "$p" ]; then
     echo "halogen npu: $p is not a directory. A path in HALOGEN_NPU_MODELS is your own model: a directory on the models volume holding config.json, model.safetensors and tokenizer.json." >&2
     return 1
@@ -1812,17 +1830,18 @@ npu_finetune_ready() {   # npu_finetune_ready PATH
   [ "$rc" = 0 ] || return 1   # the engine named what it is and what is supported
   task=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "task" {print $2}')
   base=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "base" {print $2}')
-  npu_model_ready "$base" "$NPU_DIR" devices || return 1
+  own=$(npu_devices_of "$base")
+  npu_model_ready "$own" "$NPU_DIR" devices || return 1
   if [ -w "$p" ]; then out="$p/halogen-npu.hnpw"
   else
     out="/tmp/halogen-npu/$name.hnpw"; mkdir -p /tmp/halogen-npu
     echo "halogen npu: $p is read-only, so $name is converted into the container at every start; mount the models volume read-write once to keep the result beside it"
   fi
-  case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; esac
+  case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; generate) task="chat completions" ;; esac
   echo "halogen npu: $name ($p): a fine-tune of $base, served for $task"
-  "$bin" convert "$p" "$NPU_DIR/$base/devices" "$out" --name "$name" --source "$p" --if-stale || {
+  "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale || {
     echo "halogen npu: converting $p for the NPU failed (above); nothing was started" >&2; return 1; }
-  NPU_FT_NAME="$name"; NPU_FT_DEV="$NPU_DIR/$base/devices"; NPU_FT_W="$out"
+  NPU_FT_NAME="$name"; NPU_FT_DEV="$NPU_DIR/$own/devices"; NPU_FT_W="$out"
   NPU_NEED_K=$(( ${NPU_NEED_K:-0} + $(wc -c < "$out" | tr -d ' ') / 1024 + $(du -sk "$NPU_FT_DEV" | awk '{print $1}') ))
 }
 
@@ -1949,7 +1968,7 @@ npu_memlock() {   # npu_memlock NEED_KIB
 # Sets NPU_PID, NPU_API_ARGS (the front end's arguments for the NPU's models) and NPU_TOK1 (the first model's
 # tokenizer directory, for the front end without the Flash engine). Exits on any failure.
 start_npu_engine() {   # start_npu_engine GPU
-  local gpu="$1" port="${HALOGEN_NPU_PORT:-8740}" ids id n=0 first=1 rc dev w tokd
+  local gpu="$1" port="${HALOGEN_NPU_PORT:-8740}" ids id n=0 first=1 rc dev w tokd own
   local bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}"
   local -a nargs
   npu_retired || exit 1
@@ -1966,7 +1985,9 @@ start_npu_engine() {   # start_npu_engine GPU
       /*) npu_finetune_ready "$id" || exit 1
           dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%/}" ;;
       *) npu_model_ready "$id" "$NPU_DIR" || exit 1
-         dev="$NPU_DIR/$id/devices"; w="$NPU_DIR/$id/$id.hnpw"; tokd="$NPU_DIR/$id/tokenizer" ;;
+         own=$(npu_devices_of "$id")
+         if [ "$own" != "$id" ]; then npu_model_ready "$own" "$NPU_DIR" devices || exit 1; fi
+         dev="$NPU_DIR/$own/devices"; w="$NPU_DIR/$id/$id.hnpw"; tokd="$NPU_DIR/$id/tokenizer" ;;
     esac
     if [ "$first" = 1 ]; then nargs+=("$dev" "$w" "127.0.0.1:$port"); NPU_TOK1="$tokd"; first=0
     else nargs+=(--model "$dev" "$w"); fi

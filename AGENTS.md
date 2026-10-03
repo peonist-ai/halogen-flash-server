@@ -42,7 +42,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.2
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -60,9 +60,11 @@ podman run --rm -p 8731:8731 \
   `HALOGEN_CHECKPOINT=/models/qwen38-flash-next-ht43.hgn` holds about 8 GiB
   less in memory than v2, reads prompts somewhat slower, and decodes with the
   draft head a few percent slower. `HALOGEN_DOWNLOAD` fetches it.
-- **Small models on the NPU (0.16.0):** `HALOGEN_NPU_MODELS` serves
-  `decider-0.8b`, `qwen3-embedding-0.6b`, `qwen3-reranker-0.6b` or a
-  fine-tune of one of them (`/models/<dir>`) beside the Flash model on 8731.
+- **Small models on the NPU (0.16.0; moderation and generation 0.16.2):**
+  `HALOGEN_NPU_MODELS` serves `decider-0.8b`, `qwen3-embedding-0.6b`,
+  `qwen3-reranker-0.6b`, `qwen3guard-gen-0.6b` (`/v1/moderations`),
+  `qwen3.5-2b` (`/v1/chat/completions`, text only) or a fine-tune of one of
+  the first four (`/models/<dir>`) beside the Flash model on 8731.
   The start refuses unless the GPU's fabric clock is held (run as root with
   `-v /sys:/host/sys`, or install `deploy/host/`'s unit). Unset, nothing
   changes. [docs/NPU.md](docs/NPU.md) has the host, the flags and the

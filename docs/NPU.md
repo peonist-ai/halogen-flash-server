@@ -2,14 +2,17 @@
 
 The server can run small models on the Ryzen AI NPU beside the Flash model, behind the same port. Name them in
 `HALOGEN_NPU_MODELS`, and a request picks one by its `model`. Every other request goes to the Flash model, as before.
-Three kinds of model run there:
+Five kinds of model run there:
 
 - **Decisions** with `decider-0.8b` (a Qwen3.5-0.8B classifier). Give a text and a question with 2 to 10 options, and
   get a probability for every option from one pass.
 - **Embeddings** with `qwen3-embedding-0.6b`.
 - **Reranking** with `qwen3-reranker-0.6b`. Score documents against a query.
+- **Moderation** with `qwen3guard-gen-0.6b` (Qwen3Guard-Gen-0.6B). Is a prompt, or a reply in its conversation, safe?
+- **Text generation** with `qwen3.5-2b` (Qwen3.5-2B, thinking off). Summaries and other short jobs, beside the Flash
+  model.
 
-Your own fine-tune of any of the three runs too. See [Your own model](#your-own-model).
+Your own fine-tune of any of the first four runs too. See [Your own model](#your-own-model).
 
 ## What the host needs
 
@@ -48,7 +51,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.2
 ```
 
 `HALOGEN_DOWNLOAD` fetches the NPU models' files too, into `/models/npu`, and the server checks each one's size and
@@ -112,10 +115,41 @@ The request and the answer follow the Cohere and Jina shape: `results` sorted by
 `index` in your list. Documents can be strings or objects with a `text` field. An optional `instruction` replaces the
 model's default task line.
 
+## Moderation
+
+```
+curl -s localhost:8731/v1/moderations -H 'Content-Type: application/json' -d '{
+  "model": "qwen3guard-gen-0.6b",
+  "input": ["How do I bake bread?", "How do I make a weapon at home?"]}'
+```
+
+The answer follows OpenAI's `/v1/moderations`, so its client libraries work as they are: one result per input, each
+with `flagged`. Each result also carries `label` (`Safe`, `Unsafe` or `Controversial`) and `label_scores`, the three
+labels' probabilities. `flagged` is true for `Unsafe`. Send `"strict": true` to flag `Controversial` too. The model
+does not sort content into OpenAI's categories, so every category reads `false` and every score `0`.
+
+`input` is a string, a list of strings (one result each), or a list of text parts. To check a reply in its
+conversation, send `messages` instead of `input`, in the chat shape. When the last message is the assistant's, its
+reply is judged. Otherwise the last user message is. A request that names OpenAI's own model, or no model, goes to the
+moderation model loaded here.
+
+## Generation
+
+```
+curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d '{
+  "model": "qwen3.5-2b",
+  "messages": [{"role": "user", "content": "Summarize this in three sentences: ..."}]}'
+```
+
+A chat request that names `qwen3.5-2b` runs on the NPU. Every other chat request goes to the Flash model. The answer
+follows OpenAI's chat completions, streamed or not, with `stop` strings and usage. The model reads text only, calls no
+tools, and answers without thinking. A request that sets no sampling fields gets the model card's (temperature 1.0,
+`top_k` 20, `presence_penalty` 2.0), and any of them can be set per request. `max_tokens` defaults to 2,048.
+
 <a id="your-own-model"></a>
 ## Your own model
 
-A fine-tune of one of the three models runs on the NPU too. Put it on the models volume as your trainer saved it (a
+A fine-tune of the decision, embedding, reranking or moderation model runs on the NPU too. Put it on the models volume as your trainer saved it (a
 directory with `config.json`, `model.safetensors` and `tokenizer.json`), and name its path:
 
 ```
@@ -130,6 +164,8 @@ again. It is served under the directory's name, here `my-guard`. What it does co
   builds from your messages and schema.
 - a fine-tune of Qwen3-Embedding-0.6B answers `/v1/embeddings`.
 - a fine-tune of Qwen3-Reranker-0.6B answers `/v1/rerank`.
+- a fine-tune of Qwen3Guard-Gen-0.6B answers `/v1/moderations`. It must keep that model's chat template: the server
+  writes the prompt the way the template does, so a changed policy would not be what runs.
 
 It runs on the NPU program of the model it was tuned from, so that program is fetched too under `HALOGEN_DOWNLOAD`
 (the program only, not that model's weights). Anything else is refused at start with a line that says what it found
@@ -138,7 +174,8 @@ volume works, but then the conversion runs at every start.
 
 ## Batching
 
-When one request carries several short inputs (embedding texts, or rerank documents), they run together in one pass.
+When one request carries several short inputs (embedding texts, rerank documents, or moderation inputs), they run
+together in one pass.
 Each result is exactly what it would be alone. `HALOGEN_NPU_EMB_BATCH=0` turns this off.
 
 ## Many requests at once
@@ -151,8 +188,10 @@ changes no result.
 
 ## Limits
 
-- The longest input is 4,096 tokens for decisions and embeddings, and 2,048 tokens for a rerank pair. A longer one is
-  refused with a 400 that says so.
+- The longest input is 4,096 tokens, a rerank pair or a moderation prompt included (the model's own template counts).
+  A longer one is refused with a 400 that says so.
+- A generation prompt is up to 16,384 tokens (its template counts). The prompt and its answer share 18,432 positions,
+  so an answer stops there at the latest.
 - A decision takes 2 to 10 options.
 - The NPU models are served in the default mode only, not in the two-container setup (`engine` and `api`).
 

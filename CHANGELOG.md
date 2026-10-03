@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.16.2
+
+Two new models on the NPU, a prompt cache that keeps more conversations, and
+faster NPU passes. The checkpoints are unchanged. At temperature 0 the output
+is still byte-identical to serial greedy decode.
+
+### Added
+
+- **Moderation on the NPU** with `qwen3guard-gen-0.6b` (Qwen3Guard-Gen-0.6B),
+  on OpenAI's route, `/v1/moderations`. `flagged` is the model's Unsafe;
+  `"strict": true` also flags Controversial. Each result adds `label` and
+  `label_scores`. A reply is checked in its conversation with `messages`.
+  Your own fine-tune runs by its `/models` path, as for the other models.
+  [docs/NPU.md](docs/NPU.md#moderation) has the request.
+- **Text generation on the NPU** with `qwen3.5-2b` (Qwen3.5-2B, thinking
+  off), on `/v1/chat/completions`, for summaries and other short jobs beside
+  the main model. Text only. Prompts up to 16,384 tokens.
+  [docs/NPU.md](docs/NPU.md#generation) has the request.
+
+### Changed
+
+- **The prompt cache keeps each conversation's latest point and a shared
+  system prompt** when it is full. Before, with more than about four
+  conversations taking turns, the shared system prompt was forgotten first
+  and a new conversation on it started cold, and past about eight each turn
+  fell back to the system prompt. `HALOGEN_CACHE_EVICT=0` keeps the old
+  order. `/cache` now counts the longer entries a hit replaces under
+  `dropped`, so `evicted` counts only what the cache forgot for room.
+- **The embedder, the reranker and the moderation model share one NPU
+  program**, so a host that serves more than one downloads it once. The
+  reranker now takes up to 4,096 tokens a pair.
+- **NPU embeddings, reranking and decisions are faster**, most on short
+  texts.
+
 ## 0.16.1
 
 Fixes from three reports and our own testing, and faster decode. The
