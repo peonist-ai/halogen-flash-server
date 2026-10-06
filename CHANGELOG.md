@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.4
+
+One fix, in the server's streaming. The checkpoints and the engine are
+unchanged.
+
+### Fixed
+
+- **A streamed reply no longer sends whitespace around tool calls.** With two
+  or more tool calls in one reply, the streamed content carried the newline
+  between the calls, where the non-streamed reply's content was empty.
+  Whitespace at the start or end of a streamed reply on a request with tools
+  went out the same way. Streamed content now matches the non-streamed content
+  exactly, on `/v1/chat/completions`, `/v1/responses` and `/v1/messages`. The
+  tool calls themselves were always correct. Found in our own testing.
+
 ## 0.16.3
 
 Five fixes, three additions and a deprecation. The checkpoints are unchanged.

@@ -116,7 +116,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -167,7 +167,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -938,7 +938,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -954,7 +954,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -970,7 +970,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -1146,8 +1146,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.16.3 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.16.3 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.16.4 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.16.4 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1322,7 +1322,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1489,7 +1489,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1531,7 +1531,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.4 \
   MODE [FILE] [flags]
 ```
 
