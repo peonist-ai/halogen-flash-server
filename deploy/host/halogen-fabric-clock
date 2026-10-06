@@ -1,15 +1,5 @@
 #!/bin/sh
-# halogen-fabric-clock hold | release | status: the AMD GPU's fabric clock (FCLK), held at its top level.
-#
-# On Strix Halo the GPU and the NPU working at the same time can hang the machine, and corrupt the NPU's results,
-# while the GPU's fabric clock changes speed; held at its top level, the two run together cleanly. halogen-flash-server
-# with HALOGEN_NPU_MODELS refuses to start until the clock is held. This holds it: the performance level `manual` and
-# only the top pp_dpm_fclk level, on every amdgpu device that has the control (the GPU and SoC clocks stay automatic).
-# Cost: about 1 W at idle. Run as root; halogen-fabric-clock.service runs `hold` at every boot and after a resume.
-#
-#   hold     hold it (waits up to 60 s for the GPU driver to come up)
-#   release  give it back to the driver (the performance level `auto`)
-#   status   print each device's state; exit 0 when every device is held
+# halogen-flash-server: source shipped as-is, comments stripped. The README is the documentation.
 set -u
 SYS="${HALOGEN_SYSFS:-/sys}"
 
@@ -21,7 +11,7 @@ devices() {
   done | sort -u
 }
 
-held() {   # held DEVICE_DIR: the performance level high, or manual with only the top fclk level selected
+held() {
   perf=$(cat "$1/power_dpm_force_performance_level" 2>/dev/null)
   [ "$perf" = high ] && return 0
   [ "$perf" = manual ] || return 1
@@ -38,7 +28,7 @@ case "$cmd" in
     rc=0
     for d in $(devices); do
       lvl=$(grep . "$d/pp_dpm_fclk" | tail -n 1 | cut -d: -f1)
-      # the driver applies the level several seconds after the write, so the read-back waits up to 30 s
+
       ok=0
       if echo manual > "$d/power_dpm_force_performance_level" && echo "$lvl" > "$d/pp_dpm_fclk"; then
         t=0; until held "$d" || [ "$t" -ge 300 ]; do sleep 0.1; t=$((t + 1)); done

@@ -1,5 +1,109 @@
 # Changelog
 
+## 0.16.3
+
+Five fixes, three additions and a deprecation. The checkpoints are unchanged.
+At temperature 0 the output is still byte-identical to serial greedy decode. A
+request that sends both a JSON schema and tools now answers differently, as
+the first fix below describes.
+
+### Fixed
+
+- **A request with both a JSON schema and tools no longer loops on tool
+  calls.** The schema bound the reply from its first token, so a model that
+  opens its answer with a sentence could only start the JSON or call a tool.
+  After a tool result it often called again, until the client's turn limit.
+  Now the reply starts free. A tool call is a tool call, and the JSON is held
+  to the schema from its first `{`. If the model would end its reply before
+  the JSON, it starts the JSON instead. A line written before the JSON is
+  dropped, so the content is the JSON alone. A schema whose root is an array
+  keeps the old behavior. `HALOGEN_SCHEMA_ESCAPE=off` restores the old
+  behavior for every schema. Found with the structured output scenarios of
+  [tool-eval-bench](https://github.com/SeraphimSerapis/tool-eval-bench).
+- **A conversation resumes from the longest prefix the disk cache holds.**
+  With `HALOGEN_CACHE_DIR` set, a short match in memory, such as a shared
+  system prompt, could hide a longer match on disk. That happened after a
+  restart, or once memory had dropped the conversation. The request then
+  processed again what the disk already held. The longest match now wins.
+  `HALOGEN_CACHE_DISK_DEEPEN=0` keeps the old order.
+- **Routine engine notices no longer count as errors in the container log.**
+  The prompt cache's eviction lines, the KV pool's relocation lines, the
+  per-request progress lines and the grammar lines were written to stderr,
+  which journald and most log readers record at error priority. A healthy
+  server showed thousands of "errors" a day. They now go to stdout. Failures,
+  refusals and warnings stay on stderr. From issue #133
+  ([@rihaku899](https://github.com/rihaku899)).
+- **Small embedding and rerank requests are no longer slower with batching
+  on.** The batched NPU pass pads to its bucket, so it costs the same for 2
+  inputs as for 8, and the server sent every group of 2 or more short inputs
+  through it, the leftover group of a larger request included. A group now
+  runs batched only when its inputs one by one would take longer, which in
+  practice means 6 or more inputs of up to 128 tokens, or 5 or more of up to
+  512. Small groups now run as single passes. A full batch of 8 is as fast as
+  before. Each result is bit for bit what it was, and
+  `HALOGEN_NPU_EMB_BATCH=0` still turns batching off. From issue #132
+  ([@Gobutsu](https://github.com/Gobutsu)).
+- **`ppl --json` and the other tool modes parse again past the native
+  context.** With `HALOGEN_CTX` above 262,144 the entrypoint printed its
+  max-tok notice, and its `HALOGEN_CACHE_FILE` notice with
+  `HALOGEN_CACHE_INPLACE=0`, on stdout ahead of the JSON object, so
+  `json.loads` failed. Both now go to stderr. Server mode is unchanged, since
+  both streams reach the container log. From issue #134
+  ([@arc-uri-el](https://github.com/arc-uri-el)).
+
+### Added
+
+- **`POST /v1/systemone`, the typed-question interface of TypeSafe's Jev, on
+  `decider-0.8b`.** Send a `state` and questions of type `choice`, `score` or
+  `noul`, and each answer carries its probabilities and a `confidence`. Each
+  question is one pass on the NPU. A client written for System One can point
+  at the server. There is no API key, and `model` can be any name, since the
+  decision model loaded runs it. A choice or score takes 2 to 10 options here,
+  where System One takes up to 255. See "System One questions" in the NPU
+  guide.
+- **`HALOGEN_ADMISSION_RESERVE`, an opt-in slot reserve for latency-critical
+  requests.** Set it to N and N of the engine's slots are held back from
+  requests that do not send the header `X-Halogen-Priority: 1`. A plain
+  request waits in the server's queue, and a request with the header is
+  admitted whenever a slot is free, so a turn a person is waiting on does not
+  queue behind agent background work. Nothing is preempted or cancelled, no
+  answer changes, and off (0) is the default. When it is on, `/health` reports
+  the reserve and the requests waiting on it, and `/metrics` adds three gauges
+  for the same. From issue #137 ([@Aleks-0](https://github.com/Aleks-0)).
+- **`docker-compose.npu.yml`, the NPU as one compose container.** The
+  two-container `docker-compose.yml` starts no NPU engine, because the NPU's
+  models are served from the same process group as the Flash model. The new
+  file runs the single container with the NPU device, the host's XRT and all
+  five NPU models, fetched by `HALOGEN_DOWNLOAD`. From issue #135
+  ([@nr23730](https://github.com/nr23730)).
+
+### Changed
+
+- **Decode with several streams at once is slightly faster.** The output is
+  unchanged, and `HALOGEN_PLE_PAR=0` restores the old path.
+
+### Deprecated
+
+- **The w4b checkpoint (`qwen38-flash-next-w4b.hgn`) is deprecated.** v2 has
+  been the default since 0.15.0, and ht43 is the opt-in alternative. 0.16.x
+  still loads w4b, but it has not been part of our release testing since
+  0.16.1. A later release will stop loading it, planned for 0.17.0. A volume
+  that holds only w4b already prints how to switch at startup. Put
+  `qwen38-flash-next-v2.hgn` and `qwen38-flash-next-ngram.hgn` in the volume
+  and start with `-e HALOGEN_CHECKPOINT=/models/qwen38-flash-next-v2.hgn`.
+  With `HALOGEN_DOWNLOAD` set, that start fetches both files itself. The two
+  take about 110 GiB, a little less than w4b and its sidecar. They sit beside
+  w4b until it is removed, so remove w4b first if the disk is tight. The w4b
+  files stay on Hugging Face for older images.
+
+### Documentation
+
+- The NPU guide now gives the batching limits (up to 8 inputs of up to 512
+  tokens, padded) and when batching pays.
+- The NPU guide's Start command names all five NPU models, and the Moderation
+  and Generation sections say how those models are fetched. From issue #131
+  ([@tkajdro](https://github.com/tkajdro)).
+
 ## 0.16.2
 
 Two new models on the NPU, a prompt cache that keeps more conversations, and

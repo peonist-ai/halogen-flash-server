@@ -1,102 +1,7 @@
 #!/bin/bash
-# deploy/entrypoint.sh: Peonist halogen-flash-server release image entrypoint.
-#
-# The binary is `flash_serve` and its CLI is `--ck FILE` (there is no
-# `--checkpoint`), no `--serve` verb at all, plus `--slots/--ctx/--max-tok`.
-#
-#   all      (default) engine on loopback + OpenAI front-end. One container,
-#            one published port. This is the shape a user who just wants to
-#            run the thing should get.
-#   engine   engine only, for the two-container topology (compose), where
-#            front-end iteration must not cost a 115.4 GiB model reload.
-#   api      front-end only, same reason.
-#   bench    run the throughput benchmark against this image's OWN endpoint
-#            and exit. Args: [drafters] [max_tokens] [effort] [reps], e.g.
-#            `bench serial,mtp 256 low 3`. Needs the model and tokenizer
-#            mounted exactly like `all` does.
-#
-#            THE DRAFTER SET IS `serial,mtp`. This model has no separate draft
-#            model. There is no second checkpoint to draft from. Its two
-#            drafters are serial greedy (wire 0, batched across slots) and the
-#            MTP head's depth-1 loop (wire 1, lossless). Asking for a drafter
-#            that does not exist is a 400 from the front-end, by design (a
-#            silent downgrade would make the comparison lie).
-#
-#            This exists because the first thing anyone does with a claim
-#            about speed is try to reproduce it, and until now that required
-#            our private golden fixtures. The ten prompt shapes are baked in
-#            (a few KB of JSON); the goldens are NOT and are not needed.
-#            It drives the real HTTP endpoint, meaning chat template,
-#            tokenizer, SSE and engine, not an engine-side harness, because one
-#            number is not a serving number.
-#   sweep    llama-bench-shaped pp/tg size sweep, for putting a number next to
-#            another engine's table on the same box. Args are passed through
-#            to tools/halogen-bench.py, e.g.
-#            `sweep -p 512,2048,8192 -n 128 -d serial,mtp -r 3`.
-#            `bench` answers "how fast in practice", `sweep` answers "how does
-#            this compare at a fixed size". They are not interchangeable.
-#   convert  (0.12.1) write a llama.cpp GGUF as the engine's own .hgn and
-#            exit: `convert IN.gguf OUT.hgn`. The same lossless repack the
-#            engine runs in RAM at every GGUF start, with the n-gram table and
-#            the draft head folded in, so OUT.hgn is a complete checkpoint
-#            (HALOGEN_CHECKPOINT=OUT.hgn starts in seconds from a warm disk
-#            and needs no GGUF beside it). Needs the draft head as a GGUF
-#            start does (HALOGEN_MTP_HEAD, or beside the GGUF, or
-#            HALOGEN_DOWNLOAD). No engine, no port. About 10 minutes and
-#            ~105 GiB on the reference machine for an IQ4_XS build.
-#   inspect  (0.13.0) the checkpoint tools, one verb each, and exit:
-#   verify     `inspect [FILE.hgn] [--json] [--no-hash]` prints what the
-#   ppl        file carries (precision by tensor family, bits per weight from
-#   niah       the shapes, one sha256 per tensor); `verify [FILE.hgn]` reads
-#            it back independently of any writer and says PASS, or FAIL
-#            naming the first tensor; `ppl [FILE] --ids IDS.bin [--chunk
-#            1024|8] [--vs OTHER]` is teacher-forced perplexity through
-#            this image's engine (with --vs, the paired statistic against
-#            a second file); `niah [FILE] --manifest CASES.tsv [--out DIR]`
-#            runs a retrieval battery. `ppl --corpus TEXT` and `niah
-#            --corpus TEXT` take a text file (tokenized with the mounted
-#            tokenizer; the battery's filler is the corpus); `--json` gives
-#            one object; `ppl --ref REF --worst N` prints the N positions
-#            two files disagree on most, decoded. FILE defaults to
-#            HALOGEN_CHECKPOINT (an .hgn, or any shard of a GGUF for
-#            ppl/niah). ppl and niah
-#            load the model and run under this image's engine environment
-#            (the baked tuning plan, the quality sidecar beside the
-#            checkpoint, the trunk pinned), which is the served numerics;
-#            `-e HALOGEN_MATMUL_TUNING_FILE=` runs without the plan. One
-#            model at a time: not beside a running server on the same
-#            machine. The image advertises these in /health `modes` and the
-#            OCI label `ai.peonist.halogen.modes`.
-#
-# THE NPU (Ryzen AI), in the default mode: HALOGEN_NPU_MODELS names small
-# models to serve on the NPU beside the Flash model, on the same port; a
-# request's `model` picks one. A bare name is one of ours (decider-0.8b,
-# qwen3-embedding-0.6b, qwen3-reranker-0.6b, qwen3guard-gen-0.6b,
-# qwen3.5-2b; fetched under HALOGEN_DOWNLOAD like the main model), a path
-# (/models/<dir>) the user's own fine-tune of one of them, converted once and
-# kept beside it. Needs the host's NPU
-# driver, its XRT mounted read-only at /opt/xilinx/xrt, --device
-# /dev/accel/accel0, and the GPU's fabric clock held at its top speed (a host
-# step once per boot); the start names the first thing missing. Unset, the
-# container is exactly what it was without it.
-
-# The engine's token protocol has NO AUTH. In `all` it binds loopback INSIDE
-# the container and is unreachable from outside; only the API port is
-# published. If you split the roles you must keep the engine port unpublished
-# yourself. The compose file does, deliberately.
+# halogen-flash-server: source shipped as-is, comments stripped. The README is the documentation.
 set -euo pipefail
 
-# NO CORE DUMPS, GPU OR CPU (0.12.2, public issue #83). After a GPU memory
-# fault the bundled runtime writes a GPU core dump of the process
-# ("GPU coredump: ... Falling back to file-based dump"), and this process
-# has 100+ GiB mapped, so that is minutes in uninterruptible sleep before
-# the engine can exit and the container can come down; the watchdog reads
-# the silence as a host short of memory (#79's shape) and waits it out.
-# The variable's name is the one the runtime shipped in this image reads
-# (strings on its libhsa-runtime64.so; HSA_COREDUMP_PATTERN is the sibling
-# the message names). The CPU core of the same process through the host's
-# core_pattern is the same minutes, so RLIMIT_CORE is 0 beside it. A fault
-# then ends the engine in seconds and the takedown path (0.11.9) runs.
 export HSA_DISABLE_COREDUMP_ON_EXCEPTION="${HSA_DISABLE_COREDUMP_ON_EXCEPTION:-1}"
 ulimit -c 0
 
@@ -104,59 +9,16 @@ ENG_PORT="${HALOGEN_PORT:-8730}"
 API_PORT="${HALOGEN_API_PORT:-8731}"
 BIND="${HALOGEN_BIND:-127.0.0.1}"
 
-# THE NATIVE 262,144 CONTEXT IS THE SHIPPED DEFAULT, and the three numbers
-# below are a budget, not three independent knobs. Measured on a 128 GB box,
-# quality sidecar loaded, cache on:
-#
-#   slots x ctx     KV per slot      result
-#   4 x  32,768     832 MiB          starts, 90.7 GiB left
-#   1 x 262,144     6.5 GiB          starts, 87.4 GiB left
-#   2 x 262,144     6.5 GiB          starts, 80.6 GiB left
-#   4 x 262,144     6.5 GiB          **HIP out of memory**
-#
-# KV costs ~26 KiB per position per slot, so the product `slots x ctx` was
-# what had to fit. Since 0.3 THE SLOTS SHARE ONE KV POOL of `ctx` positions
-# (HALOGEN_KV_POOL=1, the default), and a slot costs only its ~115 MiB of
-# O(1) state, so 4 x 262,144 is ~28.1 GiB (measured) and STARTS. A request
-# reserves prompt + max_tokens positions of the pool and waits when it does
-# not fit; four conversations decode together, each byte-identical to the
-# one it would have had alone; the speculative drafter speculates while it
-# is the only active stream and takes batched rows otherwise; a prompt that
-# arrives beside active streams is admitted in HALOGEN_ADMIT_CHUNK pieces
-# so it does not freeze them. SLOTS DEFAULTS TO 4. HALOGEN_KV_POOL=0 is the
-# pre-0.3 form, where the table above applies.
-#
-# MAX-TOK IS CAPPED AT 32,768 AND MUST NOT FOLLOW THE CONTEXT. It sizes the
-# single-call prefill arena (4.32 GiB of tier-1 scratch at 32,768 alone), and
-# asking for a 262,144-wide call is an immediate out-of-memory, measured at
-# 131k. Prompts longer than max-tok are prefilled in max-tok pieces, which is
-# what makes the native context affordable at all.
-# THE SHIPPED SERVER IS QUIET ABOUT HOW IT IS ARMED.
-#
-# The engine narrates its startup by default, which is right for the machines
-# this is developed and gated on and wrong for a published container: those
-# lines name internal strategies, kernel arrangements and tuning constants,
-# and the audience here is a stranger running an image. What the server IS
-# SERVING still prints (precision, KV pool, slots, cache mode, the listening
-# banner); how it is armed does not. Set HALOGEN_VERBOSE=1 to get it back when
-# troubleshooting, which is the only time anyone wants it.
 export HALOGEN_VERBOSE="${HALOGEN_VERBOSE:-0}"
 
-# The checkpoint: HALOGEN_CHECKPOINT set, to anything, wins. Unset (0.15):
-# v2 (one file, its own precision choices, no sidecar; the lookup table is
-# its own file beside it), EXCEPT on a volume that holds w4b
-# and not v2, the volume an image upgrade finds: there w4b is served, nothing
-# is fetched, and legacy_note says how to switch (an upgrade must not start
-# a 118 GB download before the server comes up). The image bakes no
-# HALOGEN_CHECKPOINT, so "unset" is the caller's, not the image's.
-default_checkpoint() {   # default_checkpoint MODELS_DIR -> the path to serve
+default_checkpoint() {
   if [ ! -f "$1/qwen38-flash-next-v2.hgn" ] && [ -f "$1/qwen38-flash-next-w4b.hgn" ]; then
     echo "$1/qwen38-flash-next-w4b.hgn"
   else
     echo "$1/qwen38-flash-next-v2.hgn"
   fi
 }
-resolve_checkpoint() {   # resolve_checkpoint MODELS_DIR: sets HALOGEN_CHECKPOINT (when unset) and LEGACY_W4B
+resolve_checkpoint() {
   LEGACY_W4B=0
   if [ -z "${HALOGEN_CHECKPOINT:-}" ]; then
     HALOGEN_CHECKPOINT="$(default_checkpoint "$1")"
@@ -168,74 +30,28 @@ export HALOGEN_CHECKPOINT
 
 ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
-# 0.3: THE POOL IS SIZED SEPARATELY FROM THE CONTEXT. HALOGEN_KV_POOL_POSITIONS
-# is how many attention positions are resident across all conversations;
-# HALOGEN_CTX is the most one request may use. Unset, the pool is TWICE the
-# context, capped at 1,048,576: two full-length conversations at once, or
-# four at 131k, 35.0 GiB at the native context. (0.3.0 defaulted to three,
-# 42.2 GiB; 0.3.1 lowered it after that failed to start on a machine whose
-# device ceiling was about 40 GiB.) The device budget is the limit
-# (~46 GiB on a 128 GB machine): each 262,144 positions cost ~7.2 GiB, and
-# the working memory beside the pool (work_split below) ~12.5 GiB at
-# HALOGEN_MAX_TOK 32,768 or 8 to 11 GiB at 16,384, which is what makes a
-# 1M-position pool fit. The pool also takes
-# RAM the page cache would otherwise hold for the n-gram table, so a cold
-# prompt whose rows are not cached pays disk reads; a smaller pool leaves
-# more cache.
-#
-# 0.3.1: THE DEFAULT IS TWO CONTEXTS, NOT THREE. 0.3.0 shipped three
-# (786,432 positions, 42.2 GiB) against a device ceiling measured at ~47 GiB
-# on the one machine it was sized on: 4.8 GiB of headroom on a sample of one.
-# A tester's machine refused at ~40.4 GiB and 0.3.0 would not start there at
-# all, while 0.2.0 (this pool at 262,144) ran fine. Two contexts is 35.0 GiB,
-# holds two full-length conversations or four at 131k, and leaves room on a
-# machine that is not this project's box. Three is one line away for anyone
-# who has measured their own headroom. The engine also fits the pool downward
-# at startup now (HALOGEN_KV_POOL_FIT), so this default is the starting point
-# rather than the last line of defence.
+
 ENG_POOL="${HALOGEN_KV_POOL_POSITIONS:-}"
 if [ -z "$ENG_POOL" ]; then
   ENG_POOL=$(( ENG_CTX * 2 ))
   [ "$ENG_POOL" -gt 1048576 ] && ENG_POOL=1048576
   [ "$ENG_POOL" -lt "$ENG_CTX" ] && ENG_POOL="$ENG_CTX"
 fi
-# PAST THE NATIVE CONTEXT THE DEFAULTS CHANGE, AND THIS SAYS SO. Measured on
-# a 128 GB machine: the engine's device-side budget stops at ~47 GiB with
-# the weights pinned, and 1,048,576 of KV is ~25 GiB of it, so the per-call
-# prefill arena (sized by max-tok 32,768) has to halve, and the prompt
-# cache's snapshot (26.6 GiB of host memory at 1M) does not fit beside it.
-# The image BAKES HALOGEN_MAX_TOK=32768 and HALOGEN_PROMPT_CACHE=2 into its
-# environment, so "unset" cannot mean "the user did not choose": past the
-# native context the arena is capped at 16384 and the cache's snapshot
-# goes to a file, whatever the environment says, and both are printed.
-# (Measured: 24,576 ALLOCATES at 1M with 2.3 GiB to spare, but a full 1M
-# prefill then thrashes, because the limit counts touched pages, while 16,384
-# prefills 1M at 750 tok/s. The first cut keyed on -z and the 1M image
-# start failed at the same 47 GiB as before.)
+
 ENG_MAX_TOK="${HALOGEN_MAX_TOK:-32768}"
 if [ "$ENG_CTX" -gt 262144 ]; then
   if [ "$ENG_MAX_TOK" -gt 16384 ]; then
-    echo "halogen: context $ENG_CTX is past the native 262144: HALOGEN_MAX_TOK $ENG_MAX_TOK is capped at 16384 here (a larger prefill arena leaves a 1M KV cache no room to stay resident)."
+    echo "halogen: context $ENG_CTX is past the native 262144: HALOGEN_MAX_TOK $ENG_MAX_TOK is capped at 16384 here (a larger prefill arena leaves a 1M KV cache no room to stay resident)." >&2
     ENG_MAX_TOK=16384
   fi
   if [ "${HALOGEN_PROMPT_CACHE:-2}" != "0" ] && [ "${HALOGEN_CACHE_INPLACE:-1}" = "0" ] && [ -z "${HALOGEN_CACHE_FILE:-}" ]; then
-    # With HALOGEN_CACHE_INPLACE=0 the snapshot copies the whole KV, which
-    # does not fit in host RAM beside a 1M KV cache (26.6 GiB), so it goes
-    # to a FILE: the same bytes, at the drive's rate. Mount fast storage at
-    # the path, or point HALOGEN_CACHE_FILE somewhere. The default keeps the
-    # KV in place and its snapshot is ~115 MiB at any depth.
+
     export HALOGEN_CACHE_FILE=/var/tmp/halogen-cache.snapshot
-    echo "halogen: context $ENG_CTX is past the native 262144 with HALOGEN_CACHE_INPLACE=0: the prompt cache snapshot goes to HALOGEN_CACHE_FILE=$HALOGEN_CACHE_FILE (up to 26.6 GiB at 1M; mount fast storage there, or set the path)."
+    echo "halogen: context $ENG_CTX is past the native 262144 with HALOGEN_CACHE_INPLACE=0: the prompt cache snapshot goes to HALOGEN_CACHE_FILE=$HALOGEN_CACHE_FILE (up to 26.6 GiB at 1M; mount fast storage there, or set the path)." >&2
   fi
 fi
 [ "$ENG_MAX_TOK" -gt "$ENG_CTX" ] && ENG_MAX_TOK="$ENG_CTX"
 
-# CONTEXTS PAST THE NATIVE 262,144 NEED THE ROPE FACTOR, AND IT IS A DECISION.
-# The model's own card extends it to 1M by static YaRN (HALOGEN_ROPE_YARN=4;
-# 2 for 524,288), which rescales every position's RoPE, short prompts
-# included. The engine refuses the combination too; this says it before the
-# model loads. Sizing note: the KV cache is ~26 KiB per position per slot,
-# and the prompt cache (on by default) keeps a second copy of it.
 ROPE_YARN="${HALOGEN_ROPE_YARN:-}"
 if [ "$ENG_CTX" -gt 262144 ] && [ -z "$ROPE_YARN" ]; then
   echo "halogen: HALOGEN_CTX=$ENG_CTX is past the native 262144. Contexts up to"        "1048576 need HALOGEN_ROPE_YARN=<factor> (4 for 1M, 2 for 524288), the"        "model's documented static YaRN, which changes its numerics at every"        "position. Set it deliberately, or lower HALOGEN_CTX." >&2
@@ -245,44 +61,14 @@ if [ -n "$ROPE_YARN" ] && [ "$ENG_CTX" -le 262144 ]; then
   echo "halogen: WARNING: HALOGEN_ROPE_YARN=$ROPE_YARN with HALOGEN_CTX=$ENG_CTX at or"        "under the native 262144. Static YaRN rescales every position; the model"        "card advises it only when the context needs it." >&2
 fi
 
-# A KV budget the user can read BEFORE the allocator refuses. Without this the
-# only symptom of an over-subscribed `slots x ctx` is
-# `HIP flash_ops.h:103: out of memory` with no numbers attached, a failure
-# shape where the message names the mechanism and not the cause.
 kv_budget_note() {
   local kv_gib avail_gib
-  # 0.3: one pool of ctx positions plus ~115 MiB of O(1) state per slot;
-  # HALOGEN_KV_POOL=0 is the private-KV-per-slot form, slots x ctx.
+
   kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" 'BEGIN{printf "%.1f", (pool=="0"?s*c*26624:p*29500+s*120586240)/1073741824}')
-  # The prompt cache (HALOGEN_PROMPT_CACHE, default on) keeps the KV in
-  # place and holds ~115 MiB of O(1) state; with HALOGEN_CACHE_INPLACE=0 it
-  # holds a second copy of one slot's state and the budget is kv + one slot.
-  # 0.13.3 (public issue #94): the entry cap's DEFAULT is derived by the engine
-  # from the region shape, `slots x (1 anchor + branches x leaves per turn +
-  # 1 full)`, so this pre-flight derives the same thing rather than carrying a
-  # copy of the number. It was a hand-set 20 here and a hand-set 20 there, and
-  # a release that moved one of them would have left this line lying.
+
   cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-}" -v s="$ENG_SLOTS" -v br="${HALOGEN_CACHE_BRANCHES:-2}" -v s3="${HALOGEN_CACHE_SNAP3:-1}" -v fu="${HALOGEN_CACHE_FULL:-1}" 'BEGIN{if (n=="") n = s * (1 + br*((s3=="0")?1:2) + ((fu=="0")?0:1)); printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*26624/1073741824)}')
   avail_gib=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo "?")
-  # PUBLIC ISSUE #10: WHAT THE HOST IS ALREADY CARRYING. The pool sizing reads
-  # MemTotal and reserves a fixed amount for the OS plus the lookup table's
-  # file cache; it cannot see that a desktop session, a browser, or the
-  # client on the same host already holds 13 to 17 GiB, and on such a host
-  # the 47.7 GiB table it reads through the file cache is left with almost
-  # none, every prompt reads it from disk, and the engine goes silent for
-  # minutes under a watchdog that called that a wedge. The number that says
-  # so was printed on the line below in every such report and nothing
-  # compared it to MemTotal. This does. Informational; the pool is not
-  # resized, because below one context there is no smaller pool to pick.
-  # PUBLIC ISSUE #80: THE GGUF ESTIMATE IS BY FILE TYPE, NOT ONE CONSTANT.
-  # "72 GiB" was unsloth's UD-IQ4_XS repacked (file_type 30); the K-quant
-  # build the engine has read since 0.11.6 (UD-Q4_K_XL, file_type 15)
-  # repacks to 78 to 80 GiB, and a 122 GiB box that fit the first by 22 GiB
-  # missed the pin floor with the second by 2 while this line said it had 27
-  # to spare. The engine reads the exact figure from the header before it
-  # allocates anything (`... GiB of resident weights once repacked`); this
-  # is the same header, read here so the warning below can fire before the
-  # engine spends 30 s repacking into a start that will refuse.
+
   local wt="68 GiB" w_gib=68 ft=""
   if ckpt_facts; then
     wt="${CK_RES_GIB} GiB (read from the checkpoint)"; w_gib=$CK_RES_GIB
@@ -294,9 +80,7 @@ kv_budget_note() {
       *)  wt="72 GiB or more (a GGUF trunk of file type ${ft:-unknown}, repacked into RAM; measured for types 30 and 15 only)"; w_gib=72 ;;
     esac
   fi
-  # The working memory beside the pool (work_split). This line said "11 GiB
-  # of scratch" until 0.11.9, a number from before the arena was measured,
-  # and 4.6 + 16.7 per 32k until 0.15.1 (0.11.4's measurement, issue #35).
+
   local scratch_gib tower_gib=0 ws
   ws=$(work_split)
   scratch_gib=$(echo "$ws" | awk '{printf "%.1f", $1 + $2}')
@@ -320,28 +104,11 @@ kv_budget_note() {
          "of weights and ${scratch_gib} GiB of working memory (HALOGEN_MAX_TOK ${ENG_MAX_TOK}). Those last two are estimates for this pre-flight check; the engine prints its measured figures once loaded," \
          "including the large lookup table it reads from disk and never holds. MemAvailable now ${avail_gib} GiB."
   fi
-  # 0.7.0: a GGUF trunk is repacked into RAM in full and its 8-bit layers
-  # are larger than the engine's own checkpoint's: ~72 GiB for unsloth's
-  # UD-IQ4_XS against ~68 for the .hgn, ~80 for UD-Q4_K_XL (#80). `w_gib`
-  # is that plus the working memory and the tower; the engine prints the
-  # exact figures. The tower's 0.84 is its WEIGHTS, pinned at load like the
-  # trunk's, so they count against the pin floor below; its scratch comes at
-  # the first image, after every pin. (The engine's pool fit is a different
-  # question, the device budget, and charges weights plus scratch inside its
-  # 1.5 GiB margin: max(1.5, tower). Both are right for what they check.) The pin floor (16 GiB of MemAvailable at the last pin) is
-  # the check that ends a start that is over, so it is in the sum and the
-  # warning names it and the lever that gave #80's box back 9 GiB. On #80's
-  # box this reads 129 against 119 for the K-quant (it refused at 14.4) and
-  # 120 against 119 for UD-IQ4_XS (it booted with 17.6 left): "close to".
+
   awk -v kv="$kv_gib" -v cg="$cache_gib" -v av="$avail_gib" -v w="$w_gib" 'BEGIN{ if (av != "?" && kv+cg+w+16 > av)
     print "halogen: WARNING: that budget is close to or over what this host has free (the engine refuses the last pin under 16 GiB of MemAvailable).\n  If startup ends in \"checkpoint: refusing to pin\" or \"HIP ... out of memory\", lower HALOGEN_MAX_TOK to 16384 (the working memory, about 4 GiB back on the default checkpoint and 1.6 on w4b, for about 9% of prefill speed)\n  or HALOGEN_KV_POOL_POSITIONS (the pool, ~29.5 KiB a position); a 1,048,576-position pool fits only with HALOGEN_MAX_TOK=16384." > "/dev/stderr" }'
 }
 
-# The GGUF's `general.file_type` (u32) from the first shard's header, or
-# nothing. Walks the KV table in order and stops at the key; it sits before
-# the tokenizer's arrays in every file we have read, so this is a few KB.
-# Any surprise (not a GGUF, a nested array, a short file) prints nothing and
-# the caller falls back to the unmeasured wording.
 gguf_file_type() {
   python3 - "$1" 2>/dev/null <<'PY'
 import struct, sys
@@ -377,28 +144,6 @@ except Exception:
 PY
 }
 
-# PUBLIC ISSUE #79: WHAT THE GPU IS ALREADY HOLDING. On this chip every
-# allocation the engine makes on the GPU lands in GTT, which is system RAM
-# under the driver's own ceiling (ttm.pages_limit), and a start whose pool
-# cannot be placed there does not fail cleanly: it blocks inside the driver,
-# and if the driver is also holding a lock the process is unkillable. Four
-# hosts have reached that state (#34's two machines, this project's own gate
-# box, #79), each after a process holding the GPU ended while the driver had
-# work in flight (another model's exit, a bench's normal exit, a cancelled
-# request, a watchdog kill under a memory stall): the GTT (35 to 45 GiB,
-# measured on three of them) stayed allocated with no process alive and
-# every later start refused at the pin guard or hung at "reserving the KV
-# pool" until the host rebooted. Nothing inside a container can release it. The
-# container CAN say it is there before it commits, which is what this does:
-# the counters are the driver's own (mem_info_gtt_used and _total under the
-# card's sysfs node, readable through /sys where the runtime mounts it), and
-# /sys/class/kfd/kfd/proc lists every process holding the GPU, host-wide,
-# so "in use and nobody holds it" is readable from here. The weights do not
-# count here (a read-only file mapping registered in place, not a GTT
-# allocation); what the engine puts in GTT is the pool and its working
-# memory, about 27 GiB at the shipped defaults (0.15.x: the pool's 14.4, the
-# working memory's 12.5, about 0.3 more; before 0.15.0 about 42, the working
-# memory then being 21.4 plus a 6.0 GiB expert arena the ledger missed).
 gtt_note() {
   local sys="${_hg_sys:-/sys}" f used="" total="" holders
   for f in "$sys"/class/drm/card*/device/mem_info_gtt_used; do
@@ -411,11 +156,7 @@ gtt_note() {
     echo "halogen: GTT in use before this start: unknown (no amdgpu sysfs node is readable from this container)"
     return 0
   fi
-  # The pool and the O(1) state, as kv_budget_note sizes them, plus the
-  # prefill arena (work_split's first figure). The rest of the working
-  # memory is left out on purpose: this refuses only what certainly does
-  # not fit. (Until 0.15.1 the arena here was 16.7 GiB at 32768, twice what
-  # the v2 format holds, so a host with the room could be refused.)
+
   local need_gib arena_gib
   arena_gib=$(work_split | awk '{print $1}')
   need_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v a="$arena_gib" \
@@ -444,15 +185,7 @@ gtt_note() {
   if awk -v f="$free_gib" -v n="$need_gib" 'BEGIN{exit !(f < n)}'; then
     echo "halogen: refusing to start: ${free_gib} GiB of GTT is free and this configuration needs about ${need_gib} GiB there." >&2
     echo "  A start that cannot place its pool does not fail, it blocks inside the driver (issue #79). Free the GTT first (stop the other GPU workloads, or reboot if nothing holds it), or lower HALOGEN_KV_POOL_POSITIONS / HALOGEN_MAX_TOK to fit ${free_gib} GiB." >&2
-    # 0.13.3 (public issue #95): NAME THE CARVE-OUT HERE, where the refusal is.
-    # The engine has had this check for some time and it prints a warning with
-    # the number in it, but it runs AFTER the weights load, which is after
-    # this refusal, so the one diagnostic that explains a small GTT never
-    # ran for the operator who needed it. GTT is sized by the kernel from
-    # the memory total it sees at boot, so a firmware carve-out shrinks it
-    # before anything on the host can report the memory as missing, and the
-    # operator is told to free GTT that was never occupied. The reporter had
-    # stopped his desktop session and dropped his caches before filing.
+
     local carve_b=0 carve_gib=0 memtotal_gib=0
     for f in /sys/class/drm/card*/device/mem_info_vram_total; do
       [ -r "$f" ] || continue
@@ -460,9 +193,7 @@ gtt_note() {
       [ "${v:-0}" -gt "$carve_b" ] && carve_b=$v
     done
     carve_gib=$(awk -v b="$carve_b" 'BEGIN{printf "%.1f", b/1073741824}')
-    # The same test override the engine's copy of this check has taken since
-    # for the same reason: the failure needs a BIOS change to
-    # reproduce, and a warning nobody has seen fire is not a warning.
+
     [ -n "${HALOGEN_UMA_CARVEOUT_GIB:-}" ] && carve_gib=$HALOGEN_UMA_CARVEOUT_GIB
     memtotal_gib=$(awk '/MemTotal/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
     if awk -v c="$carve_gib" 'BEGIN{exit !(c >= 8.0)}'; then
@@ -470,9 +201,7 @@ gtt_note() {
       echo "  This server does not want a carve-out at all: it drives the GPU through GTT and allocates from the same unified memory whichever way the BIOS option is left, so a large one buys it nothing and costs it the file cache the model's lookup table is read through." >&2
       echo "  Set the UMA frame buffer size (or dedicated graphics memory) to its explicit MINIMUM rather than Auto, and start again. Measured: on a GMKtec EVO-X2, Auto took 64 GiB of a 128 GB machine and the weights could not load until it was changed." >&2
     else
-      # the weights (the checkpoint's own figure when readable, else 68) +
-      # the pool and prefill arena this start asks for (need_gib above) + the
-      # rest of the working memory (work_split) + the engine's 16 GiB pin floor
+
       local w=68 hint_gib rest_gib
       ckpt_facts && w=$CK_RES_GIB
       rest_gib=$(work_split | awk '{print $2}')
@@ -483,20 +212,6 @@ gtt_note() {
   fi
 }
 
-# CHECK THE HOST BEFORE ANYTHING IS DOWNLOADED OR LOADED (public issues #27,
-# #95, #46, #19).
-#
-# A host that cannot run this server used to find out when the engine
-# started, which on a first run is after the whole weights download. These
-# are the failures that happen every time and are cheap to see from inside
-# the container: the GPU not passed in (or WSL2's /dev/dxg where /dev/kfd
-# should be, which is not a supported host), and a GPU that is not gfx1151.
-# Each of those refuses, with the fix. What might still work (a device this
-# user may not be able to open, a missing render node) is a warning, because
-# a false refusal is worse than the engine's own error. A container that
-# cannot read the KFD topology is not refused on the architecture: only a
-# topology that lists GPUs and no gfx1151 is. `_hg_sys` and `_hg_dev` are
-# test roots, as in gtt_note.
 host_preflight() {
   local sys="${_hg_sys:-/sys}" dev="${_hg_dev:-/dev}" bad=0 p v gpus="" found=0
   if [ ! -e "$dev/kfd" ]; then
@@ -516,7 +231,7 @@ host_preflight() {
   for p in "$sys"/class/kfd/kfd/topology/nodes/*/properties; do
     [ -r "$p" ] || continue
     v=$(awk '$1 == "gfx_target_version" {print $2; exit}' "$p" 2>/dev/null)
-    case "$v" in ""|0) continue ;; esac        # a CPU node reports 0
+    case "$v" in ""|0) continue ;; esac
     gpus="$gpus $v"
     [ "$v" = "110501" ] && found=1
   done
@@ -527,11 +242,7 @@ host_preflight() {
   return "$bad"
 }
 
-# THE DOWNLOAD'S SIZE, so a download that cannot fit refuses before its
-# first byte instead of failing near its end. NEED_BYTES is what the files
-# still to fetch weigh on the Hub (download_plan_bytes); the client's partial
-# files from an interrupted run are already on the disk and count as room.
-download_room_check() {   # download_room_check DIR NEED_BYTES
+download_room_check() {
   local need_k free_k have_k
   need_k=$(( (${2:-0} + 1023) / 1024 ))
   [ "$need_k" -gt 0 ] || return 0
@@ -546,10 +257,7 @@ download_room_check() {   # download_room_check DIR NEED_BYTES
   return 0
 }
 
-# THE REPO'S FILES AND THEIR SIZES, "path bytes" a line, from the Hub's own
-# listing (one metadata request). Nothing on any failure: the callers then
-# fetch by the names this image knows and skip the room check.
-hub_list() {   # hub_list REPO
+hub_list() {
   local to=""; command -v timeout > /dev/null 2>&1 && to="timeout 60"
   HF_HUB_OFFLINE=0 HF_HUB_DISABLE_TELEMETRY=1 $to python3 - "$1" 2>/dev/null <<'PY' || true
 import sys
@@ -568,9 +276,6 @@ tokenizer_present() {
   [ -f "$(dirname "$HALOGEN_CHECKPOINT")/tokenizer/tokenizer.json" ] || [ -f "${HALOGEN_TOKENIZER:-/tokenizer}/tokenizer.json" ]
 }
 
-# What a checkpoint on the disk still lacks from the repo, by name, no request
-# made: w4b's quality sidecar; the lookup table's own file for a checkpoint
-# that does not carry it (unless HALOGEN_NGRAM_TABLE points elsewhere).
 companions_missing() {
   local dir base; dir="$(dirname "$HALOGEN_CHECKPOINT")"; base="$(basename "$HALOGEN_CHECKPOINT")"
   if [ "$base" = "qwen38-flash-next-w4b.hgn" ]; then
@@ -581,14 +286,7 @@ companions_missing() {
   return 0
 }
 
-# 0.14: WHAT A DOWNLOAD FETCHES is the chosen checkpoint and what it needs,
-# never the whole repo (it holds more than one checkpoint needs): the
-# checkpoint; its quality sidecar when
-# the repo has one (w4b's); the lookup table's own file for a checkpoint that
-# does not carry it (every one but w4b); the vision tower (0.84 GiB, so
-# HALOGEN_VISION_TOWER=1 works without a second download). The tokenizer is
-# fetched beside them by its folder.
-download_plan() {   # download_plan LISTING -> repo paths, one a line
+download_plan() {
   local base side listing="$1"
   base="$(basename "$HALOGEN_CHECKPOINT")"
   side="${base%.hgn}.overlay.hgn"
@@ -605,11 +303,7 @@ download_plan() {   # download_plan LISTING -> repo paths, one a line
   fi
 }
 
-# The bytes still to fetch: every planned file (and the tokenizer's when
-# TOK is 1), less the ones already on the disk at their full size. (The plan
-# goes to awk on one line: an awk -v value may not hold a newline, and BSD
-# awk refuses one.)
-download_plan_bytes() {   # download_plan_bytes LISTING DIR PLAN TOK
+download_plan_bytes() {
   printf '%s\n' "$1" | awk -v dir="$2" -v plan="$(printf '%s ' $3)" -v tok="${4:-1}" '
     BEGIN { n = split(plan, p, " "); for (i = 1; i <= n; i++) want[p[i]] = 1 }
     ($1 in want) || (tok == 1 && $1 ~ /^tokenizer\//) {
@@ -622,24 +316,9 @@ download_plan_bytes() {   # download_plan_bytes LISTING DIR PLAN TOK
     END { printf "%.0f\n", s + 0 }'
 }
 
-
-# OPTIONAL model download. OFF unless HALOGEN_DOWNLOAD names a repo.
-#
-# Default-off is deliberate and is not timidity: with it off, this image opens
-# NO outbound connections at all, which is a property worth keeping and which
-# the EULA states. A 115.4 GiB transfer should also never start because someone
-# ran `podman run` to see what happens.
-#
-# Only fires when the checkpoint is genuinely absent, so a restart never
-# re-downloads. huggingface_hub resumes partial files natively, so an
-# interrupted pull continues rather than starting over.
 maybe_download() {
   [ -n "${HALOGEN_DOWNLOAD:-}" ] || return 0
-  # 0.14: per file, never the whole repo. A checkpoint on the disk is never
-  # fetched again: only what it lacks (its sidecar or table, the tokenizer
-  # when no other one is mounted) is, and only on a writable volume; a
-  # read-only one starts as before (the checks below say what is missing),
-  # and a restart with everything present makes no request.
+
   local dir base files="" tok=0 fresh=0
   dir="$(dirname "$HALOGEN_CHECKPOINT")"; base="$(basename "$HALOGEN_CHECKPOINT")"
   if [ -f "$HALOGEN_CHECKPOINT" ]; then
@@ -648,9 +327,7 @@ maybe_download() {
     tokenizer_present || tok=1
     { [ -n "$files" ] || [ "$tok" = 1 ]; } && [ -w "$dir" ] || return 0
   else
-    # 0.7.0: a GGUF is the user's file (unsloth's, or their own
-    # llama-quantize); the weights repo does not carry one and this must not
-    # fetch the engine's checkpoint in its place.
+
     if is_gguf_path; then
       echo "halogen: $HALOGEN_CHECKPOINT is a GGUF and is not there; GGUF files are not downloaded by this image." >&2
       echo "  Put the file (every shard of a split) in the models volume and point HALOGEN_CHECKPOINT at any shard." >&2
@@ -674,8 +351,7 @@ maybe_download() {
       echo "  Point HALOGEN_CHECKPOINT at one of them." >&2
       exit 1
     fi
-    # the plan less what the volume already holds (a shared lookup table,
-    # the tower)
+
     for f in $(download_plan "$listing"); do [ -e "$dir/$f" ] || files="$files $f"; done
   fi
   plan=$(printf '%s\n' $files)
@@ -693,22 +369,10 @@ maybe_download() {
 
   echo "halogen: downloading from $HALOGEN_DOWNLOAD into $dir:$(printf ' %s' $plan)$([ "$tok" = 1 ] && echo ' and the tokenizer')${need:+ ($(awk -v b="$need" 'BEGIN{printf "%.1f", b/1073741824}') GiB to fetch)}"
   [ "$fresh" = 1 ] && echo "         this is tens of GB and will take a while; it resumes if interrupted."
-  # HF_HUB_OFFLINE=1 is baked into the image and MUST stay set for serving --
-  # it is what stops the front-end reaching for a tokenizer at request time.
-  # Override it for this command only. Without this the download fails even
-  # against a valid repo, which is exactly how the first build of this feature
-  # behaved until the failure-path test caught it.
-  # 0.13.2: the progress is BYTES ON DISK, not a file count. The Hub client's
-  # own bar counts files ("Fetching 14 files: 86% 12/14" for the seventeen
-  # minutes the 115 GiB file takes, measured on a fresh box), so it is
-  # silenced and a line every 30 s says how much of the volume has arrived
-  # and at what rate. The client's version nag, its CLI advert, the
-  # lock-wait chatter and the anonymous-request warning are dropped from
-  # stderr on the way through; the exit status is the command's own.
+
   local t0 b0 rep
   t0=$(date +%s); b0=$(du -sb "$dir" 2>/dev/null | cut -f1) || b0=0; b0=${b0:-0}
-  # (its sleep runs in the background and is killed with it, so stopping the
-  # reporter leaves no process holding the log open for up to 30 s)
+
   ( s=""; trap '[ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM
     while :; do
       sleep 30 & s=$!; wait "$s"
@@ -718,8 +382,7 @@ maybe_download() {
         "$(( b - b0 ))e-9" "$(( (b - b0) / (now - t0 + 1) ))e-6" "$(( now - t0 ))" 2>/dev/null || true
     done ) &
   rep=$!
-  # the files by name, then the tokenizer's folder (one call cannot take both)
-  # shellcheck disable=SC2086
+
   if ! { { [ -z "$plan" ] || HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
              "${_hg_hf:-hf}" download "$HALOGEN_DOWNLOAD" $plan --local-dir "$dir"; } \
          && { [ "$tok" != 1 ] || HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 \
@@ -736,9 +399,6 @@ maybe_download() {
   fi
   kill "$rep" 2>/dev/null || true; wait "$rep" 2>/dev/null || true
 
-  # Verify rather than trust: a failed transfer can leave a plausible-looking
-  # tree, and an engine that starts on a truncated checkpoint fails much later
-  # and much more confusingly than one that refuses here.
   if [ ! -f "$HALOGEN_CHECKPOINT" ]; then
     echo "halogen: download finished but $HALOGEN_CHECKPOINT is still missing." >&2
     echo "  The repo layout may not match HALOGEN_CHECKPOINT. Contents:" >&2
@@ -749,28 +409,6 @@ maybe_download() {
   return 0
 }
 
-# 0.6.0: THE SIDECAR CHANGED UNDER THE SAME NAME. It gained the draft head's
-# 18 dense projections at 8 bits (2.31 -> 2.40 GiB; the 723 tensors it already
-# carried are byte-identical). An install that downloaded before 0.6.0 has the
-# older file, which runs, with the draft head at 4 bits: about 4% of decode on
-# prose, nothing on correctness. maybe_download() never re-fetches once the
-# checkpoint exists, which is right for 115 GiB and wrong for a 2.4 GiB file
-# that moved, so this checks the sidecar's own table for the head's entries
-# (the entry table is the first ~120 KB of the file) and, when HALOGEN_DOWNLOAD
-# names the repo and the volume is writable, fetches just that file; otherwise
-# it says what is missing and how to get it. A fetch that changes nothing (the
-# Hub not yet carrying the new file, or a transient failure) leaves the file on
-# disk in place and the server starts on it.
-# 0.7.0, public issue #47 (Biggles10-claude): this was `head -c 262144 "$1" |
-# grep -aq PAT` under `set -o pipefail`. The marker sits at byte 115,944 of
-# the published sidecar, past the pipe buffer, so grep exited on the match,
-# head died of SIGPIPE (141), the pipeline's status was head's, and the
-# function returned FALSE on the current file: every 0.6.0+ start printed
-# the "predates 0.6.0" note, and HALOGEN_DOWNLOAD with a writable volume
-# fetched the sidecar again on every start. A `producer | grep -q` under
-# pipefail is that shape whenever the match precedes the producer's end;
-# the producer goes in a process substitution instead, so the status is
-# grep's alone.
 sidecar_is_current() {
   grep -aq "mtp.fc_hidden.weight" <(head -c 262144 "$1")
 }
@@ -794,20 +432,6 @@ update_sidecar() {
   echo "  once with HALOGEN_DOWNLOAD set and the volume mounted read-write." >&2
 }
 
-# THE BAKED TUNING PLAN IS READ FROM A COPY, so the engine's exit cannot
-# rewrite it. `~Matmul` writes the plan back at a clean exit whenever a served
-# GEMM shape fell outside the baked buckets, and until 0.11.9 no container
-# had ever let the engine exit cleanly (the runtime ended it with the pid
-# namespace, the errexit above), so the file the image ships had never moved
-# under use. With the takedown written out it did, in the release gate:
-# after a `podman restart` the plan's size and mtime had changed, the prompt
-# cache on disk fingerprints the plan by both, and the restart's restore
-# missed with a fresh lineage beside the old one. The published plan is a
-# blessed measurement (478 buckets, one sha), not a scratch file; a copy
-# with its mtime kept (`cp -p`) reads identically, fingerprints identically
-# across restarts, and takes the write instead. A tuning run that names its
-# own file (the regeneration recipe) is untouched: only the baked path is
-# redirected.
 tuning_plan_copy() {
   local baked=/opt/halogen/flash-tune.plan
   [ "${HALOGEN_MATMUL_TUNING_FILE:-}" = "$baked" ] || return 0
@@ -819,17 +443,9 @@ tuning_plan_copy() {
   fi
 }
 
-# 0.14: WHAT THE CHECKPOINT HOLDS, READ FROM ITS OWN HEADER. The engine's
-# figure (its tensor table and the overlay it would load, the lookup table
-# excluded) replaces the "68 GiB" every .hgn was assumed to be (w4b with its
-# sidecar is 67.99). CK_RES_GIB and CK_HAS_TABLE are set once;
-# a GGUF, a file not yet on disk or an engine without the mode leaves them
-# empty and every caller keeps its old estimate. 0.15.1: CK_GATHER is 1 when
-# the experts take the gather path (w4b; a GGUF too), 0 for the v2 format,
-# and picks the working-memory figures below (work_gib).
 CK_RES_GIB="" CK_HAS_TABLE="" CK_OWN_PREC="" CK_GATHER="" CK_KEPT="" CK_FOR=""
 ckpt_facts() {
-  if [ "${CK_FOR:-}" = "${HALOGEN_CHECKPOINT:-}" ]; then   # asked already for this file
+  if [ "${CK_FOR:-}" = "${HALOGEN_CHECKPOINT:-}" ]; then
     [ -n "${CK_RES_GIB:-}" ]
     return
   fi
@@ -838,11 +454,7 @@ ckpt_facts() {
   is_gguf && return 1
   local out line
   out=$("${_hg_flash_serve:-/usr/local/bin/flash_serve}" --resident-gib "$HALOGEN_CHECKPOINT" 2>/dev/null) || return 1
-  # the LAST line of exactly "<GiB> <table 0|1> <own precision 0|1>
-  # <experts gather 0|1> <kept GiB>" (an older engine printed two to four
-  # fields: the third then reads as 0, the fourth as 1, the fifth as 0.0).
-  # The fifth (0.15.2) is what HALOGEN_PREFILL_KEEP_TRUNK=1 keeps unpacked, 0.0
-  # with the flag off.
+
   line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01]){0,2}( [0-9]+\.[0-9])?$' | tail -n 1)
   [ -n "$line" ] || return 1
   CK_RES_GIB=$(echo "$line" | awk '{print $1}')
@@ -853,19 +465,10 @@ ckpt_facts() {
   return 0
 }
 
-# 0.15.1: THE WORKING MEMORY BESIDE THE POOL, as the engine's startup ledger
-# measures it (its `memory:` line) at four slots, in two parts: the prefill
-# arena, which a start certainly allocates, and the rest. It depends on the
-# checkpoint's experts. Gathered experts (w4b, a GGUF) reserve the gather's
-# decode worst case (6.0 GiB) at any HALOGEN_MAX_TOK: 9.8 / 10.9 / 12.5 GiB
-# at 4096 / 16384 / 32768. The v2 format's arena scales with it alone: 8.1 /
-# 12.5 at 16384 / 32768. A file whose header is not read counts as a
-# gather. The engine's pool fit uses the same two models. Prints
-# "<arena GiB> <rest GiB>".
 work_split() {
   local g=1 k=0
   ckpt_facts && { g=${CK_GATHER:-1}; k=${CK_KEPT:-0}; }
-  # 0.15.2: HALOGEN_PREFILL_KEEP_TRUNK=1 keeps the trunk unpacked, working memory too
+
   if [ "$g" = "0" ]; then
     awk -v mt="$ENG_MAX_TOK" -v k="$k" 'BEGIN{printf "%.1f %.1f\n", 8.8 * mt / 32768, 3.8 + k}'
   else
@@ -873,11 +476,6 @@ work_split() {
   fi
 }
 
-# 0.14: A CHECKPOINT WITHOUT THE LOOKUP TABLE takes it from its own file
-# (HALOGEN_NGRAM_TABLE), so checkpoints can share one 47.7 GiB table. Set,
-# the flag wins. Unset, the file beside the checkpoint is used when it is
-# there; otherwise the start is refused here, naming what is missing, rather
-# than by the engine a minute into its load.
 NGRAM_TABLE_NAME="qwen38-flash-next-ngram.hgn"
 check_ngram_table() {
   ckpt_facts || return 0
@@ -888,8 +486,7 @@ check_ngram_table() {
     exit 1
   fi
   local t dir; dir="$(dirname "$HALOGEN_CHECKPOINT")"; t="$dir/$NGRAM_TABLE_NAME"
-  # a checkpoint on the disk without its table (copied by hand, or a download
-  # that stopped between the two): fetched when a download is allowed
+
   local tried=""
   if [ ! -f "$t" ] && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$dir" ]; then
     local listing sz
@@ -937,24 +534,11 @@ need_ckpt() {
   gtt_note
 }
 
-# 0.7.0: BRING YOUR OWN GGUF. HALOGEN_CHECKPOINT may name a llama.cpp GGUF
-# of this model (any shard of a split; the engine finds the siblings by
-# name). The engine repacks it into RAM at every start, losslessly, reads
-# its lookup table from the file in place, and takes its MTP head from the
-# engine's own head file, `qwen38-flash-next-mtp.hgn` (1.4 GiB, on the
-# weights repo), which this resolves the way the quality sidecar is: beside
-# the checkpoint by default, HALOGEN_MTP_HEAD to point elsewhere, fetched
-# with HALOGEN_DOWNLOAD when the volume is writable. Without it the engine
-# cannot start on a GGUF, and it says so here rather than after the repack.
-# The quality sidecar does not apply to a GGUF trunk (its tensors are the
-# engine's own checkpoint's), so check_sidecar is not run.
 is_gguf_path() { case "$HALOGEN_CHECKPOINT" in *.gguf) return 0;; esac; return 1; }
 is_gguf() {
   [ -f "$HALOGEN_CHECKPOINT" ] && [ "$(head -c 4 "$HALOGEN_CHECKPOINT" 2>/dev/null)" = "GGUF" ]
 }
-# The draft head a GGUF trunk runs with (and `convert` folds in): beside the
-# GGUF, or HALOGEN_MTP_HEAD, or fetched from HALOGEN_DOWNLOAD. Exports
-# HALOGEN_MTP_HEAD. $1 = the GGUF's directory.
+
 need_head() {
   local dir="$1"
   local head="${HALOGEN_MTP_HEAD:-$dir/qwen38-flash-next-mtp.hgn}"
@@ -970,9 +554,7 @@ need_head() {
       echo "  once with HALOGEN_DOWNLOAD set and the models volume mounted read-write." >&2
       exit 1; }
   fi
-  # 0.11.10 (issue #20): a llama.cpp MTP draft GGUF beside a third-party
-  # quantization is not the engine's head file; the engine would refuse it
-  # after the repack. Say so here, in 2 s, and name the file that is.
+
   if [ "$(head -c 4 "$head" 2>/dev/null)" != "HGN1" ]; then
     echo "halogen: HALOGEN_MTP_HEAD=$head is not the engine's draft head file (its first bytes are not HGN1)." >&2
     echo "  A GGUF draft head (…-MTP-draft.gguf, llama.cpp's) is not read by this engine. The head it runs is" >&2
@@ -997,8 +579,7 @@ check_gguf() {
          echo "halogen: HALOGEN_GGUF_CACHE=$HALOGEN_GGUF_CACHE is not a writable directory" >&2; exit 1; }
        echo "halogen: HALOGEN_GGUF_CACHE: the repack is written once to $HALOGEN_GGUF_CACHE (about 70 GiB for an 8-bit trunk) and read on later starts" ;;
   esac
-  # A GGUF-only volume has no tokenizer directory; the weights repo's is
-  # small and the same Qwen tokenizer, so fetch it when asked and allowed.
+
   if [ ! -f "$HALOGEN_TOKENIZER/tokenizer.json" ] && [ ! -f "$dir/tokenizer/tokenizer.json" ] \
      && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$dir" ]; then
     echo "halogen: fetching the tokenizer from $HALOGEN_DOWNLOAD"
@@ -1006,22 +587,6 @@ check_gguf() {
   fi
 }
 
-# VISION IS OFF UNTIL A PATH IS GIVEN, and that is the feature's whole safety
-# property: with HALOGEN_VISION_TOWER unset the tower is never constructed,
-# allocates nothing, and every image path is unreachable, so a text server is
-# byte-identical to a build without any of it. This does NOT turn it on by
-# finding a file, because a default that switches on when a volume happens to
-# contain something is not a default anyone chose.
-#
-# What it does is make the three ways to get it wrong LOUD instead of silent:
-# a path that does not exist (the engine would refuse later, after minutes of
-# loading), the value `1`/`auto` from someone who expected a discovery
-# feature, and a tower sitting unused beside the checkpoint.
-# Public issue #119: the modes that never take an image drop the vision
-# setting instead of passing it on. Only the serving modes resolve `1` to the
-# sidecar's path (check_vision below); here the engine was handed the literal
-# value, opened a checkpoint named `1`, and `ppl` died after reserving its
-# working memory.
 text_only_mode() {
   if [ -n "${HALOGEN_VISION_TOWER:-}" ]; then
     echo "halogen $1: HALOGEN_VISION_TOWER is ignored in this mode (text only)" >&2
@@ -1039,15 +604,12 @@ check_vision() {
       fi
       return 0 ;;
     0|no|false|off)
-      # 0.15.1: off, as `0` means for every other switch here (and for the
-      # engine's own pool fit); it was read as a file path and the container
-      # exited ("HALOGEN_VISION_TOWER=0 does not exist").
+
       echo "halogen: vision OFF (HALOGEN_VISION_TOWER=${HALOGEN_VISION_TOWER})"
       unset HALOGEN_VISION_TOWER
       return 0 ;;
     1|auto|yes|true)
-      # A convenience, and it says what it resolved to rather than guessing
-      # silently.
+
       [ -f "$side" ] || {
         echo "halogen: HALOGEN_VISION_TOWER=${HALOGEN_VISION_TOWER} but there is no sidecar at $side" >&2
         echo "  give the full path, or fetch the file (0.84 GiB) beside the checkpoint" >&2
@@ -1062,26 +624,11 @@ check_vision() {
         exit 1; }
       echo "halogen: vision ON, tower $HALOGEN_VISION_TOWER ($(du -h "$HALOGEN_VISION_TOWER" | cut -f1))" ;;
   esac
-  # An image is 240-8,160 LM tokens depending on its size, so it competes with
-  # the prompt for the same context. Say it once, here, rather than leaving it
-  # to be discovered by a refusal.
+
   echo "         an image costs ~1,000 tokens at 1280x800 and ~2,040 at 1080p;"
   echo "         HALOGEN_VISION_MAX_PIXELS caps it (default 2560x1440; larger is downscaled)."
 }
 
-# THE SERVED CHECKPOINT IS TWO FILES. `<ck>.overlay.hgn` is the
-# quality sidecar (2.31 GiB) and the engine loads it automatically when it sits
-# beside the checkpoint, so a models volume holding both Just Works, and one
-# holding only the base file also starts, ~6-9% worse on perplexity, saying so
-# in ONE line of startup output nobody reads. That silence is the whole reason
-# for this check: a missing 2.31 GiB file must not be discoverable only by
-# measuring quality.
-#
-# It WARNS rather than fails. `HALOGEN_CK_OVERLAY=none` is a legitimate
-# configuration (the measurement control), and so is choosing not to download
-# the sidecar.
-# 0.15: on a volume that holds only w4b, the default serves it; say so, once,
-# and how to move to v2 (DRAFT wording, the user reviews it with the release)
 legacy_note() {
   [ "${LEGACY_W4B:-0}" = 1 ] || return 0
   echo "halogen: this volume holds qwen38-flash-next-w4b.hgn and not the newer default,"
@@ -1098,9 +645,7 @@ legacy_note() {
 check_sidecar() {
   case "${HALOGEN_CK_OVERLAY:-}" in
     none|0)
-      # 0.15.2: a checkpoint that carries its own precision (v2, a
-      # converted GGUF) has no sidecar to leave out, so the switch changes
-      # nothing there and the line says so instead of "bare".
+
       if ckpt_facts && [ "$CK_OWN_PREC" = "1" ]; then
         echo "halogen: HALOGEN_CK_OVERLAY=${HALOGEN_CK_OVERLAY} has no effect: $HALOGEN_CHECKPOINT carries its own precision and takes no sidecar."
       else
@@ -1108,7 +653,7 @@ check_sidecar() {
         echo "         That is the measurement control, not the shipped precision."
       fi
       return 0 ;;
-    "") : ;;                       # default: the sidecar beside the checkpoint
+    "") : ;;
     *)  [ -f "$HALOGEN_CK_OVERLAY" ] || {
           echo "halogen: HALOGEN_CK_OVERLAY=$HALOGEN_CK_OVERLAY does not exist." >&2
           exit 1; }
@@ -1116,15 +661,12 @@ check_sidecar() {
         return 0 ;;
   esac
   local side="${HALOGEN_CHECKPOINT%.hgn}.overlay.hgn"
-  # 0.14: a checkpoint that carries its own precision choices (the engine's
-  # third --resident-gib field) takes no sidecar
+
   if ckpt_facts && [ "$CK_OWN_PREC" = "1" ] && [ ! -f "$side" ]; then
     echo "halogen: $HALOGEN_CHECKPOINT carries its own precision choices: no quality sidecar applies and none is looked for"
     return 0
   fi
-  # 0.12.1: a `convert`ed GGUF trunk carries the GGUF model id in its header
-  # (bytes 40..103 of the .hgn); the sidecar is the w4b checkpoint's and
-  # does not apply to it, so the warning below would be wrong here.
+
   local mid; mid="$(head -c 104 "$HALOGEN_CHECKPOINT" 2>/dev/null | tail -c 64 | tr -d '\0')"
   case "$mid" in *gguf*)
     echo "halogen: $HALOGEN_CHECKPOINT is a converted GGUF trunk (model id $mid): the quality sidecar does not apply and none is looked for"
@@ -1143,14 +685,7 @@ check_sidecar() {
 }
 
 need_tokenizer() {
-  # Must be a FLAT dir. HF cache snapshots are symlinks into a sibling blobs/,
-  # which dangle inside a container that mounts only the snapshot.
-  # The weights repo ships the tokenizer INSIDE it, so a user who mounts only
-  # the models volume has one already. Falling back to it removes the second
-  # `-v` from the launch command and the whole class of "I forgot the
-  # tokenizer mount" first-run failures. An explicit HALOGEN_TOKENIZER still
-  # wins; this only fires when the default path is empty and the fallback is
-  # real, so it can never silently pick a WRONG tokenizer over a right one.
+
   if [ ! -f "$HALOGEN_TOKENIZER/tokenizer.json" ] &&
      [ "$HALOGEN_TOKENIZER" = /tokenizer ] &&
      [ -f "$(dirname "$HALOGEN_CHECKPOINT")/tokenizer/tokenizer.json" ]; then
@@ -1165,40 +700,11 @@ need_tokenizer() {
     exit 1; }
 }
 
-# WAIT FOR THE ENGINE'S PORT. Bounded only if the operator asks.
-#
-# This was `for _ in $(seq 1 900); do ...; sleep 2; done` with NO branch for
-# exhaustion. At exactly 1800 s it fell out of the loop, started the front-end
-# against a port nothing was listening on, the front-end exited with
-# ConnectionRefusedError, and `wait -n` took the whole container down saying
-# "a component exited". A user whose machine needs longer than 30 minutes to
-# load therefore saw five identical deaths that read as "the server does not
-# start", with the engine still loading normally underneath, and worked around
-# it by running the two roles as separate containers.
-#
-# There is no correct fixed bound. Load time is disk read time plus the
-# driver's, and both are the host's property, not ours. So the default is to
-# wait, and what is watched is the engine PROCESS: if it dies, this returns at
-# once, which is the failure that genuinely needs reporting. A heartbeat says
-# the wait is a wait and not a hang.
-#
-# HALOGEN_ENGINE_WAIT_S bounds it in seconds for an orchestrator that would
-# rather a container failed than waited. When that bound expires this says so
-# and returns non-zero; it never starts a front-end that cannot work.
 wait_for_engine() {
   local port="$1" pid="$2" log="${3:-}"
   local limit="${HALOGEN_ENGINE_WAIT_S:-0}" t=0 beat=0
   while :; do
-    # THE PROBE RUNS IN A SUBSHELL, and that is not style. `exec` with no
-    # command applies its redirections to the CURRENT shell permanently, so
-    # the old `if exec 3<>/dev/tcp/... 2>/dev/null` sent this script's stderr
-    # to /dev/null for the life of the container the moment the engine came
-    # up. Verified: an `echo >&2` after a successful probe produces nothing.
-    # Every warning the entrypoint had left to give was silently discarded,
-    # "a component exited; shutting down" among them, which is the one line
-    # that would have told the 0.3.1 reporter what killed their container.
-    # A subshell also drops the descriptor for us; this is a liveness probe
-    # and has nothing to read.
+
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
       echo "halogen: engine listening after ${t}s"
       return 0
@@ -1223,57 +729,8 @@ wait_for_engine() {
   done
 }
 
-# THE WEDGE WATCHDOG. A container whose engine is ALIVE and answering nothing
-# is the failure that was reported, and it is invisible to everything else
-# here: the process is up, so `wait -n` never fires; the port accepts, so a
-# connect-based healthcheck stays green; and the front-end goes on returning
-# 5xx after its own long timeouts. Reproduced on the shipped 0.4.4 image by
-# stopping the engine with SIGSTOP, which is what an aborted GPU queue looks
-# like from outside: healthcheck green, /health "ok", every request hung.
-#
-# PING is the discriminator, because the engine answers it between decode
-# rounds and, since 0.5.2, every HALOGEN_ENGINE_YIELD_MS while a prompt is
-# being read in, whatever its length. Before that it was answered only at a
-# prefill chunk boundary, and a prompt shorter than one chunk has none, so an
-# ordinary prompt on a slow host could trip this while the engine was working
-# correctly. Silence for
-# HALOGEN_ENGINE_WATCHDOG_S (default 180) therefore means wedged, not slow --
-# an order of magnitude above the ~14 s a 16k prefill chunk can take in 1M
-# mode. Taking the container down is the point: a restart policy can recover
-# a container, and nothing can recover a wedged engine in place.
-#
-# 0 disables it. The engine's own SIGTERM path is used, so a clean shutdown
-# still writes what it writes.
-#
-# PUBLIC ISSUE #79 (and #35 before it): SILENCE INSIDE THE KERNEL IS NOT A
-# WEDGE, AND KILLING IT IS WHAT WEDGES THE DRIVER. On a host short of
-# contiguous memory the engine stops for minutes at a time inside a page
-# fault or an allocation while the kernel compacts memory for it: 100% of
-# one core, no output, no PING, and it clears on its own (#35's reporter
-# watched the silence reach 135 s and the engine come back, six times). The
-# text below said "this is a slow host and not a wedge" and then took the
-# container down anyway. On #79's host that kill landed twice on a process
-# with 66 GiB registered with the GPU while the driver had work in flight,
-# and left the driver holding the memory with no process alive: every later
-# start hung at "reserving the KV pool" until a reboot, the end state three
-# other hosts reached by other unclean exits (#34's two machines, this
-# project's own gate box). So the watchdog reads two
-# things the container can see before it counts a silent probe: the
-# engine's threads' states in /proc (a task in D is inside the kernel and
-# cannot answer anything), and the kernel's own compaction counter in
-# /proc/vmstat (compact_stall climbing while the engine is silent is the
-# stall the startup note describes). Silence under either is logged and NOT
-# counted: a wedged engine on a quiet host is taken down at the same 180 s
-# as before, and an engine that comes back from a stall is never killed for
-# it. What this could not see until 0.12.3 was a wedge on a host where
-# memory is compacted without pause: the counter is host-wide, so the
-# deferral never ended (#71's second reporter, 30 minutes, container Up).
-# 0.12.3 bounds it: HALOGEN_ENGINE_WATCHDOG_DEFER_S (900) of deferred silence
-# with the threads running and not in D is the wedge, counter or no counter.
 wd_state() {
-  # The worst state among the engine's tasks: D if any is in uninterruptible
-  # sleep, else the main thread's. The comm field can contain spaces, so
-  # the state is read after the last ')'.
+
   local proc="${_hg_proc:-/proc}" pid="$1" f st main="?"
   for f in "$proc/$pid/task/"*/stat; do
     [ -r "$f" ] || continue
@@ -1296,33 +753,14 @@ wd_gtt_gib() {
   done
   echo "?"
 }
-# THE TAKEDOWN, WRITTEN OUT. Found by 0.11.9's own release gate: under `set -e` the
-# `wait -n` below returned the watchdog's 1 (or a crashed engine's status)
-# and the script EXITED THERE, so "a component exited; shutting down", the
-# SIGTERM to the engine, and everything after it had never once run on a
-# non-zero exit; the runtime ended the engine with the pid namespace. This
-# is the path instead: SIGTERM and the engine's own exit, 30 s, then SIGKILL,
-# 30 s, then say what is left. A wedged engine's accept loop never reads the
-# flag its handler sets, so the SIGKILL is the one that lands; an engine in
-# D ignores both, and the line says so and names the reboot (issue #79). A
-# child that has exited is a zombie until reaped and `kill -0` still
-# succeeds on it, so liveness is the state in /proc, not the signal.
-# Liveness is the MAIN thread's state, not the worst thread's: after SIGKILL
-# the other threads sit in D for a moment while the kernel releases 66 GiB of
-# registrations, and the worst-state read (which is what the watchdog wants)
-# called a dying engine "still alive, state D" at 0 s (found by hand while
-# 0.11.9 was gated). A zombie main thread is reaped by `wait`, not alive.
+
 wd_main_state() {
   local f="${_hg_proc:-/proc}/$1/task/$1/stat"
   [ -r "$f" ] || { echo "?"; return 0; }
   sed 's/.*) //' "$f" 2>/dev/null | cut -d' ' -f1 || echo "?"
 }
 wd_alive() { [ -d "${_hg_proc:-/proc}/$1" ] && [ "$(wd_main_state "$1")" != "Z" ]; }
-# The GTT figure after an exit, read once it stops falling: the driver
-# releases an engine's device memory a few seconds after the process is
-# gone (18 MB within 5 s on a healthy host), and a read at 0 s is the
-# engine's own figure whatever the driver is about to do. Capped at 6 s so
-# a `podman stop` (10 s before its SIGKILL) still ends with this line.
+
 wd_gtt_after_exit() {
   local t=0 g
   while [ $t -lt 6 ]; do
@@ -1336,7 +774,7 @@ wd_gtt_after_exit() {
     echo "halogen: WARNING the driver has not released this engine's device memory. If the figure does not fall (cat /sys/class/drm/card*/device/mem_info_gtt_used on the host), the next start will hang at \"reserving the KV pool\"; reboot the host first (issue #79)." >&2
   fi
 }
-stop_engine() {   # stop_engine PID -> the engine's exit status (137 if it would not die)
+stop_engine() {
   local pid="$1" t=0 st rc=0
   kill -TERM "$pid" 2>/dev/null || true
   while wd_alive "$pid" && [ $t -lt 30 ]; do sleep 1; t=$((t + 1)); done
@@ -1369,31 +807,7 @@ engine_watchdog() {
     return 0
   fi
   echo "halogen: engine watchdog on, ${limit}s of silence takes the container down"
-  # SILENCE IS COUNTED IN REAL SECONDS, not in loop iterations. A failed probe
-  # also BLOCKS for the ping timeout, so counting `step` per iteration made the
-  # threshold mean about three times what it says: measured 130 s to fire at a
-  # 45 s setting. `last_ok` is the last time the engine actually answered.
-  # 0.12.3 (public issues #71, #85): THE SILENCE CLOCK NEVER RESTARTS ON A
-  # DEFERRAL. 0.11.9 set `last_ok` to now on every deferred probe, so the
-  # seconds it printed were the time since the previous probe, not the
-  # silence, and under compaction that never stopped the engine could never
-  # be counted: one host sat wedged for 30 minutes with the container Up,
-  # the main thread at 100% of a core in user space, `/health` timing out,
-  # while `compact_stall` (a HOST-WIDE counter that says nothing about this
-  # engine) climbed at its usual rate. Now `last_ok` moves only when the
-  # engine answers, every line prints the true silence, and the compaction
-  # deferral has a cap, HALOGEN_ENGINE_WATCHDOG_DEFER_S (default 900, 0 =
-  # no cap): past it, an engine whose threads are running and not in the
-  # kernel is a wedge whatever the counter says, and the takedown runs. A
-  # thread in D still defers without a cap: SIGKILL does not reach a task
-  # in D, and the kill is what leaves the driver holding its GTT (#79).
-  # When a deferral ends without a PONG (the counter stops climbing) the
-  # engine gets one more `limit` from that point before the wedge counts,
-  # so a stall that has just cleared is not killed at its first probe.
-  # `last_ok` moves only on a PONG. `deferred` is the silence so far while
-  # deferred (0 = none this silence). `grace_from` is set when a deferral
-  # ends without a PONG: the wedge clock counts from there, not from
-  # `last_ok`, so the engine gets one `limit` after the stall clears.
+
   local last_ok st cs_prev cs_now deferred=0 grace_from="" defer_max="${HALOGEN_ENGINE_WATCHDOG_DEFER_S:-900}" now
   last_ok=$(date +%s)
   cs_prev=$(wd_compact)
@@ -1453,17 +867,11 @@ engine_watchdog() {
   return 0
 }
 
-# 0.13.2: HALOGEN_WEIGHTS_LOCK=1 needs RLIMIT_MEMLOCK to cover the weights,
-# and a rootless container cannot raise that above the invoking user's hard
-# limit whatever `--ulimit memlock=-1:-1` says (Ubuntu's default is 8 MiB;
-# Podman clamps silently). Say so BEFORE the engine spends a minute loading
-# and then reports the lock failed; the engine's own line repeats the fix.
 memlock_note() {
   [ "${HALOGEN_WEIGHTS_LOCK:-0}" = "1" ] || return 0
   local hard; hard=$(ulimit -H -l 2>/dev/null || echo "?")
   case "$hard" in unlimited|"?") return 0 ;; esac
-  # ulimit -l is in KiB; the weights (the checkpoint's own figure when it can
-  # be read, else 68 GiB) + ~2 GiB for the tower and slack is the ask
+
   local w_gib=68 need_k=75000000
   if ckpt_facts; then
     w_gib=$CK_RES_GIB
@@ -1481,8 +889,7 @@ memlock_note() {
 start_engine() {
   need_ckpt
   memlock_note
-  # NOT `exec` any more: something has to outlive the engine to watch it.
-  # SIGTERM is forwarded so the daemon still takes its own exit path.
+
   /usr/local/bin/flash_serve \
     --ck "$HALOGEN_CHECKPOINT" --port "$ENG_PORT" --bind "$BIND" \
     --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
@@ -1493,10 +900,7 @@ start_engine() {
     wait "$ENGINE_PID" 2>/dev/null || true
     exit 1
   fi
-  # A DISABLED WATCHDOG MUST NOT BE IN THE WAIT SET. It returns immediately
-  # when the limit is 0, so `wait -n` saw a component exit and took the
-  # container down at once: the documented way to turn this OFF killed the
-  # server. Found by running with it off, which no cell did.
+
   WATCHDOG_PID=""
   if [ "${HALOGEN_ENGINE_WATCHDOG_S:-180}" -gt 0 ]; then
     engine_watchdog "$ENG_PORT" "$ENGINE_PID" &
@@ -1504,22 +908,13 @@ start_engine() {
   else
     echo "halogen: engine watchdog OFF (HALOGEN_ENGINE_WATCHDOG_S=0)"
   fi
-  # ERREXIT OFF FROM HERE: this is a supervisor, and every status below is
-  # data (which child ended, how the engine died, whether a kill found its
-  # target), not a reason to stop. Under `set -e` the `wait -n` alone had
-  # ended the script on any non-zero status since 0.4.4, and a `kill` on an
-  # already-gone watchdog did the same once that was fixed; the `|| true`s
-  # stay as documentation of each, this is the rule.
+
   set +e
-  # shellcheck disable=SC2086
+
   WRC=0; wait -n "$ENGINE_PID" $WATCHDOG_PID 2>/dev/null || WRC=$?
-  # `|| true` because this follows the final `&&`: when the watchdog is the
-  # component that exited, its pid is gone, the kill fails, and under
-  # `set -e` a failing command after the last `&&` ends the script (found
-  # by the 0.11.9 release gate, the second errexit in this path).
+
   [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null || true
-  # Reap it here, or bash prints "Killed engine_watchdog" into every clean
-  # stop's log when it notices later.
+
   [ -n "$WATCHDOG_PID" ] && wait "$WATCHDOG_PID" 2>/dev/null || true
   RC=0; stop_engine "$ENGINE_PID" || RC=$?
   echo "halogen: engine exited (rc=$RC, the component that ended this: $WRC); shutting down" >&2
@@ -1528,12 +923,6 @@ start_engine() {
   exit "$WRC"
 }
 
-# PUBLIC ISSUE #30: the HALOGEN_* request defaults (HALOGEN_TEMPERATURE,
-# HALOGEN_TOP_P, HALOGEN_MAX_TOKENS_DEFAULT, HALOGEN_REASONING_EFFORT, ...)
-# are read by serve_api.py, which refuses to start on a bad value. Ask it
-# HERE, before the engine spends minutes pinning the checkpoint, so that a
-# typo in a variable is found in a second. One implementation of the rules,
-# used early; a bash copy of them would drift.
 check_defaults() {
   if ! python3 /halogen/tools/serve_api.py --tokenizer "$HALOGEN_TOKENIZER" \
        --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" --check-defaults; then
@@ -1545,17 +934,7 @@ check_defaults() {
 start_api() {
   need_tokenizer
   check_defaults
-  # HALOGEN_ENGINE must be settable. In `all` the engine is in this same
-  # container and loopback is right, but in the two-container topology
-  # (docker-compose) the services get SEPARATE network namespaces and the
-  # api has to reach `engine:8730` by name. Hardcoding 127.0.0.1 here made
-  # `api` mode silently unusable for exactly the deployment the split exists
-  # to serve, found by writing the compose file rather than by testing.
-  # 0.13.1 (issue #90): --context is the front end's FALLBACK when the
-  # engine does not answer its capability probe. It defaulted to 32768 and
-  # was never set here, so a probe that missed its 5 s budget shrank the
-  # served context to that number for the life of the container while the
-  # engine sat correctly at HALOGEN_CTX. The engine's own INFO still wins.
+
   exec python3 /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "${HALOGEN_ENGINE:-127.0.0.1:$ENG_PORT}" \
@@ -1565,74 +944,26 @@ start_api() {
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}"
 }
 
-# ---- the NPU: small models on the Ryzen AI NPU beside the Flash engine ----
-#
-# Nothing below runs unless HALOGEN_NPU_MODELS names a model: unset, the
-# default mode starts exactly as it always has. Set, it is a comma list, and
-# each entry is either
-#
-#   a bare name   one of ours (decider-0.8b, qwen3-embedding-0.6b,
-#                 qwen3-reranker-0.6b, qwen3guard-gen-0.6b, qwen3.5-2b): its
-#                 files live under /models/npu/<id>/; its task comes with it
-#                 (decisions, embeddings, rerank, moderation on
-#                 /v1/moderations, and qwen3.5-2b's text generation on
-#                 /v1/chat/completions)
-#                   devices/     the NPU's program for the model (devices.hnpm,
-#                                the .elf files, consts.hnpb); a model whose
-#                                record line names another's (devices=<id>)
-#                                runs on that model's devices/ instead (the
-#                                embedder, the reranker and the guard share one)
-#                   <id>.hnpw    the weight file
-#                   tokenizer/   the model's own tokenizer.json
-#                 and are fetched, when missing, under the same HALOGEN_DOWNLOAD
-#                 switch as the main model, from where this image's record says;
-#   a path        the user's own fine-tune (/models/<dir>): a Hugging Face
-#                 checkpoint (config.json, model.safetensors, tokenizer.json) of
-#                 a model we ship the NPU's program for. The NPU engine converts
-#                 it once at the first start and keeps the result beside it
-#                 (<dir>/halogen-npu.hnpw; a read-only volume converts into the
-#                 container at every start); it is served under its directory's
-#                 name, and its task (decisions, embeddings, rerank, moderation) is read from
-#                 the checkpoint. It runs on its base model's program, so that
-#                 base's devices/ must be there too (fetched alone under
-#                 HALOGEN_DOWNLOAD).
-#
-# The image carries a table of the files each of our models must hold, with
-# their sizes and sha256 (/opt/halogen/npu/models.txt, "model" and "file"
-# lines); every file is checked against it before anything starts, so a torn
-# download or a file from another release is named, not loaded.
-# HALOGEN_NPU_VERIFY=0 runs files the table does not list (the NPU engine
-# still checks each block of the weight file and that the weights fit the
-# device files, and the front end still checks the tokenizer against the
-# weight file).
-#
-# The NPU engine (halogen-npu) listens on a loopback port inside the
-# container (HALOGEN_NPU_PORT); the front end routes a request whose `model`
-# is one of the NPU's models there, and every other request to the Flash
-# engine, on the one published port.
 NPU_PINS="${_hg_npu_pins:-/opt/halogen/npu/models.txt}"
 NPU_DIR="${_hg_npu_dir:-/models/npu}"
 
 npu_pin_ids() { awk '$1 == "model" {print $2}' "$NPU_PINS" 2>/dev/null || true; }
 
-npu_pin_get() {   # npu_pin_get ID KEY -> the model line's KEY= value
+npu_pin_get() {
   awk -v id="$1" -v k="$2" '$1 == "model" && $2 == id {
     for (i = 3; i <= NF; i++) if (index($i, k "=") == 1) { print substr($i, length(k) + 2); exit } }' "$NPU_PINS" 2>/dev/null || true
 }
 
 npu_pin_files() { awk -v id="$1" '$1 == "file" && $2 == id {print $3, $4, $5}' "$NPU_PINS" 2>/dev/null || true; }
 
-npu_devices_of() {   # npu_devices_of ID -> the model whose devices/ ID runs on (its record's devices=, else itself)
+npu_devices_of() {
   local o
   o=$(npu_pin_get "$1" devices)
   echo "${o:-$1}"
 }
 
 npu_stat() { stat -c '%A %U:%G' "$1" 2>/dev/null || ls -ld "$1" 2>/dev/null | awk '{print $1, $3 ":" $4}'; }
-# npu_fclk ROOT: the GPU's fabric clock as sysfs shows it (read-only in a container), over every amdgpu device with the
-# control (the host unit holds each): "held <speed>" when each is held at its top level (the performance level high, or
-# manual with only the top fclk level selected), "<device dir> <top level>" for the first one that is not (the host
-# path and the level to write), nothing when this host has no such control
+
 npu_fclk() {
   local r="$1" d perf top first=""
   for d in "$r"/sys/class/drm/card*/device; do
@@ -1650,13 +981,9 @@ npu_fclk() {
   return 0
 }
 
-# The server holds the clock itself when it may write it: a container running as the host's root sees the GPU's
-# controls writable with --privileged, or under /host/sys with -v /sys:/host/sys. It records each device's level and
-# gives it back at stop (npu_fclk_release). A rootless container cannot (the files are the host root's), and there
-# the host unit (deploy/host/) holds it once per boot.
 npu_sysfs_write() { echo "$2" > "$1" 2>/dev/null; }
 NPU_FCLK_HELD=""
-npu_fclk_hold() {   # npu_fclk_hold ROOT: hold every device's clock under ROOT/sys; 0 when each is held after
+npu_fclk_hold() {
   local r="$1" d perf top lvl n=0
   for d in "$r"/sys/class/drm/card*/device; do
     [ -e "$d/pp_dpm_fclk" ] && [ -e "$d/power_dpm_force_performance_level" ] || continue
@@ -1665,11 +992,11 @@ npu_fclk_hold() {   # npu_fclk_hold ROOT: hold every device's clock under ROOT/s
     lvl=$(grep . "$d/pp_dpm_fclk" | tail -n 1 | cut -d: -f1)
     NPU_FCLK_HELD="$NPU_FCLK_HELD $d:$perf"
     if ! npu_sysfs_write "$d/power_dpm_force_performance_level" manual || ! npu_sysfs_write "$d/pp_dpm_fclk" "$lvl"; then
-      npu_fclk_release > /dev/null; return 1   # undo what was written
+      npu_fclk_release > /dev/null; return 1
     fi
     n=$((n + 1))
   done
-  # the driver applies the level several seconds after the write: the read-back waits up to 30 s
+
   local t=0
   [ "$n" -gt 0 ] && echo "halogen npu: holding the GPU's fabric clock (the driver takes a few seconds)"
   while [ "$n" -gt 0 ] && [ "$t" -lt 300 ]; do
@@ -1679,15 +1006,13 @@ npu_fclk_hold() {   # npu_fclk_hold ROOT: hold every device's clock under ROOT/s
   npu_fclk_release > /dev/null
   return 1
 }
-npu_fclk_release() {   # give each held device its performance level back (the server held it, so it lets go)
+npu_fclk_release() {
   local e
   for e in $NPU_FCLK_HELD; do npu_sysfs_write "${e%:*}/power_dpm_force_performance_level" "${e##*:}"; done
   [ -n "$NPU_FCLK_HELD" ] && echo "halogen npu: the GPU's fabric clock given back to the driver (${NPU_FCLK_HELD##*:})"
   NPU_FCLK_HELD=""
 }
 
-# the variables the NPU's earlier preview read, refused by name: one switch
-# fetches every model now, and every model lives on the one /models volume
 npu_retired() {
   local v bad=0
   for v in HALOGEN_NPU_DOWNLOAD HALOGEN_NPU_REPO HALOGEN_NPU_DIR; do
@@ -1702,7 +1027,7 @@ npu_retired() {
   return "$bad"
 }
 
-npu_fetch() {   # npu_fetch ID DIR PATH... : a model's missing files from the source this image's record names
+npu_fetch() {
   local id="$1" d="$2" repo rev need=0 p sz
   shift 2
   repo=$(npu_pin_get "$id" repo); rev=$(npu_pin_get "$id" revision)
@@ -1720,8 +1045,7 @@ npu_fetch() {   # npu_fetch ID DIR PATH... : a model's missing files from the so
   done
   download_room_check "$d" "$need" || return 1
   echo "halogen npu: fetching $id from $repo${rev:+ at $rev}:$(printf ' %s' "$@")"
-  # the Hub client's bars and chatter silenced as the checkpoint's fetch does (0.16.0 printed both)
-  # shellcheck disable=SC2086
+
   if ! HF_HUB_OFFLINE=0 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_DISABLE_TELEMETRY=1 "${_hg_hf:-hf}" download "$repo" "$@" ${rev:+--revision "$rev"} --local-dir "$d" > /dev/null \
        2> >(grep --line-buffered -vE 'hf update|hf skills|HF_TOKEN|gitignore\.lock|A new version of' >&2); then
     echo "halogen npu: fetching $id from $repo failed (see above); nothing was started" >&2
@@ -1729,9 +1053,7 @@ npu_fetch() {   # npu_fetch ID DIR PATH... : a model's missing files from the so
   fi
 }
 
-# one of our models present (fetched when asked) and checked; adds its size to NPU_NEED_K. With "devices", only its
-# devices/ (the program a fine-tune of it runs on)
-npu_model_ready() {   # npu_model_ready ID DIR [devices]
+npu_model_ready() {
   local id="$1" d="$2/$1" part="${3:-all}" pins paths p sz want got missing="" verify="${HALOGEN_NPU_VERIFY:-1}" known own dk
   case "$id" in ''|*/*|.*) echo "halogen npu: '$id' is not a model id" >&2; return 1 ;; esac
   pins=$(npu_pin_files "$id")
@@ -1743,15 +1065,14 @@ npu_model_ready() {   # npu_model_ready ID DIR [devices]
     echo "  Name one it knows in HALOGEN_NPU_MODELS, a path for your own fine-tune (/models/<dir>), or set HALOGEN_NPU_VERIFY=0 to run files it has no record of." >&2
     return 1
   fi
-  # the record's file list when it is checked or fetched from; with HALOGEN_NPU_VERIFY=0 and no download, a set built
-  # outside a release (its own file names) needs only the files every set has
+
   if [ -n "$pins" ] && { [ "$verify" != 0 ] || [ -n "${HALOGEN_DOWNLOAD:-}" ]; }; then
     paths=$(printf '%s\n' "$pins" | awk '{print $1}')
   elif [ "$part" = devices ]; then paths="devices/devices.hnpm"
   else paths="devices/devices.hnpm $id.hnpw tokenizer/tokenizer.json"; fi
   for p in $paths; do [ -f "$d/$p" ] || missing="$missing $p"; done
   if [ -n "$missing" ] && [ -n "${HALOGEN_DOWNLOAD:-}" ]; then
-    # shellcheck disable=SC2086
+
     npu_fetch "$id" "$d" $missing || return 1
     missing=""
     for p in $paths; do [ -f "$d/$p" ] || missing="$missing $p"; done
@@ -1761,15 +1082,14 @@ npu_model_ready() {   # npu_model_ready ID DIR [devices]
     echo "  Start once with HALOGEN_DOWNLOAD set and the models volume mounted read-write, or put the files there." >&2
     return 1
   fi
-  # a model that runs on another's devices/ (devices= in its record) holds none of its own: that one is checked apart
+
   own=$(npu_devices_of "$id")
   if { [ "$part" = devices ] || [ "$own" = "$id" ]; } && ! ls "$d/devices/"*.elf > /dev/null 2>&1; then
     echo "halogen npu: $id: $d/devices/ holds no .elf file (the NPU's program for the model)" >&2
     return 1
   fi
   if [ "$verify" != 0 ]; then
-    # 0.16.1: a file that is not the record's is fetched again when a download is allowed (a release that rebuilds a
-    # model's NPU program leaves the previous release's files on every volume that ran it); refused otherwise
+
     local stale="" pass
     for pass in check recheck; do
       while read -r p sz want; do
@@ -1794,7 +1114,7 @@ PINS
       if [ "$pass" = check ]; then
         echo "halogen npu: $id:$stale not the files this image has a record of (another release's?); fetching them again"
         for p in $stale; do rm -f "$d/$p"; done
-        # shellcheck disable=SC2086
+
         npu_fetch "$id" "$d" $stale || return 1
         for p in $stale; do [ -f "$d/$p" ] || { echo "halogen npu: $id: the fetch left $d/$p missing" >&2; return 1; }; done
       fi
@@ -1809,9 +1129,7 @@ PINS
   NPU_NEED_K=$(( ${NPU_NEED_K:-0} + sz / 1024 + dk ))
 }
 
-# the user's fine-tune at a path: what it is (the NPU engine reads the checkpoint), its base's program present, and
-# its weight file converted once and kept beside it; sets NPU_FT_NAME / NPU_FT_DEV / NPU_FT_W; adds to NPU_NEED_K
-npu_finetune_ready() {   # npu_finetune_ready PATH
+npu_finetune_ready() {
   local p="${1%/}" bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own
   if [ ! -d "$p" ]; then
     echo "halogen npu: $p is not a directory. A path in HALOGEN_NPU_MODELS is your own model: a directory on the models volume holding config.json, model.safetensors and tokenizer.json." >&2
@@ -1827,7 +1145,7 @@ npu_finetune_ready() {   # npu_finetune_ready PATH
     [ -f "$p/$f" ] || { echo "halogen npu: $p has no $f (a Hugging Face checkpoint holds config.json, model.safetensors and tokenizer.json)" >&2; return 1; }
   done
   info=$("$bin" probe "$p") || rc=$?
-  [ "$rc" = 0 ] || return 1   # the engine named what it is and what is supported
+  [ "$rc" = 0 ] || return 1
   task=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "task" {print $2}')
   base=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "base" {print $2}')
   own=$(npu_devices_of "$base")
@@ -1845,9 +1163,7 @@ npu_finetune_ready() {   # npu_finetune_ready PATH
   NPU_NEED_K=$(( ${NPU_NEED_K:-0} + $(wc -c < "$out" | tr -d ' ') / 1024 + $(du -sk "$NPU_FT_DEV" | awk '{print $1}') ))
 }
 
-# the host's side: the device node, the driver, the IOMMU, XRT and its plugin, whether the NPU engine loads against
-# that XRT at all, and the fabric clock. GPU=1: this container runs the Flash engine beside the NPU
-npu_preflight() {   # npu_preflight [GPU]
+npu_preflight() {
   local r="${_hg_root:-}" gpu="${1:-0}" node x xv drv out rc=0
   node="$r/dev/accel/accel0"; x="$r/opt/xilinx/xrt/lib"
   if [ ! -e "$node" ]; then
@@ -1867,9 +1183,7 @@ npu_preflight() {   # npu_preflight [GPU]
     echo "  Docker with --user: add --group-add with the device's group id as a number (stat -c %g /dev/accel/accel0 on the host)." >&2
     return 1
   fi
-  # A host whose XRT is a distribution's may hold links under /opt/xilinx/xrt/lib into its system library directory
-  # (#126): mounted here, a link points at a file the container does not have. Name it, and the mounts that carry the
-  # files themselves.
+
   local f t="" bad=""
   for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
     if [ -L "$x/$f" ] && [ ! -e "$x/$f" ]; then bad="$f"; t=$(readlink "$x/$f"); break; fi
@@ -1899,7 +1213,7 @@ npu_preflight() {   # npu_preflight [GPU]
   fi
   xv=$(basename "$(readlink -f "$x/libxrt_coreutil.so.2" 2>/dev/null || echo "$x/libxrt_coreutil.so.2")")
   xv="${xv#libxrt_coreutil.so.}"
-  case "$xv" in *.*) xv="XRT $xv" ;; *) xv="XRT (its version is not in the mounted file's name)" ;; esac   # a distribution's XRT mounted by its short name
+  case "$xv" in *.*) xv="XRT $xv" ;; *) xv="XRT (its version is not in the mounted file's name)" ;; esac
   drv=$(cat "$r/sys/module/amdxdna/version" 2>/dev/null || true)
   [ -n "$drv" ] || drv="(the kernel's own)"
   out=$("${_hg_npu_bin:-/usr/local/bin/halogen-npu}" 2>&1) || rc=$?
@@ -1909,12 +1223,7 @@ npu_preflight() {   # npu_preflight [GPU]
     echo "  The host's XRT is older than this image needs, or was built for a newer C++ runtime than the image carries (glibc 2.41, GLIBCXX_3.4.33). Tested: AMD's XRT 2.25 and Ubuntu 26.04's XRT 2.21." >&2
     return 1
   fi
-  # The GPU and the NPU working at once on this chip can hang the whole machine and corrupt the NPU's results (the
-  # chip reports uncorrectable errors in its interconnect) while the GPU's fabric clock changes speed; held at its top
-  # speed, the two ran together cleanly. Beside the Flash engine (GPU=1) the clock must be held. Alone (the NPU
-  # without the Flash engine), the kernel lists every process that has the GPU's compute device open under
-  # /sys/class/kfd/kfd/proc, for the whole host, so a GPU job started first is seen: refused unless the clock is held.
-  # HALOGEN_NPU_WITH_GPU=1 starts anyway (unsupported).
+
   local kp="$r/sys/class/kfd/kfd/proc" gp="" fc why
   if [ "${HALOGEN_NPU_WITH_GPU:-0}" != 1 ]; then
     if [ "$gpu" = 1 ]; then why="the Flash engine runs on the GPU beside it"
@@ -1924,7 +1233,7 @@ npu_preflight() {   # npu_preflight [GPU]
       fc=$(npu_fclk "$r")
       if [ "$gpu" = 1 ] && [ "${fc%% *}" != held ]; then
         local hr
-        for hr in "$r/host" "$r"; do   # -v /sys:/host/sys, or the container's own /sys (--privileged)
+        for hr in "$r/host" "$r"; do
           if npu_fclk_hold "$hr"; then
             fc=$(npu_fclk "$hr")
             echo "halogen npu: the GPU's fabric clock was not held, and this container may hold it: held at its top speed (${fc#held }) while the server runs"
@@ -1950,7 +1259,7 @@ npu_preflight() {   # npu_preflight [GPU]
   echo "halogen npu: device /dev/accel/accel0 ($(npu_stat "$node")), driver amdxdna $drv, $xv with its NPU plugin"
 }
 
-npu_memlock() {   # npu_memlock NEED_KIB
+npu_memlock() {
   local l
   l=$(ulimit -l 2>/dev/null || echo unlimited)
   [ -n "${_hg_memlock:-}" ] && l="$_hg_memlock"
@@ -1964,10 +1273,7 @@ npu_memlock() {   # npu_memlock NEED_KIB
   return 1
 }
 
-# Every model in HALOGEN_NPU_MODELS ready, then the NPU engine started and READY. GPU=1: beside the Flash engine.
-# Sets NPU_PID, NPU_API_ARGS (the front end's arguments for the NPU's models) and NPU_TOK1 (the first model's
-# tokenizer directory, for the front end without the Flash engine). Exits on any failure.
-start_npu_engine() {   # start_npu_engine GPU
+start_npu_engine() {
   local gpu="$1" port="${HALOGEN_NPU_PORT:-8740}" ids id n=0 first=1 rc dev w tokd own
   local bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}"
   local -a nargs
@@ -2000,9 +1306,7 @@ start_npu_engine() {   # start_npu_engine GPU
   NPU_PID=$!
   NPU_STOP=0
   trap 'NPU_STOP=1; kill -TERM "$NPU_PID" 2>/dev/null || true' TERM INT
-  # READY is the engine's first line; a load reads the weight files and sets up
-  # their buffers (the shapes load later, at first use). No fixed bound: the
-  # process is watched, and a death is reported at once.
+
   local t0=$SECONDS last=$SECONDS
   until grep -q '^READY' "$NPU_OUT" 2>/dev/null; do
     if ! kill -0 "$NPU_PID" 2>/dev/null; then
@@ -2019,9 +1323,6 @@ start_npu_engine() {   # start_npu_engine GPU
   done
 }
 
-# Test-only: the NPU's models and the front end without the Flash engine (the
-# test fleet's cells, where the Flash engine never runs beside NPU work).
-# Reached through an underscore hook, like the other test hooks; not a mode.
 start_npu_alone() {
   local who rc nrc=0 arc=0
   start_npu_engine 0
@@ -2031,8 +1332,7 @@ start_npu_alone() {
     --engine none --tokenizer "$NPU_TOK1" "${NPU_API_ARGS[@]}" \
     --host 0.0.0.0 --port "$API_PORT" --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" &
   API_PID=$!
-  # a supervisor, as for the Flash engine: whichever ends first takes the
-  # other down, and the container's status is that component's
+
   set +e
   rc=0; wait -n "$NPU_PID" "$API_PID" 2>/dev/null || rc=$?
   if [ "$NPU_STOP" = 1 ]; then who="stop signal"
@@ -2051,13 +1351,6 @@ start_npu_alone() {
   exit "$rc"
 }
 
-# The FIRST line of every mode names the release and
-# the role. Two containers four releases apart ran side by side for weeks and
-# neither log said a version, so a careful reader posting both had no way to
-# see the split; the api one predated the image path the engine one had, and
-# every picture was answered from nothing.
-# The tool modes keep stdout for their own output (`--json` is one object a
-# script reads), so their release line goes to stderr.
 case "${1:-all}" in
   inspect|verify|ppl|niah) echo "halogen: halogen-flash-server ${HALOGEN_IMAGE_VERSION:-unknown}, mode $1" >&2 ;;
   *) echo "halogen: halogen-flash-server ${HALOGEN_IMAGE_VERSION:-unknown}, mode ${1:-all}" ;;
@@ -2069,9 +1362,7 @@ api)    start_api ;;
 all)
   [ "${_hg_npu_alone:-0}" = 1 ] && [ -n "${HALOGEN_NPU_MODELS:-}" ] && start_npu_alone
   need_ckpt; need_tokenizer; check_defaults
-  # The NPU's models (HALOGEN_NPU_MODELS), when named: checked, converted
-  # when one is the user's own, and the NPU engine READY before the Flash
-  # engine starts (seconds against minutes). Unset, nothing here runs.
+
   NPU_PID=""; NPU_API_ARGS=()
   [ -n "${HALOGEN_NPU_MODELS:-}" ] && start_npu_engine 1
   "${_hg_flash_serve:-/usr/local/bin/flash_serve}" --ck "$HALOGEN_CHECKPOINT" \
@@ -2080,10 +1371,6 @@ all)
   ENGINE_PID=$!
   trap 'NPU_STOP=1; kill -TERM "$ENGINE_PID" $NPU_PID 2>/dev/null || true' TERM INT
 
-  # The front-end connects to the engine at STARTUP and exits on refusal, so
-  # it must not launch first. A cold 115.4 GiB checkpoint faults in slowly when
-  # it is not already in page cache, measured longer than any fixed sleep is
-  # willing to wait, which is why this polls instead of sleeping.
   echo "halogen: waiting for engine on $ENG_PORT (cold load can take minutes)"
   if ! wait_for_engine "$ENG_PORT" "$ENGINE_PID"; then
     kill -TERM "$ENGINE_PID" $NPU_PID 2>/dev/null || true
@@ -2101,12 +1388,6 @@ all)
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" "${NPU_API_ARGS[@]}" &
   API_PID=$!
 
-  # Either process exiting must take the container down. A live API in front
-  # of a dead engine answers 200 + zero bytes, which is indistinguishable
-  # from a hang on the client side.
-  # The watchdog joins the set: a process that EXITS is caught by `wait -n`
-  # (measured: the container is down in under a second), and a process that
-  # lives and answers nothing is caught by this.
   WATCHDOG_PID=""
   if [ "${HALOGEN_ENGINE_WATCHDOG_S:-180}" -gt 0 ]; then
     engine_watchdog "$ENG_PORT" "$ENGINE_PID" &
@@ -2114,9 +1395,9 @@ all)
   else
     echo "halogen: engine watchdog OFF (HALOGEN_ENGINE_WATCHDOG_S=0)"
   fi
-  # Errexit off from here: a supervisor's statuses are data (see start_engine).
+
   set +e
-  # shellcheck disable=SC2086
+
   WRC=0; wait -n "$ENGINE_PID" "$API_PID" $WATCHDOG_PID $NPU_PID || WRC=$?
   if [ -n "$NPU_PID" ] && [ "${NPU_STOP:-0}" != 1 ] && ! kill -0 "$NPU_PID" 2>/dev/null; then
     echo "halogen npu: the NPU engine exited (rc=$WRC); shutting down" >&2
@@ -2124,21 +1405,15 @@ all)
     echo "halogen: a component exited (rc=$WRC); shutting down" >&2
   fi
   kill -TERM "$API_PID" $NPU_PID 2>/dev/null || true
-  # `|| true` because this follows the final `&&`: when the watchdog is the
-  # component that exited, its pid is gone, the kill fails, and under
-  # `set -e` a failing command after the last `&&` ends the script (found
-  # by the 0.11.9 release gate, the second errexit in this path).
+
   [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null || true
-  # Reap it here, or bash prints "Killed engine_watchdog" into every clean
-  # stop's log when it notices later.
+
   [ -n "$WATCHDOG_PID" ] && wait "$WATCHDOG_PID" 2>/dev/null || true
   stop_engine "$ENGINE_PID" || true
   wait "$API_PID" 2>/dev/null || true
   [ -n "$NPU_PID" ] && { wait "$NPU_PID" 2>/dev/null || true; }
   npu_fclk_release
-  # Issue #79: the figure the next start's "GTT in use before this start"
-  # line will read. A driver that kept this engine's memory shows here
-  # first, while the log that explains it is still the same log.
+
   wd_gtt_after_exit
   exit 1
   ;;
@@ -2160,9 +1435,6 @@ bench|sweep)
   echo "halogen bench: loading model (cold load can take minutes)"
   wait_for_engine "$ENG_PORT" "$ENGINE_PID" /tmp/halogen-engine.log || exit 1
 
-  # The api's stdout is TEED, not just redirected: the ledger lines the bench
-  # scrapes for commit/round and prefill only exist in this stream, and a
-  # bench that silently lost them would still print a t/s table.
   python3 /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "127.0.0.1:$ENG_PORT" \
@@ -2172,8 +1444,6 @@ bench|sweep)
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" 2>&1 | tee "$BENCH_LOG" &
   API_PID=$!
 
-  # python, not curl: the slim base has no curl and a bench that silently
-  # skipped its readiness wait would just fail the first request instead.
   API_UP=0
   for _ in $(seq 1 150); do
     python3 -c "import urllib.request,sys
@@ -2182,9 +1452,7 @@ except Exception: sys.exit(1)" 2>/dev/null && { API_UP=1; break; }
     kill -0 "$API_PID" 2>/dev/null || break
     sleep 2
   done
-  # Same defect as the engine wait, one layer up: this used to fall through
-  # silently and the bench then failed on its first request, which reads as a
-  # broken benchmark rather than a front-end that never came up.
+
   if [ "$API_UP" -eq 0 ]; then
     echo "halogen bench: the front-end never answered /health on $API_PORT after 300s." >&2
     tail -30 "$BENCH_LOG" >&2 || true
@@ -2205,11 +1473,7 @@ except Exception: sys.exit(1)" 2>/dev/null && { API_UP=1; break; }
   exit $RC
   ;;
 convert)
-  # 0.12.1: GGUF -> .hgn on disk, the runtime repack with a file sink. No
-  # model is loaded and no port is bound; the process is the repack and
-  # exits with its status. IN is any shard of a split GGUF (the siblings are
-  # found by name beside it); OUT is written whole, with the table and the
-  # draft head, so it is a checkpoint on its own.
+
   IN="${2:-}"; OUT="${3:-}"
   if [ -z "$IN" ] || [ -z "$OUT" ]; then
     echo "usage: entrypoint.sh convert IN.gguf OUT.hgn" >&2
@@ -2234,13 +1498,7 @@ convert)
   exit $RC
   ;;
 inspect|verify|ppl|niah)
-  # 0.13.0: the checkpoint tools as modes. The verb goes to the sibling
-  # binary as it is; the only thing this layer adds is the FILE default
-  # (HALOGEN_CHECKPOINT, the file `all` would serve) and, for the two modes
-  # that load a model, the same resolution `all` does: the draft head beside
-  # a GGUF, the tuning plan copied out of the read-only layer so a clean
-  # exit cannot rewrite the baked file. No port is bound; the process is
-  # the tool and exits with its status.
+
   MODE="$1"
   shift || true
   text_only_mode "$MODE"
@@ -2251,12 +1509,10 @@ inspect|verify|ppl|niah)
   if [ "$MODE" = ppl ] || [ "$MODE" = niah ]; then
     tuning_plan_copy
     if [ "$(head -c 4 "$FILE" 2>/dev/null)" = "GGUF" ]; then need_head "$(dirname "$FILE")"
-    else HALOGEN_CHECKPOINT="$FILE" check_ngram_table >&2   # 0.14: stdout is the tool's (--json)
+    else HALOGEN_CHECKPOINT="$FILE" check_ngram_table >&2
     fi
     echo "halogen $MODE: $FILE under this image's engine environment (tuning plan: ${HALOGEN_MATMUL_TUNING_FILE:-none}; quality sidecar: ${HALOGEN_CK_OVERLAY:-beside the checkpoint, if any}; trunk pinned: ${HALOGEN_FLASH_PIN_TRUNK:-1})" >&2
-    # the two modes that read text go through the Python front end: it
-    # tokenizes --corpus with the mounted tokenizer, builds the retrieval
-    # battery, runs the binary, and decodes what the binary prints as ids
+
     need_tokenizer
     exec python3 /halogen/tools/halogen_tools.py "$MODE" "$FILE" --tokenizer "$HALOGEN_TOKENIZER" "$@"
   fi

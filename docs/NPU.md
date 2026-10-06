@@ -49,14 +49,18 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
-  -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b \
+  -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.3
 ```
 
-`HALOGEN_DOWNLOAD` fetches the NPU models' files too, into `/models/npu`, and the server checks each one's size and
-checksum. If your XRT came from your distribution, mount it as [the host section](#host) shows. Leave
+`HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
+server checks each one's size and checksum. A model you leave out of the list is not fetched. The five names above are
+the folder names, and the guard and the reranker share the embedder's device files. If your XRT came from your distribution, mount it as [the host section](#host) shows. Leave
 `HALOGEN_NPU_MODELS` out and the server is exactly what it was without it.
+
+With compose, use `docker-compose.npu.yml`, which runs this same single container. The two-container `docker-compose.yml`
+starts no NPU engine.
 
 The NPU models' files stay in memory beside the Flash model's, a few GB in all. The Flash model runs somewhat slower
 while the NPU works, since the two share the memory bus and the chip's power budget.
@@ -88,6 +92,30 @@ object with one property holding one of those. The answer is the most likely opt
 is not sampled: `temperature`, `top_p`, `seed` and the penalties are accepted and ignored. A conversation works too:
 every message becomes part of the text to judge, and a system message can carry the question instead of the schema.
 
+## System One questions
+
+`POST /v1/systemone` takes TypeSafe's System One request, so a client written for it can point at `decider-0.8b`.
+Send a `state` (a string, or an object or array that is sent as JSON) and `questions`, each with a `type`,
+`instructions` and `criteria`. There is no API key. `model` can be `decider-0.8b` or any other name, and it runs the
+decision model loaded.
+
+```bash
+curl -s localhost:8731/v1/systemone -H 'content-type: application/json' -d '{
+  "model": "decider-0.8b",
+  "state": "Customer: I was charged twice and nobody answers my emails.",
+  "questions": {
+    "team": {"type": "choice", "instructions": "Which team should handle this",
+             "criteria": {"billing": "Payment issues", "technical": "Bugs", "other": null}},
+    "anger": {"type": "score", "instructions": "How frustrated does the customer appear",
+              "criteria": ["Calm and neutral", "Concerned but civil", "Very angry"]},
+    "refund": {"type": "noul", "instructions": "Does the customer request a refund?"}}}'
+```
+
+Each question is one pass. A `choice` answers with `choice`, `probabilities` and `confidence`; a `score` with its
+expected level (`score`), `legend`, `probabilities` keyed by level number from 0, and `confidence`; a `noul` with the
+probability of yes. A choice or score takes 2 to 10 options here, where System One takes up to 255. A bad request
+answers 422.
+
 ## Embeddings
 
 ```python
@@ -117,6 +145,8 @@ model's default task line.
 
 ## Moderation
 
+Name `qwen3guard-gen-0.6b` in `HALOGEN_NPU_MODELS` (the Start command above does) and it is fetched and served.
+
 ```
 curl -s localhost:8731/v1/moderations -H 'Content-Type: application/json' -d '{
   "model": "qwen3guard-gen-0.6b",
@@ -134,6 +164,8 @@ reply is judged. Otherwise the last user message is. A request that names OpenAI
 moderation model loaded here.
 
 ## Generation
+
+Name `qwen3.5-2b` in `HALOGEN_NPU_MODELS` (the Start command above does) and it is fetched and served.
 
 ```
 curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d '{
@@ -177,6 +209,11 @@ volume works, but then the conversion runs at every start.
 When one request carries several short inputs (embedding texts, rerank documents, or moderation inputs), they run
 together in one pass.
 Each result is exactly what it would be alone. `HALOGEN_NPU_EMB_BATCH=0` turns this off.
+
+A batch holds up to 8 inputs of up to 512 tokens each, padded to the bucket, so it costs the same (about 0.38 s) for 2
+inputs as for 8. A single input takes about 0.07 s up to 128 tokens and 0.09 s above. The server batches a group only
+when running its inputs one by one would take longer: from 6 inputs of up to 128 tokens, from 5 of up to 512. Smaller
+groups, and the leftover of a larger request, run one pass each.
 
 ## Many requests at once
 

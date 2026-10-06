@@ -1,0 +1,43 @@
+# docker-compose.npu.yml: halogen-flash-server with the NPU, one container.
+#
+# The NPU's models are served by the same process group as the Flash model, so
+# this is the single-container form (the entrypoint's default mode). The
+# two-container docker-compose.yml starts no NPU engine. See docs/NPU.md for
+# what the host needs: a Strix Halo with the amdxdna driver, XRT, and the
+# firmware, and the notes on the fabric clock.
+#
+# Usage:
+#   HALOGEN_MODELS=~/halogen-models podman-compose -f docker-compose.npu.yml up -d
+#
+# The models volume is read-write so HALOGEN_DOWNLOAD can fetch the weights, the
+# NPU models and the tokenizer into it. Once they are there it can go read-only.
+# HALOGEN_NPU_MODELS names which NPU models to load and fetch. Unset or empty,
+# this file loads all five. Set it to a comma list to load fewer. For the
+# server without the NPU, use docker-compose.yml.
+#
+# `keep-groups` in group_add is a PODMAN extension. Under docker compose,
+# replace it with `group_add: ["video", "render"]`.
+#
+# If your XRT came from your distribution rather than AMD's package, mount it as
+# docs/NPU.md's host section shows instead of /opt/xilinx/xrt.
+services:
+  halogen:
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.16.3
+    environment:
+      HALOGEN_DOWNLOAD: ${HALOGEN_DOWNLOAD:-peonist-ai/halogen-qwen3.8-flash-next}
+      HALOGEN_NPU_MODELS: ${HALOGEN_NPU_MODELS:-decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b}
+    volumes:
+      - ${HALOGEN_MODELS:?set HALOGEN_MODELS to the directory the models live in}:/models
+      - /opt/xilinx/xrt:/opt/xilinx/xrt:ro
+    devices:
+      - /dev/kfd
+      - /dev/dri
+      - /dev/accel/accel0
+    ipc: host
+    ulimits:
+      memlock: -1
+    group_add: [keep-groups]
+    ports:
+      - "8731:8731"
+    stop_grace_period: 60s
+    restart: unless-stopped
