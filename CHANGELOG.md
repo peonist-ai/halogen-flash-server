@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.17.2
+
+Faster decoding and faster long prompts, and one fix for clients that send a
+system message partway through a conversation. The checkpoints are
+unchanged. At temperature 0 the output is still byte-identical to serial
+greedy decode.
+
+### Fixed
+
+- **A system or developer message after the first turn is no longer refused
+  on Chat Completions.** It was a 400 naming the message's position. It is now
+  read as user text at its place, the way the Messages route already reads
+  one, so a client that re-sends its instructions partway through a
+  conversation keeps working and keeps its cached prefix. One that arrives
+  between a tool call and its results waits until the results end. An image
+  in a late system message is still refused.
+
+### Changed
+
+- **Decoding is faster**, most on code and in languages other than English.
+  The output is unchanged. The server uses about 0.3 GB more GPU memory for
+  it.
+- **Long prompts of new text are read faster**, most when several arrive
+  together or one arrives while other conversations are generating. The
+  output is unchanged.
+- **`HALOGEN_MTP_DEPTH` is unset by default.** Unset, the server chooses the
+  draft depth for each conversation. Setting it fixes one depth for every
+  request, as before; if you set it to 3 for code, unsetting it is now the
+  better all-round choice.
+
 ## 0.17.1
 
 Two fixes for tool calling. The checkpoints and the speed are unchanged. For

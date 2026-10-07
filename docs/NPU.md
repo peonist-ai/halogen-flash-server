@@ -53,7 +53,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
