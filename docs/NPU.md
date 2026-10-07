@@ -2,7 +2,7 @@
 
 The server can run small models on the Ryzen AI NPU beside the Flash model, behind the same port. Name them in
 `HALOGEN_NPU_MODELS`, and a request picks one by its `model`. Every other request goes to the Flash model, as before.
-Five kinds of model run there:
+Six kinds of model run there:
 
 - **Decisions** with `decider-0.8b` (a Qwen3.5-0.8B classifier). Give a text and a question with 2 to 10 options, and
   get a probability for every option from one pass.
@@ -11,6 +11,8 @@ Five kinds of model run there:
 - **Moderation** with `qwen3guard-gen-0.6b` (Qwen3Guard-Gen-0.6B). Is a prompt, or a reply in its conversation, safe?
 - **Text generation** with `qwen3.5-2b` (Qwen3.5-2B, thinking off). Summaries and other short jobs, beside the Flash
   model.
+- **Images** with `flux2-klein-4b` (FLUX.2-klein-4B). Icons, diagrams, illustrations and placeholders at 256x256 or
+  512x512, on `/v1/images/generations`.
 
 Your own fine-tune of any of the first four runs too. See [Your own model](#your-own-model).
 
@@ -51,7 +53,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -62,7 +64,8 @@ the folder names, and the guard and the reranker share the embedder's device fil
 With compose, use `docker-compose.npu.yml`, which runs this same single container. The two-container `docker-compose.yml`
 starts no NPU engine.
 
-The NPU models' files stay in memory beside the Flash model's, a few GB in all. The Flash model runs somewhat slower
+The NPU models' files stay in memory beside the Flash model's, a few GB in all, and about 8 GB more with
+`flux2-klein-4b`. The Flash model runs somewhat slower
 while the NPU works, since the two share the memory bus and the chip's power budget.
 
 ## Decisions
@@ -177,6 +180,29 @@ A chat request that names `qwen3.5-2b` runs on the NPU. Every other chat request
 follows OpenAI's chat completions, streamed or not, with `stop` strings and usage. The model reads text only, calls no
 tools, and answers without thinking. A request that sets no sampling fields gets the model card's (temperature 1.0,
 `top_k` 20, `presence_penalty` 2.0), and any of them can be set per request. `max_tokens` defaults to 2,048.
+
+## Images
+
+Name `flux2-klein-4b` in `HALOGEN_NPU_MODELS` and it is fetched and served. It draws an image from a prompt, on
+`/v1/images/generations` in OpenAI's shape:
+
+```
+curl -s localhost:8731/v1/images/generations -H 'Content-Type: application/json' \
+  -d '{"model": "flux2-klein-4b", "prompt": "a flat vector icon of a cloud with a lightning bolt",
+       "size": "512x512", "n": 1, "seed": 7}'
+```
+
+- `size`: `256x256` or `512x512`. `auto` is `512x512`.
+- `n`: one to four images. They are drawn one after another.
+- `response_format`: `b64_json` (the default) or `url`, a `data:` URL of the PNG.
+- `output_format`: `png` only.
+- `seed`: an extension. Image `i` of a request draws at `seed + i`, so the same request gives the same images. Without
+  it each request draws its own.
+- `quality`: `low` is refused for now. Every other value draws the same image.
+- The prompt is written into the model's chat template and cut to 512 tokens.
+
+The model holds about 8 GB of the host's memory while it is loaded. One image request runs at a time on the NPU,
+queued with the other NPU models' work.
 
 <a id="your-own-model"></a>
 ## Your own model

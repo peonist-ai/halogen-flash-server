@@ -1155,7 +1155,7 @@ npu_finetune_ready() {
     out="/tmp/halogen-npu/$name.hnpw"; mkdir -p /tmp/halogen-npu
     echo "halogen npu: $p is read-only, so $name is converted into the container at every start; mount the models volume read-write once to keep the result beside it"
   fi
-  case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; generate) task="chat completions" ;; esac
+  case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; generate) task="chat completions" ;; image) task=images ;; esac
   echo "halogen npu: $name ($p): a fine-tune of $base, served for $task"
   "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale || {
     echo "halogen npu: converting $p for the NPU failed (above); nothing was started" >&2; return 1; }

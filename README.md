@@ -116,7 +116,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -167,7 +167,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -732,10 +732,10 @@ to lay out the prompt so the cache reuses everything but the item.
 The server can also run small models on the Ryzen AI NPU, beside the Flash
 model and behind the same port: decisions (`decider-0.8b`), embeddings
 (`qwen3-embedding-0.6b`), reranking (`qwen3-reranker-0.6b`), moderation
-(`qwen3guard-gen-0.6b`, on `/v1/moderations`) and text generation for
-summaries and other short jobs (`qwen3.5-2b`, on `/v1/chat/completions`), or
-your own fine-tune of one of the first four. Add the NPU to the Quickstart's
-command:
+(`qwen3guard-gen-0.6b`, on `/v1/moderations`), text generation for
+summaries and other short jobs (`qwen3.5-2b`, on `/v1/chat/completions`) and
+images (`flux2-klein-4b`, on `/v1/images/generations`), or your own fine-tune
+of one of the first four. Add the NPU to the Quickstart's command:
 
 ```
   --device /dev/accel/accel0 -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro \
@@ -938,7 +938,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -954,7 +954,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -970,7 +970,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -1088,10 +1088,10 @@ file being edited), thinking on or off, which is why the gain over the head
 alone is 13–15% there, 6–9% on function-calling turns, and within noise on
 prose and code text (the head already takes what there is). Serial on the same
 prompts is 36.8 tok/s, so a coding-agent turn decodes at about 1.5x serial.
-Every one of those runs produced the serial run's tokens exactly. Like the
-draft head, prompt lookup runs while the request is the only one generating;
-with several conversations generating at once the scheduler batches them
-instead (the concurrency table below is unchanged by it).
+Every one of those runs produced the serial run's tokens exactly. Prompt
+lookup runs while the request is the only one generating; with several
+conversations generating at once the scheduler batches them instead (the
+concurrency table below is unchanged by it).
 
 Decode barely moves with depth. Serial gives up about 7% going from 1,500 to
 32,768 tokens of context, a 22x increase. The 32,768 served figure is
@@ -1146,8 +1146,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.16.4 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.16.4 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.0 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.0 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1322,7 +1322,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1489,7 +1489,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1531,7 +1531,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.16.4 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.0 \
   MODE [FILE] [flags]
 ```
 
@@ -1926,9 +1926,12 @@ the built-in `bench` below.
 
 Re-measured on the 0.6.0 image in one session: 2 streams 56.5 total, 4
 streams 77.1, every stream byte-identical to alone. Prompt lookup does not
-change these rows: like the draft head, it drafts only while a request is the
-only one generating (see below), and a batched step is already the cheapest
-way to get one token per stream on this hardware.
+change these rows: it drafts only while a request is the only one generating
+(see below). Since 0.17.0 two streams generating together both speculate with
+the draft head in one forward pass, so two streams now run faster than the
+2-stream row shows, each still byte-identical to alone. At four and eight
+streams a batched step is still the cheapest way to get one token per stream
+on this hardware.
 
 **Slots are a latency policy, not a memory decision.** Raising
 `HALOGEN_KV_SLOTS` past four trades what each client sees for admitting more
@@ -1954,8 +1957,11 @@ makes the pause about 8 s and costs the admitted prompt about 5 s on its first
 token, and that prompt's answer then depends on the load when it arrived, which
 is the one setting here that gives up the identity property. And the speculative
 drafter, which is the default, speculates while it is the only conversation
-generating and joins the batch as soon as another one is active, so it never
-holds the others back; prompt lookup rides with it and follows the same rule.
+generating. With exactly two generating, both speculate together in one forward
+pass while that pays, and decode as a plain batch when it does not. A request
+with a JSON schema decodes in the plain batch. With three or more it joins the
+batch, so it never holds the others back. Prompt lookup drafts only for a
+conversation generating alone.
 
 The prompt cache keeps twenty-four entries (`HALOGEN_CACHE_ENTRIES`;
 twenty from 0.12.1 to 0.13.2, sixteen before), six per conversation: one at the end of its system prompt,
@@ -2604,10 +2610,10 @@ of our machines exposes the file.
   (`HALOGEN_KV_SLOTS`, up to 64) and a request waits for a free slot and for
   room in the pool; there is no preemption and no paging. Throughput past four
   streams grows slowly.
-- **Speculation is for a conversation on its own.** With two or more
-  conversations generating, every stream takes a batched step; the drafter
-  resumes when a stream is alone again. Speculating inside a batch is not
-  built.
+- **Speculation is for one or two conversations.** With exactly two
+  generating, both speculate together in one forward pass while that pays.
+  With three or more, every stream takes a batched step, and the drafter
+  resumes when two or fewer remain.
 - **No response store.** `/v1/responses` generates and streams; it does not
   keep responses, so `previous_response_id`, retrieval by id and cancellation
   by id are not available. **Cancellation is by disconnect** (since 0.10.2;

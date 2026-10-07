@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.17.0
+
+Image generation on the NPU, and two conversations that speculate together.
+The checkpoints are unchanged. At temperature 0 the output is still
+byte-identical to serial greedy decode, alone or beside another conversation.
+For the requests behind it: issues #141
+([@xuyongroger](https://github.com/xuyongroger)) and #123
+([@Takayuki-Ishimaru](https://github.com/Takayuki-Ishimaru)).
+
+### Added
+
+- **Image generation on the NPU: `flux2-klein-4b`.** FLUX.2-klein-4B, converted
+  for the Ryzen AI NPU, answers OpenAI's `/v1/images/generations` beside the
+  Flash model: 256x256 or 512x512, one to four images a request, PNG as
+  `b64_json` or a data URL. A `seed` makes an image repeatable. Name it in
+  `HALOGEN_NPU_MODELS` like the other NPU models. It needs about 8 GB of the
+  host's memory. `quality: low` is refused for now. From issue #141
+  ([@xuyongroger](https://github.com/xuyongroger)).
+- **Two conversations speculate together.** When exactly two conversations
+  generate, the draft head now drafts for both, and one forward pass checks
+  both drafts. Before, the drafter stopped as soon as a second conversation
+  was generating. Each stream's output is what it would be alone, greedy or
+  sampled. When the joint rounds stop paying, the server decodes the pair as a
+  plain batch and tries again later. A request with a JSON schema decodes in
+  the plain batch. One conversation alone, and three or more, decode as
+  before. On by default, with no setting. From issue #123
+  ([@Takayuki-Ishimaru](https://github.com/Takayuki-Ishimaru)).
+
+### Changed
+
+- **Decode on new text is faster.** The n-gram lookup table's rows are read
+  ahead of their use. The output is unchanged.
+
+### Deprecated
+
+- **w4b still loads in 0.17.0.** 0.16.3 planned to stop loading it in this
+  release. That moves to a later one. It is still deprecated and still outside
+  our release testing.
+
 ## 0.16.4
 
 One fix, in the server's streaming. The checkpoints and the engine are
