@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.17.1
+
+Two fixes for tool calling. The checkpoints and the speed are unchanged. For
+the reports behind them: issues #144
+([@elpablos](https://github.com/elpablos)) and #145
+([@superbarne](https://github.com/superbarne)).
+
+### Fixed
+
+- **A JSON schema with tools no longer loops on tool calls when thinking is
+  on.** With a schema and tools, a reply may start with free text before the
+  JSON. That text was cut off after 32 tokens, and the model then had to pick
+  between the JSON and a tool call, so a longer summary of a tool result was
+  cut mid-sentence and the model called the tool again, every turn. Chat
+  Completions and Messages with thinking on were affected. A reply that ends
+  its text on its own now goes straight to the JSON. The text may run to half
+  of what `max_tokens` leaves after thinking, up to 1024 tokens, so the JSON
+  always keeps room. If the limit is reached, the JSON is forced and a tool
+  call is no longer offered, so the worst case is a cut preamble, not a loop.
+  From issue #144 ([@elpablos](https://github.com/elpablos)).
+- **A nullable string argument stays a string.** A tool parameter declared as
+  `["string", "null"]`, or as an `anyOf` of string and null (what Pydantic
+  writes for every `Optional[str]`), came back as a number when its value was
+  all digits, so a company number or a postal code failed the client's check.
+  The server now takes the non-null type of a type list, `anyOf` or `oneOf`,
+  and prefers `string` when several remain. A literal `null` still comes back
+  as null. A parameter declared as `oneOf` integer or string now comes back as
+  a string. From issue #145
+  ([@superbarne](https://github.com/superbarne)).
+
 ## 0.17.0
 
 Image generation on the NPU, and two conversations that speculate together.

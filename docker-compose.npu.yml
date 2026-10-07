@@ -22,7 +22,7 @@
 # docs/NPU.md's host section shows instead of /opt/xilinx/xrt.
 services:
   halogen:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.17.0
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.17.1
     environment:
       HALOGEN_DOWNLOAD: ${HALOGEN_DOWNLOAD:-peonist-ai/halogen-qwen3.8-flash-next}
       HALOGEN_NPU_MODELS: ${HALOGEN_NPU_MODELS:-decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b}
