@@ -886,11 +886,22 @@ memlock_note() {
   fi
 }
 
+FE_ONLY_FLAGS="HALOGEN_ENABLE_THINKING HALOGEN_ENGINE_PING_S HALOGEN_ENGINE_PROBE_S \
+HALOGEN_FREQUENCY_PENALTY HALOGEN_KEEPALIVE_TIMEOUT HALOGEN_MAX_THINKING_TOKENS \
+HALOGEN_MAX_TOKENS_DEFAULT HALOGEN_MIN_P HALOGEN_MODEL_ID HALOGEN_PRESENCE_PENALTY \
+HALOGEN_REASONING_EFFORT HALOGEN_RECORD_DAYS HALOGEN_RECORD_DIR HALOGEN_RECORD_GIB \
+HALOGEN_RECORD_TEXT HALOGEN_REPETITION_PENALTY HALOGEN_SSE_KEEPALIVE_S \
+HALOGEN_TEMPERATURE HALOGEN_TEMPLATE_UNCHECKED HALOGEN_THINKING_ANSWER_ROOM \
+HALOGEN_TOP_K HALOGEN_TOP_P"
+ENGINE_ENV_U=()
+for _v in $FE_ONLY_FLAGS; do ENGINE_ENV_U+=(-u "$_v"); done
+unset _v
+
 start_engine() {
   need_ckpt
   memlock_note
 
-  /usr/local/bin/flash_serve \
+  env "${ENGINE_ENV_U[@]}" /usr/local/bin/flash_serve \
     --ck "$HALOGEN_CHECKPOINT" --port "$ENG_PORT" --bind "$BIND" \
     --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
@@ -1365,7 +1376,7 @@ all)
 
   NPU_PID=""; NPU_API_ARGS=()
   [ -n "${HALOGEN_NPU_MODELS:-}" ] && start_npu_engine 1
-  "${_hg_flash_serve:-/usr/local/bin/flash_serve}" --ck "$HALOGEN_CHECKPOINT" \
+  env "${ENGINE_ENV_U[@]}" "${_hg_flash_serve:-/usr/local/bin/flash_serve}" --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
       --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
@@ -1425,7 +1436,7 @@ bench|sweep)
   BENCH_LOG=/tmp/halogen-api.log
   : > "$BENCH_LOG"
 
-  /usr/local/bin/flash_serve --ck "$HALOGEN_CHECKPOINT" \
+  env "${ENGINE_ENV_U[@]}" /usr/local/bin/flash_serve --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
       --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" \
       > /tmp/halogen-engine.log 2>&1 &

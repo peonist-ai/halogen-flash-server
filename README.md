@@ -84,7 +84,8 @@ the changelog can credit them. See [Community](#community).
   [context and memory](#context-and-memory-one-kv-pool-several-conversations)
   and [1M context](#1m-context-opt-in-and-a-different-configuration),
   [attention budget](#attention-budget-opt-in-and-a-different-configuration),
-  [composable context](#composable-context-an-opt-in-preview)
+  [composable context](#composable-context-an-opt-in-preview),
+  [request records](#request-records-a-log-of-what-your-clients-send-opt-in)
 - **[Troubleshooting](#troubleshooting)**:
   [will not start](#if-the-server-will-not-start-out-of-memory),
   [starts but crawls](#if-the-server-starts-but-crawls-on-long-prompts),
@@ -116,7 +117,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -167,7 +168,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -202,8 +203,11 @@ and `logprobs` are supported. `temperature` absent or 0 is greedy decode. Above 
 samples from the filtered distribution on the same drafter it would otherwise
 get, so speculation stays on. A sampled request that omits `top_k` or `top_p`
 gets the model's own values, 20 and 0.95 (since 0.14.2, #112). Before, an
-omitted filter meant no filter. A `seed` reproduces a request on the same server
-configuration. A sampled request (temperature above 0) with `logprobs: true`
+omitted filter meant no filter. A `seed` reproduces a request served alone
+on the same server configuration. Beside other requests, or when one run
+reads its prompt from the prompt cache and the other does not, a seeded reply
+can differ; each is still a sample from the same distribution. A sampled
+request (temperature above 0) with `logprobs: true`
 carries the chosen token's logprob on every token. For scoring, `logprobs` at
 `temperature: 0` and `top_logprobs` (1 to 20, at any temperature) cover the
 first generated token, so those requests set `max_tokens: 1`. `logprobs` with
@@ -940,7 +944,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -956,7 +960,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -972,7 +976,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -1148,8 +1152,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.2 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.2 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.3 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.3 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1212,7 +1216,8 @@ your configuration; the third depends on one setting.
   serial greedy decode. The draft head only proposes; a token is emitted only
   if the full model would have produced it. It is speed with no quality cost.
   When sampling, the accept/reject rule emits exactly the requested
-  distribution; a seed reproduces a request on the same drafter.
+  distribution; a seed reproduces a request served alone on the same
+  drafter.
 - A request batched alongside others emits **byte-identical tokens** to the
   same request run alone.
 - A prompt-cache hit answers **byte-identically** to a cold run of the same
@@ -1324,7 +1329,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1491,7 +1496,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1533,7 +1538,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3 \
   MODE [FILE] [flags]
 ```
 
@@ -2306,6 +2311,92 @@ This is a preview, and the flag and defaults may change. On the roadmap for it:
 - **a smaller footprint and a durable store** — less memory per retained
   message, and an optional on-disk store that survives a restart and holds
   far more than the in-memory one.
+
+### Request records: a log of what your clients send, opt-in
+
+The server can keep a record of the requests it answers: which API and client
+sent each one, its size and settings, how it ended, and, unless you say
+otherwise, the text of the messages and the reply. It is for you, to see what
+your agents and clients actually send and get back: how long their prompts
+are, how much of each the cache covered, which tools they call and how often a
+result comes back as an error. It is off by default, and nothing is written
+anywhere until you name a directory (0.17.3):
+
+```bash
+mkdir -p ~/halogen-models ~/halogen-records
+
+podman run --rm --name halogen -p 8731:8731 \
+  --device /dev/kfd --device /dev/dri --group-add keep-groups \
+  --ipc=host --ulimit memlock=-1:-1 \
+  -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
+  -v ~/halogen-models:/models \
+  -v ~/halogen-records:/records -e HALOGEN_RECORD_DIR=/records \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+```
+
+The startup log then says `request records ON in /records`, with the text
+fields, the size cap and the retention, and `/health` carries a
+`request_records` block (written, dropped, bytes, the text fields).
+
+**Read this before you turn it on for a server other people can reach.** The
+API port has no authentication, and `HALOGEN_RECORD_TEXT` defaults to `all`.
+Everything anyone sends to the port is written to the directory, the text
+included. Keep the port on a network you trust, or set
+`HALOGEN_RECORD_TEXT=none` to keep only the per-request lines with no text.
+The session fields below are whatever a client says they are: they group
+requests, and they prove nothing about who sent them.
+
+**What it writes.** The directory holds two kinds of file, plain JSON you can
+read with `jq`:
+
+- `turns/<day>/<host>-<pid>-<ms>.jsonl`: one line per request, appended as it
+  finishes, in a new file each day (UTC) and every 64 MiB. A line carries the
+  API (`chat`, `messages`, `responses`, `completions`), whether it streamed,
+  the model, the client family read from the `User-Agent` (`claude-code`,
+  `codex`, `openai-sdk`, `curl`, ...), the request's counts and switches
+  (prompt tokens, messages, tools, images, thinking and effort, sampled or
+  greedy, a schema), how it finished (`stop`, `length`, `tool_calls`,
+  `disconnect`, `error`), the tokens generated and how many were thinking,
+  the id and name of each tool call in the reply, for each tool result sent
+  back whether it answers one of this server's calls (and, on the Messages
+  API, whether the client marked it an error), the same `timings` block a
+  response carries, and how long the request waited for a free slot. When
+  the client sends `user`,
+  `prompt_cache_key`, `safety_identifier` or `metadata` (on Messages,
+  `metadata.user_id`), the line carries a hash of it, never the value, so the
+  turns of one conversation can be grouped. The hash is keyed by `.salt`, a
+  random file in the directory.
+- `units/<2 characters>/<hash>.json`: the text. Each message, reply and
+  thinking block is one file, named by a hash of its content and written
+  once, however many requests repeat it; a request's line lists its messages'
+  hashes in order. An agent that resends its whole history every turn adds
+  only its new messages. Images are never stored, only a hash and their pixel
+  size. `/v1/completions` requests get the line only, no text.
+
+Requests to the [small NPU models](#small-models-on-the-npu) are recorded too:
+the text of decisions, guard checks and generations, and only the counts for
+embeddings, reranking and images.
+
+**Size and age.** `HALOGEN_RECORD_GIB` (default 2) caps the whole directory;
+past it new records are dropped and counted. `HALOGEN_RECORD_DAYS` (default 90)
+removes older days at start and when the date changes, with any text no
+remaining record refers to. Nothing on a request's path waits for the disk:
+a full disk, the cap or a backlog drops records, never a request.
+
+**Reading and pruning.** Two commands run inside the container:
+
+```bash
+podman exec halogen python3 /halogen/tools/request_records.py stats /records
+podman exec halogen python3 /halogen/tools/request_records.py prune /records --days 7
+```
+
+`stats` counts records by API, client, finish and thinking, the cache's share
+of the prompts, and how many of this server's tool calls were answered with an
+error. `prune` also takes `--gib G`, `--session H` (one conversation, by the
+hash in its lines), `--unit H` (one stored text; the records keep its hash) or
+`--all`. No HTTP route reads, deletes or serves the records. The files and
+the directories the server makes are readable by their owner only (0600 and
+0700): your user under rootless Podman, root under Docker.
 
 ---
 

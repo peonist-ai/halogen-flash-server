@@ -42,7 +42,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.2
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
 ```
 
 - The `mkdir` matters on Podman: it refuses a bind mount whose source is
@@ -171,6 +171,12 @@ whether it starts and how it behaves:
   checkpoints and is, for evaluation and regression suites.
   `HALOGEN_CACHE_DIR` keeps the cache across a restart;
   `HALOGEN_CACHE_PRUNE_OLD=1` removes other builds' subtrees there at startup.
+- **Request records are off** (0.17.3). `HALOGEN_RECORD_DIR` set to a
+  mounted, writable directory keeps one JSON line per request and, by
+  default, the text of the messages and the reply. The port has no
+  authentication, so on a server others can reach set
+  `HALOGEN_RECORD_TEXT=none` or keep it off. Read them with `jq` or
+  `podman exec <name> python3 /halogen/tools/request_records.py stats DIR`.
 - **A llama.cpp GGUF of this model is a checkpoint too** (`HALOGEN_CHECKPOINT`
   names any shard; the draft head file comes from `HALOGEN_MTP_HEAD` or
   `HALOGEN_DOWNLOAD`): repacked in RAM at every start, losslessly, in about

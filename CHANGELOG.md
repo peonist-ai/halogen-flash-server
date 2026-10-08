@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.17.3
+
+Faster sampled decoding, request records you can turn on, and one fix for
+the prompt cache on disk. The checkpoints are unchanged. At temperature 0
+the output is still byte-identical to serial greedy decode.
+
+### Added
+
+- **Request records, opt-in.** Set `HALOGEN_RECORD_DIR` to a mounted
+  directory and the server keeps one JSON line per request it answers (the
+  API, the client, the request's sizes and settings, how it finished, its
+  tool calls and timings) and, by default, the text of the messages and the
+  reply, each message stored once however often a client resends it.
+  `HALOGEN_RECORD_TEXT=none` keeps the lines without any text;
+  `HALOGEN_RECORD_GIB` and `HALOGEN_RECORD_DAYS` bound the size and the age.
+  Nothing on a request's path waits for it. The API port has no
+  authentication, so on a server others can reach, their requests are
+  recorded too. The README's *Request records* section has the run line and
+  the file layout. Unset, nothing is written.
+
+### Fixed
+
+- **A server default no longer starts the prompt cache on disk cold.** With
+  `HALOGEN_CACHE_DIR`, setting a request default such as
+  `HALOGEN_ENABLE_THINKING` or `HALOGEN_TEMPERATURE` gave the cache a
+  configuration of its own, so conversations saved before were read again
+  from the start, and with `HALOGEN_CACHE_PRUNE_OLD=1` their files were
+  removed. Settings that only change how requests are read and answered no
+  longer count as a configuration of the cache.
+
+### Changed
+
+- **Sampled requests decode faster** when the server is generating one reply
+  at a time, most on code. Greedy requests are unchanged.
+- **A fixed `seed` gives different sampled text than on 0.17.2.** Each answer
+  is still a sample from the same distribution, and greedy requests are
+  unaffected. A `seed` reproduces a request served alone. Beside other
+  requests, or between a first request and a repeat that reads its prompt
+  from the prompt cache, a seeded reply can differ, and the README now says
+  so.
+
 ## 0.17.2
 
 Faster decoding and faster long prompts, and one fix for clients that send a
