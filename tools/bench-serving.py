@@ -11,6 +11,10 @@ import time
 import urllib.request
 
 API = os.environ.get("HALOGEN_API", "http://127.0.0.1:8731")
+HEADERS = {"content-type": "application/json"}
+if os.environ.get("HALOGEN_API_KEY", "").strip():
+    HEADERS["authorization"] = ("Bearer "
+                                + os.environ["HALOGEN_API_KEY"].split(",")[0].strip())
 HALO = os.environ.get("HALOGEN_HALO", os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 PROMPTS_PATH = os.environ.get("HALOGEN_PROMPTS",
@@ -81,8 +85,7 @@ def ask(prompt, drafter, seed=None):
     else:
         b["temperature"] = 0.0
     body = json.dumps(b).encode()
-    req = urllib.request.Request(API + "/v1/chat/completions", body,
-                                 {"content-type": "application/json"})
+    req = urllib.request.Request(API + "/v1/chat/completions", body, HEADERS)
     t0 = time.time()
     with urllib.request.urlopen(req, timeout=900) as r:
         d = json.loads(r.read())

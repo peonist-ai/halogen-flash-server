@@ -85,6 +85,7 @@ the changelog can credit them. See [Community](#community).
   and [1M context](#1m-context-opt-in-and-a-different-configuration),
   [attention budget](#attention-budget-opt-in-and-a-different-configuration),
   [composable context](#composable-context-an-opt-in-preview),
+  [an API key](#api-key-require-one-on-the-api-port-opt-in),
   [request records](#request-records-a-log-of-what-your-clients-send-opt-in)
 - **[Troubleshooting](#troubleshooting)**:
   [will not start](#if-the-server-will-not-start-out-of-memory),
@@ -117,7 +118,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -168,7 +169,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -944,7 +945,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -960,7 +961,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -976,7 +977,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -1152,8 +1153,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.3 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.3 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.4 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.4 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1329,7 +1330,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1496,7 +1497,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1538,7 +1539,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4 \
   MODE [FILE] [flags]
 ```
 
@@ -2312,6 +2313,20 @@ This is a preview, and the flag and defaults may change. On the roadmap for it:
   message, and an optional on-disk store that survives a restart and holds
   far more than the in-memory one.
 
+### API key: require one on the API port, opt-in
+
+By default the API port answers anyone who can reach it. To require a key,
+start the server with `-e HALOGEN_API_KEY=<key>`, or with
+`HALOGEN_API_KEY_FILE` pointing at a mounted file that holds it. Clients send
+the key the way they already send one: `Authorization: Bearer <key>` (the
+OpenAI SDKs, Codex, curl) or `x-api-key: <key>` (the Anthropic SDK, Claude
+Code with `ANTHROPIC_API_KEY`). `/health` stays open for health checks; every
+other route answers 401 without the key, the NPU models' routes included.
+Separate several keys with commas to rotate them. A variable that is set but
+empty is refused at startup, so a key that failed to expand in your shell
+cannot leave the port open. The engine's own port (8730) is not covered:
+never publish it.
+
 ### Request records: a log of what your clients send, opt-in
 
 The server can keep a record of the requests it answers: which API and client
@@ -2331,15 +2346,16 @@ podman run --rm --name halogen -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
   -v ~/halogen-records:/records -e HALOGEN_RECORD_DIR=/records \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 ```
 
 The startup log then says `request records ON in /records`, with the text
 fields, the size cap and the retention, and `/health` carries a
 `request_records` block (written, dropped, bytes, the text fields).
 
-**Read this before you turn it on for a server other people can reach.** The
-API port has no authentication, and `HALOGEN_RECORD_TEXT` defaults to `all`.
+**Read this before you turn it on for a server other people can reach.**
+Unless `HALOGEN_API_KEY` is set, the API port has no authentication, and
+`HALOGEN_RECORD_TEXT` defaults to `all`.
 Everything anyone sends to the port is written to the directory, the text
 included. Keep the port on a network you trust, or set
 `HALOGEN_RECORD_TEXT=none` to keep only the per-request lines with no text.

@@ -12,7 +12,7 @@
 #   podman run --rm -it --device /dev/kfd --device /dev/dri \
 #     --group-add keep-groups --ipc=host --ulimit memlock=-1:-1 \
 #     -v /path/to/halogen-models:/models:ro \
-#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+#     -p 8731:8731 ghcr.io/peonist-ai/halogen-flash-server:0.17.4
 #
 # This two-container file starts no NPU engine: for the NPU use docker-compose.npu.yml
 # (one container, the same image).
@@ -43,7 +43,7 @@
 # both, but the fix is this file: one tag, changed in both places.
 services:
   engine:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.17.4
     command: ["engine"]
     environment:
       # Separate netns from the api service, so the engine must listen on all
@@ -154,13 +154,16 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/peonist-ai/halogen-flash-server:0.17.3
+    image: ghcr.io/peonist-ai/halogen-flash-server:0.17.4
     command: ["api"]
     depends_on:
       engine:
         condition: service_healthy
     environment:
       HALOGEN_ENGINE: engine:8730
+      # Require an API key on 8731 (clients send `Authorization: Bearer KEY`
+      # or `x-api-key: KEY`). Set but empty refuses to start.
+      # HALOGEN_API_KEY: ${HALOGEN_API_KEY:?set HALOGEN_API_KEY}
     volumes:
       # Read-only, and only so the front-end can find tokenizer/ in the same
       # directory. Set HALOGEN_TOKENIZER instead if your tokenizer lives

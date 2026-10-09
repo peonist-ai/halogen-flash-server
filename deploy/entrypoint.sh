@@ -886,13 +886,13 @@ memlock_note() {
   fi
 }
 
-FE_ONLY_FLAGS="HALOGEN_ENABLE_THINKING HALOGEN_ENGINE_PING_S HALOGEN_ENGINE_PROBE_S \
+FE_ONLY_FLAGS="HALOGEN_API_KEY HALOGEN_API_KEY_FILE HALOGEN_ENABLE_THINKING HALOGEN_ENGINE_PING_S HALOGEN_ENGINE_PROBE_S \
 HALOGEN_FREQUENCY_PENALTY HALOGEN_KEEPALIVE_TIMEOUT HALOGEN_MAX_THINKING_TOKENS \
 HALOGEN_MAX_TOKENS_DEFAULT HALOGEN_MIN_P HALOGEN_MODEL_ID HALOGEN_PRESENCE_PENALTY \
 HALOGEN_REASONING_EFFORT HALOGEN_RECORD_DAYS HALOGEN_RECORD_DIR HALOGEN_RECORD_GIB \
 HALOGEN_RECORD_TEXT HALOGEN_REPETITION_PENALTY HALOGEN_SSE_KEEPALIVE_S \
 HALOGEN_TEMPERATURE HALOGEN_TEMPLATE_UNCHECKED HALOGEN_THINKING_ANSWER_ROOM \
-HALOGEN_TOP_K HALOGEN_TOP_P"
+HALOGEN_TOKENIZE_REUSE HALOGEN_TOP_K HALOGEN_TOP_P"
 ENGINE_ENV_U=()
 for _v in $FE_ONLY_FLAGS; do ENGINE_ENV_U+=(-u "$_v"); done
 unset _v
@@ -1166,7 +1166,7 @@ npu_finetune_ready() {
     out="/tmp/halogen-npu/$name.hnpw"; mkdir -p /tmp/halogen-npu
     echo "halogen npu: $p is read-only, so $name is converted into the container at every start; mount the models volume read-write once to keep the result beside it"
   fi
-  case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; generate) task="chat completions" ;; image) task=images ;; esac
+  case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; seqcls) task=classification ;; generate) task="chat completions" ;; image) task=images ;; esac
   echo "halogen npu: $name ($p): a fine-tune of $base, served for $task"
   "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale || {
     echo "halogen npu: converting $p for the NPU failed (above); nothing was started" >&2; return 1; }
@@ -1446,7 +1446,7 @@ bench|sweep)
   echo "halogen bench: loading model (cold load can take minutes)"
   wait_for_engine "$ENG_PORT" "$ENGINE_PID" /tmp/halogen-engine.log || exit 1
 
-  python3 /halogen/tools/serve_api.py \
+  env -u HALOGEN_API_KEY -u HALOGEN_API_KEY_FILE python3 /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "127.0.0.1:$ENG_PORT" \
     --host 127.0.0.1 --port "$API_PORT" \

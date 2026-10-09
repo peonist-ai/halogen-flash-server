@@ -8,13 +8,17 @@ import sys
 import time
 import urllib.request
 
+HEADERS = {"content-type": "application/json"}
+if os.environ.get("HALOGEN_API_KEY", "").strip():
+    HEADERS["authorization"] = ("Bearer "
+                                + os.environ["HALOGEN_API_KEY"].split(",")[0].strip())
+
 FILLER = ("The unified memory architecture changes how inference engines "
           "schedule work across the accelerator and the host processor. ")
 
 def post(api, body, timeout=1800):
     req = urllib.request.Request(api + "/v1/chat/completions",
-                                 json.dumps(body).encode(),
-                                 {"content-type": "application/json"})
+                                 json.dumps(body).encode(), HEADERS)
     t0 = time.time()
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.loads(r.read())

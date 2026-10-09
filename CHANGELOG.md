@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.17.4
+
+API keys you can turn on, larger models on the NPU, and faster prompt
+reading on the default checkpoint. The Flash checkpoints are unchanged. At
+temperature 0 the output is still byte-identical to serial greedy decode.
+For the report behind the larger NPU models: issue #154
+([@nr23730](https://github.com/nr23730)).
+
+### Added
+
+- **API keys, opt-in.** Set `HALOGEN_API_KEY` (one key, or several separated
+  by commas) or `HALOGEN_API_KEY_FILE`, and every route but `/health` needs a
+  key, sent as `Authorization: Bearer <key>` or `x-api-key: <key>`, the way
+  the OpenAI and Anthropic clients already send one. Unset, nothing changes.
+- **Larger models on the NPU** (#154): `decider-4b`, `qwen3-embedding-4b`
+  and `qwen3-reranker-4b` by name in `HALOGEN_NPU_MODELS`, and fine-tunes of
+  Qwen3-Embedding-4B and Qwen3-Reranker-4B from a `/models` path, the way
+  the 0.6B fine-tunes load today.
+- **Your own classifiers on the NPU.** A Hugging Face sequence-classification
+  fine-tune of a supported size, loaded from a `/models` path, answers on
+  `POST /classify`.
+
+### Changed
+
+- **Prompts are read a little faster on the default checkpoint.** Their
+  results can differ from 0.17.3's in the last digits, as with any change of
+  kernel, so a near-tie token, or the text a fixed `seed` gives, can differ
+  too.
+- **The first token comes sooner on long conversations.** The server
+  prepares a long multi-turn history faster before it starts generating, most
+  on agent sessions with many messages. The prompt it sends is unchanged.
+- **Images and large embedding requests on the NPU are a little faster.**
+  The images and the embeddings themselves are unchanged.
+
 ## 0.17.3
 
 Faster sampled decoding, request records you can turn on, and one fix for
