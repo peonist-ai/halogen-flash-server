@@ -118,7 +118,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 That is the whole thing. It fetches the weights on first start (about 111 GiB, so
@@ -169,7 +169,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.
@@ -555,7 +555,18 @@ which read 913k against a 655k pool in issue #74). Beside them,
 `halogen:draft_tokens_total`, `halogen:draft_tokens_accepted_total`,
 `halogen:structured_requests_total`, and since 0.11.5 `halogen:kv_pool_positions`
 and `halogen:kv_pool_reserved_tokens` (the front end's reservation, the old
-meaning). Always on, no flag, no engine round trip.
+meaning). Since 0.17.5 (#156) it also carries the prompt cache's main
+numbers: `halogen:cache_hits_total`, `halogen:cache_misses_total`,
+`halogen:cache_prompt_tokens_saved_total`, `halogen:cache_entries`,
+`halogen:cache_bytes`, `halogen:cache_evicted_total`, the disk tier's
+`halogen:cache_disk_enabled`, `halogen:cache_disk_bytes`,
+`halogen:cache_disk_budget_bytes` and `halogen:cache_disk_hits_total`, and
+`halogen:kv_pool_waiting_for_room`. Beside them `halogen:engine_up` (the
+probe `/health` reports), `halogen:busy_for_seconds` (how long the oldest
+request has run) and `halogen:build_info`. A scrape never stalls on a busy
+engine: the cache numbers are the engine's last report, refreshed in the
+background, and `halogen:cache_stats_age_seconds` says how old it is.
+`GET /cache` keeps the full report. Always on, no flag.
 
 **Cache and pool occupancy in the log** (since 0.11.5; #73): every
 request's `serve_api:` line carries the cached share of its prompt, the
@@ -628,6 +639,21 @@ feature off (the 400 of 0.7.0 comes back).
 Verified against the Codex CLI driving real tasks end to end, and separately
 against the official `openai` Python SDK, which parses every event into its own
 typed models.
+
+**Prompt progress** (since 0.17.5). `"return_progress": true` on a streamed
+`/v1/chat/completions` or `/v1/completions` request adds chunks with an
+empty `choices` list and a `prompt_progress` object while the prompt is
+read, before the first token, in the shape llama.cpp's server sends:
+
+- `total`: the prompt's tokens;
+- `cache`: how many of them came from the prompt cache;
+- `processed`: how many are read so far, the cached ones included;
+- `time_ms`: milliseconds since prompt processing started.
+
+The first chunk opens at the cached count and the last has `processed`
+equal to `total`. A bar of the work left is `(processed - cache) /
+(total - cache)`. Without `stream` the field is ignored; the Messages and
+Responses routes have no such field. It never changes the reply.
 
 ### Claude Code and the Anthropic Messages API
 
@@ -838,20 +864,6 @@ above. Options, in the order worth trying:
   holds this much of one.
 - **Lower `HALOGEN_KV_POOL_POSITIONS`.** Fewer conversations stay resident at
   once; each one's speed and its answers are unchanged.
-- **`HALOGEN_FLASH_PIN_TRUNK=0`** gives a great deal of memory back and costs
-  **several times the decode speed** (6 tokens/s against 37 on the
-  reference machine) and a fixed cost on every prompt of 64 tokens or more,
-  which copies each layer's experts onto the GPU once: about 7 s when the
-  weights are in the file cache (the whole reason for the setting is that
-  they are no longer locked there) and 25 to 50 s when the kernel has let
-  them go to disk. Measured: a 32,768-token prompt in 26.6 s against 26.7
-  pinned and 8,192 in 8.8 against 7.1 with the weights cached; served, a
-  6,500-token prompt in 28 s and 51 s on the first request after a start.
-  It is a last resort, not a tuning option. Through 0.12.1 it did not work
-  at the shipped settings at all (the first request ended the server with
-  `internal sizing error in the per-forward arena`, issue #83); since
-  0.12.2 it does. It applies to w4b only. v2 refuses it at startup.
-
 - **`HALOGEN_WEIGHTS_LOCK=1`** (0.13.2, opt-in) is for the other direction:
   a host that is already short. "Reclaimable page cache" above is not only
   a reporting problem. The weights are registered with the GPU as ordinary
@@ -893,6 +905,21 @@ above. Options, in the order worth trying:
   can move by compaction is not held still by this flag; if that turns out
   to matter, the next step is a pinned allocation, and it will be a
   different value of the same flag.
+
+- **`HALOGEN_FLASH_PIN_TRUNK=0`**, w4b only (v2 and ht43 refuse it at
+  startup): gives a great deal of memory back and costs
+  **several times the decode speed** (6 tokens/s against 37 on the
+  reference machine) and a fixed cost on every prompt of 64 tokens or more,
+  which copies each layer's experts onto the GPU once: about 7 s when the
+  weights are in the file cache (the whole reason for the setting is that
+  they are no longer locked there) and 25 to 50 s when the kernel has let
+  them go to disk. Measured: a 32,768-token prompt in 26.6 s against 26.7
+  pinned and 8,192 in 8.8 against 7.1 with the weights cached; served, a
+  6,500-token prompt in 28 s and 51 s on the first request after a start.
+  It is a last resort, not a tuning option. Through 0.12.1 it did not work
+  at the shipped settings at all (the first request ended the server with
+  `internal sizing error in the per-forward arena`, issue #83); since
+  0.12.2 it does.
 
 Compacting memory afterwards does not help, because the memory this server
 holds cannot be moved. If you need to reclaim it, stop the server.
@@ -945,7 +972,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_POOL_POSITIONS=262144 \
   -e HALOGEN_KV_SLOTS=2 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 **The smallest footprint at the full context.** The prefill arena halves.
@@ -961,7 +988,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 **If 131k of context is enough.** The pool cannot be smaller than one
@@ -977,7 +1004,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_KV_SLOTS=2 \
   -e HALOGEN_MAX_TOK=16384 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 **Beside other GPU servers, count the hardware queues.** Another project
@@ -1153,8 +1180,8 @@ produced byte-identical output on every case.**
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.4 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.4 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.17.5 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.17.5 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
@@ -1330,7 +1357,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -1497,7 +1524,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 
@@ -1539,7 +1566,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5 \
   MODE [FILE] [flags]
 ```
 
@@ -2346,7 +2373,7 @@ podman run --rm --name halogen -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
   -v ~/halogen-records:/records -e HALOGEN_RECORD_DIR=/records \
-  ghcr.io/peonist-ai/halogen-flash-server:0.17.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.17.5
 ```
 
 The startup log then says `request records ON in /records`, with the text

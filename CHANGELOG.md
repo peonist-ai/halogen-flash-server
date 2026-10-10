@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.17.5
+
+Faster prompt reading and drafted decoding, prompt progress you can ask for
+on the stream, the prompt cache on `/metrics`, and fixes for long host memory
+stalls and for stopping the container. The checkpoints are unchanged. At
+temperature 0 the output is still byte-identical to serial greedy decode.
+For the reports: issues #85 ([@zom-2018](https://github.com/zom-2018)),
+#156 ([@0x62ash](https://github.com/0x62ash)) and #157
+([@jane-alesi](https://github.com/jane-alesi)).
+
+### Added
+
+- **Prompt progress on the stream, opt-in.** Send `"return_progress": true`
+  on a streamed `/v1/chat/completions` or `/v1/completions` request and the
+  stream carries `prompt_progress` chunks while the prompt is read, before
+  the first token, in the shape llama.cpp's server sends: `total`, `cache`,
+  `processed` and `time_ms`. Without the field nothing changes.
+- **`HALOGEN_NEXT_TOKEN_S`** (#85): how long a stream waits between two
+  tokens before it answers 504. By default it now follows the engine
+  watchdog's own settings.
+- **The prompt cache on `/metrics`** (#156): hits, misses, prompt tokens
+  saved, entries, bytes and evictions, the disk tier's size and hits,
+  whether a request is waiting for room in the KV pool, whether the engine
+  is answering, and `halogen:build_info`. A scrape never stalls on a busy
+  engine. `/cache` keeps the full report.
+
+### Fixed
+
+- **A stream no longer fails with a 504 while the server is waiting out a
+  host memory stall it has not judged a wedge** (#85). The wait between two
+  tokens used to be a fixed 300 s, shorter than the watchdog's own patience,
+  so a request could fail seconds before the engine answered again.
+- **The startup note on a full host no longer suggests
+  `HALOGEN_FLASH_PIN_TRUNK=0` to checkpoints that refuse it** (#85).
+- **The stop path no longer depends on the image's files** (#157): on a
+  host whose runtime removes the container's root filesystem during a stop,
+  the grace periods and the after-exit memory check now still wait, and the
+  stop no longer logs ~190 errors.
+- **A stop you asked for exits 0.** Every stop of the default mode exited 1,
+  so a systemd unit logged a failure each time. A component that ends on its
+  own still exits 1.
+
+### Changed
+
+- **Prompts are read faster on both checkpoints, and drafted decoding is a
+  little faster.** Greedy output is unchanged. A fixed `seed` can give
+  different sampled text than on 0.17.4; each reply is still a sample from
+  the same distribution.
+- **The prompt cache saves new conversations faster** when many arrive, as
+  on a server shared by several agents.
+
 ## 0.17.4
 
 API keys you can turn on, larger models on the NPU, and faster prompt

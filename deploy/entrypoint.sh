@@ -729,61 +729,90 @@ wait_for_engine() {
   done
 }
 
+wd_stat_state() {
+
+  local s=""
+  { read -r s < "$1" || [ -n "$s" ]; } 2>/dev/null || { echo ""; return 0; }
+  s=${s##*) }
+  echo "${s%% *}"
+}
+wd_sleep() {
+
+  local _x rc=0
+  2>/dev/null read -rt "$1" _x <> <(:) || rc=$?
+  [ "$rc" -gt 128 ] || sleep "$1"
+}
 wd_state() {
 
   local proc="${_hg_proc:-/proc}" pid="$1" f st main="?"
   for f in "$proc/$pid/task/"*/stat; do
     [ -r "$f" ] || continue
-    st=$(sed 's/.*) //' "$f" 2>/dev/null | cut -d' ' -f1 || true)
+    st=$(wd_stat_state "$f")
     [ "$st" = "D" ] && { echo D; return 0; }
     [ "${f%/stat}" = "$proc/$pid/task/$pid" ] && main="$st"
   done
   echo "$main"
 }
 wd_compact() {
-  local proc="${_hg_proc:-/proc}"
-  awk '/^compact_stall /{print $2; exit}' "$proc/vmstat" 2>/dev/null || true
+  local proc="${_hg_proc:-/proc}" k v _r
+  { while read -r k v _r; do
+      [ "$k" = compact_stall ] && { echo "$v"; return 0; }
+    done < "$proc/vmstat"; } 2>/dev/null || true
 }
-wd_gtt_gib() {
-  local sys="${_hg_sys:-/sys}" f
+
+wd_gtt_tenths() {
+  local sys="${_hg_sys:-/sys}" f u q r
   for f in "$sys"/class/drm/card*/device/mem_info_gtt_used; do
     [ -r "$f" ] || continue
-    awk -v u="$(cat "$f" 2>/dev/null || echo 0)" 'BEGIN{printf "%.1f", u/1073741824}' || true
+    u=""; { read -r u < "$f"; } 2>/dev/null
+    case "$u" in ''|*[!0-9]*) u=0 ;; esac
+    q=$(( u * 10 / 1073741824 )); r=$(( u * 10 % 1073741824 ))
+    if [ "$r" -gt 536870912 ] || { [ "$r" -eq 536870912 ] && [ $((q % 2)) -eq 1 ]; }; then
+      q=$((q + 1))
+    fi
+    echo "$q"
     return 0
   done
   echo "?"
 }
+wd_gtt_gib() {
+  local q; q=$(wd_gtt_tenths)
+  case "$q" in "?") echo "?" ;; *) echo "$((q / 10)).$((q % 10))" ;; esac
+}
 
 wd_main_state() {
-  local f="${_hg_proc:-/proc}/$1/task/$1/stat"
+  local f="${_hg_proc:-/proc}/$1/task/$1/stat" st
   [ -r "$f" ] || { echo "?"; return 0; }
-  sed 's/.*) //' "$f" 2>/dev/null | cut -d' ' -f1 || echo "?"
+  st=$(wd_stat_state "$f")
+  echo "${st:-?}"
 }
 wd_alive() { [ -d "${_hg_proc:-/proc}/$1" ] && [ "$(wd_main_state "$1")" != "Z" ]; }
 
 wd_gtt_after_exit() {
-  local t=0 g
+  local t=0 q="?"
   while [ $t -lt 6 ]; do
-    g=$(wd_gtt_gib)
-    case "$g" in "?") break;; esac
-    awk -v g="$g" 'BEGIN{exit !(g < 1.0)}' && break
-    sleep 1; t=$((t + 1))
+    q=$(wd_gtt_tenths)
+    case "$q" in "?") break;; esac
+    [ "$q" -lt 10 ] && break
+    wd_sleep 1; t=$((t + 1))
   done
-  echo "halogen: GTT in use after the engine exited: ${g:-?} GiB (${t}s after)" >&2
-  if [ "${g:-?}" != "?" ] && awk -v g="$g" 'BEGIN{exit !(g >= 2.0)}'; then
+  local g="?"
+  [ "$q" != "?" ] && g="$((q / 10)).$((q % 10))"
+  echo "halogen: GTT in use after the engine exited: ${g} GiB (${t}s after)" >&2
+  if [ "$q" != "?" ] && [ "$q" -ge 20 ]; then
     echo "halogen: WARNING the driver has not released this engine's device memory. If the figure does not fall (cat /sys/class/drm/card*/device/mem_info_gtt_used on the host), the next start will hang at \"reserving the KV pool\"; reboot the host first (issue #79)." >&2
   fi
 }
 stop_engine() {
   local pid="$1" t=0 st rc=0
   kill -TERM "$pid" 2>/dev/null || true
-  while wd_alive "$pid" && [ $t -lt 30 ]; do sleep 1; t=$((t + 1)); done
+  while wd_alive "$pid" && [ $t -lt 30 ]; do wd_sleep 1; t=$((t + 1)); done
   if wd_alive "$pid"; then
     st=$(wd_state "$pid")
     echo "halogen: the engine did not exit on SIGTERM within ${t}s (state ${st}); sending SIGKILL" >&2
     kill -KILL "$pid" 2>/dev/null || true
     t=0
-    while wd_alive "$pid" && [ $t -lt 30 ]; do sleep 1; t=$((t + 1)); done
+    while wd_alive "$pid" && [ $t -lt 30 ]; do wd_sleep 1; t=$((t + 1)); done
   fi
   if wd_alive "$pid"; then
     echo "halogen: the engine is still alive ${t}s after SIGKILL (state $(wd_state "$pid")): it is inside the kernel and nothing in this container can end it. GTT in use now: $(wd_gtt_gib) GiB. The host needs a reboot before the next start (issue #79)." >&2
@@ -791,6 +820,41 @@ stop_engine() {
   fi
   wait "$pid" 2>/dev/null || rc=$?
   return "$rc"
+}
+
+all_stop_trap() {
+  HG_STOP=1; NPU_STOP=1
+
+  kill -TERM "$ENGINE_PID" $NPU_PID 2>/dev/null || true
+}
+stop_clean() {
+  local r
+  [ "${HG_STOP:-0}" = 1 ] || return 1
+  for r in "$@"; do case "$r" in 0|143) ;; *) return 1 ;; esac; done
+  return 0
+}
+all_takedown() {
+  local wrc="$1" rc=0 nrc=0
+  if [ "${HG_STOP:-0}" = 1 ]; then
+    echo "halogen: stop requested; shutting down" >&2
+  elif [ -n "$NPU_PID" ] && ! kill -0 "$NPU_PID" 2>/dev/null; then
+    echo "halogen npu: the NPU engine exited (rc=$wrc); shutting down" >&2
+  else
+    echo "halogen: a component exited (rc=$wrc); shutting down" >&2
+  fi
+  kill -TERM "$API_PID" $NPU_PID 2>/dev/null || true
+
+  [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null || true
+
+  [ -n "$WATCHDOG_PID" ] && wait "$WATCHDOG_PID" 2>/dev/null || true
+  stop_engine "$ENGINE_PID" || rc=$?
+  wait "$API_PID" 2>/dev/null || true
+  [ -n "$NPU_PID" ] && { wait "$NPU_PID" 2>/dev/null || nrc=$?; }
+  npu_fclk_release
+
+  wd_gtt_after_exit
+  stop_clean "$rc" "$nrc" && exit 0
+  exit 1
 }
 engine_pong() {
   ( exec 3<>"/dev/tcp/127.0.0.1/${1}" || exit 1
@@ -801,6 +865,7 @@ engine_pong() {
 
 engine_watchdog() {
   local port="$1" pid="$2"
+
   local limit="${HALOGEN_ENGINE_WATCHDOG_S:-180}" step=15 silent=0
   if [ "$limit" -le 0 ]; then
     echo "halogen: engine watchdog OFF (HALOGEN_ENGINE_WATCHDOG_S=$limit)"
@@ -888,7 +953,7 @@ memlock_note() {
 
 FE_ONLY_FLAGS="HALOGEN_API_KEY HALOGEN_API_KEY_FILE HALOGEN_ENABLE_THINKING HALOGEN_ENGINE_PING_S HALOGEN_ENGINE_PROBE_S \
 HALOGEN_FREQUENCY_PENALTY HALOGEN_KEEPALIVE_TIMEOUT HALOGEN_MAX_THINKING_TOKENS \
-HALOGEN_MAX_TOKENS_DEFAULT HALOGEN_MIN_P HALOGEN_MODEL_ID HALOGEN_PRESENCE_PENALTY \
+HALOGEN_MAX_TOKENS_DEFAULT HALOGEN_MIN_P HALOGEN_MODEL_ID HALOGEN_NEXT_TOKEN_S HALOGEN_PRESENCE_PENALTY \
 HALOGEN_REASONING_EFFORT HALOGEN_RECORD_DAYS HALOGEN_RECORD_DIR HALOGEN_RECORD_GIB \
 HALOGEN_RECORD_TEXT HALOGEN_REPETITION_PENALTY HALOGEN_SSE_KEEPALIVE_S \
 HALOGEN_TEMPERATURE HALOGEN_TEMPLATE_UNCHECKED HALOGEN_THINKING_ANSWER_ROOM \
@@ -905,7 +970,8 @@ start_engine() {
     --ck "$HALOGEN_CHECKPOINT" --port "$ENG_PORT" --bind "$BIND" \
     --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
-  trap 'kill -TERM "$ENGINE_PID" 2>/dev/null || true' TERM INT
+  HG_STOP=0
+  trap 'HG_STOP=1; kill -TERM "$ENGINE_PID" 2>/dev/null || true' TERM INT
   if ! wait_for_engine "$ENG_PORT" "$ENGINE_PID"; then
     kill -TERM "$ENGINE_PID" 2>/dev/null || true
     wait "$ENGINE_PID" 2>/dev/null || true
@@ -928,8 +994,14 @@ start_engine() {
 
   [ -n "$WATCHDOG_PID" ] && wait "$WATCHDOG_PID" 2>/dev/null || true
   RC=0; stop_engine "$ENGINE_PID" || RC=$?
-  echo "halogen: engine exited (rc=$RC, the component that ended this: $WRC); shutting down" >&2
+  if [ "$HG_STOP" = 1 ]; then
+    echo "halogen: stop requested; engine exited (rc=$RC)" >&2
+  else
+    echo "halogen: engine exited (rc=$RC, the component that ended this: $WRC); shutting down" >&2
+  fi
   wd_gtt_after_exit
+
+  stop_clean "$RC" && exit 0
   [ "$RC" -ne 0 ] && exit "$RC"
   exit "$WRC"
 }
@@ -1380,7 +1452,8 @@ all)
       --port "$ENG_PORT" --bind 127.0.0.1 \
       --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
-  trap 'NPU_STOP=1; kill -TERM "$ENGINE_PID" $NPU_PID 2>/dev/null || true' TERM INT
+  HG_STOP=0
+  trap all_stop_trap TERM INT
 
   echo "halogen: waiting for engine on $ENG_PORT (cold load can take minutes)"
   if ! wait_for_engine "$ENG_PORT" "$ENGINE_PID"; then
@@ -1410,23 +1483,7 @@ all)
   set +e
 
   WRC=0; wait -n "$ENGINE_PID" "$API_PID" $WATCHDOG_PID $NPU_PID || WRC=$?
-  if [ -n "$NPU_PID" ] && [ "${NPU_STOP:-0}" != 1 ] && ! kill -0 "$NPU_PID" 2>/dev/null; then
-    echo "halogen npu: the NPU engine exited (rc=$WRC); shutting down" >&2
-  else
-    echo "halogen: a component exited (rc=$WRC); shutting down" >&2
-  fi
-  kill -TERM "$API_PID" $NPU_PID 2>/dev/null || true
-
-  [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null || true
-
-  [ -n "$WATCHDOG_PID" ] && wait "$WATCHDOG_PID" 2>/dev/null || true
-  stop_engine "$ENGINE_PID" || true
-  wait "$API_PID" 2>/dev/null || true
-  [ -n "$NPU_PID" ] && { wait "$NPU_PID" 2>/dev/null || true; }
-  npu_fclk_release
-
-  wd_gtt_after_exit
-  exit 1
+  all_takedown "$WRC"
   ;;
 bench|sweep)
   MODE="$1"
