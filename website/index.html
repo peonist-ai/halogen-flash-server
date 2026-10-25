@@ -12,15 +12,15 @@
 <div class="copy">
 <h1>Serving the local frontier.</h1>
 <p class="lede"><strong>halogen™</strong> is local inference that behaves like a frontier API. Qwen3.8-Flash-Next and a set of small NPU models, served from one AMD Strix Halo machine over the APIs your agents already speak.</p>
-<div class="panel"><span class="c1"></span><span class="c2"></span><div class="bar"><span>Release 0.18.15</span><button class="copy-btn" type="button" data-target="run">Copy</button></div><pre id="run" tabindex="0"><code>mkdir -p ~/halogen-models
+<div class="panel"><span class="c1"></span><span class="c2"></span><div class="bar"><span>Release {{version}}</span><button class="copy-btn" type="button" data-target="run">Copy</button></div><pre id="run" tabindex="0"><code>mkdir -p ~/halogen-models
 
 podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.15</code></pre></div>
-<p class="note">Set the BIOS carve-out (UMA frame buffer) to its minimum, not Auto: this engine wants host RAM, not dedicated VRAM. The weights, about 111 GiB, are fetched on first start. The server answers on port 8731, OpenAI-compatible.</p>
+  ghcr.io/peonist-ai/halogen-flash-server:{{version}}</code></pre></div>
+<p class="note">Set the BIOS carve-out (UMA frame buffer) to its minimum, not Auto: this engine wants host RAM, not dedicated VRAM. The weights, about {{fig:req.weights}}, are fetched on first start. The server answers on port 8731, OpenAI-compatible.</p>
 <p class="quiet"><a href="docs/getting-started/">Read the Quickstart</a></p>
 </div>
 <div class="art"><div class="emb" role="img" aria-label="The halogen emblem: a ring of brass around carved stone, with glowing red runes"></div></div>
@@ -29,11 +29,11 @@ podman run --rm -p 8731:8731 \
 <section class="stats" aria-labelledby="nums"><div class="wrap">
 <h2 id="nums" class="kicker" style="font-size:.8rem;font-family:var(--display);letter-spacing:.2em">Measured</h2>
 <div class="row">
-<div class="tip"><i></i><i></i><i></i><i></i><span class="l">An agent turn, start to last byte</span><span class="n">4.2<small> s</small></span><span class="c">Context of 30,000 to 96,000 tokens. Median of 115 turns, about 200 tokens of answer each.</span></div>
-<div class="tip"><i></i><i></i><i></i><i></i><span class="l">Prefill, 8,192-token prompt</span><span class="n">1,821<small> tok/s</small></span><span class="c">The image's own <code>sweep</code>, synthetic prompt, prompt cache off.</span></div>
-<div class="tip"><i></i><i></i><i></i><i></i><span class="l">Decode, repetitive output</span><span class="n">up to 94<small> tok/s</small></span><span class="c">73 writing code, 54 prose. Decode depends on how predictable the text is.</span></div>
+<div class="tip"><i></i><i></i><i></i><i></i><span class="l">An agent turn, start to last byte</span><span class="n">{{val:stat.turn}}<small> {{unit:stat.turn}}</small></span><span class="c">Context of 30,000 to 96,000 tokens. Median of 115 turns, about 200 tokens of answer each.</span></div>
+<div class="tip"><i></i><i></i><i></i><i></i><span class="l">Prefill, 8,192-token prompt</span><span class="n">{{val:stat.prefill}}<small> {{unit:stat.prefill}}</small></span><span class="c">The image's own <code>sweep</code>, synthetic prompt, prompt cache off.</span></div>
+<div class="tip"><i></i><i></i><i></i><i></i><span class="l">Decode, repetitive output</span><span class="n">up to {{val:stat.decode.max}}<small> {{unit:stat.decode.max}}</small></span><span class="c">{{val:stat.decode.code}} writing code, {{val:stat.decode.prose}} prose. Decode depends on how predictable the text is.</span></div>
 </div>
-<p class="cond">All three: published 0.18.0 image, default configuration (v2 checkpoint, prompt cache on, greedy, thinking off), AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The agent turns are three sessions of a coding agent fixing a bug in a Python repository, on the client's clock. <a href="benchmarks.html">Every table, with its conditions</a></p>
+<p class="cond">All three: published {{at:stat}} image, default configuration (v2 checkpoint, prompt cache on, greedy, thinking off), AMD Ryzen AI Max+ 395, 128 GB, about {{fig:setup.power}} of sustained package power. The agent turns are three sessions of a coding agent fixing a bug in a Python repository, on the client's clock. <a href="benchmarks.html">Every table, with its conditions</a></p>
 </div></section>
 
 <section class="blk" style="padding-top:var(--gap)"><div class="divider" aria-hidden="true"><i></i><svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2l9 12-9 12-9-12z"/><path d="M14 8v12M10 12l4 3 4-3"/></svg><i></i></div></section>
@@ -67,9 +67,7 @@ podman run --rm -p 8731:8731 \
 <section class="blk" aria-labelledby="patch"><div class="wrap two">
 <div class="l"><p class="kicker">From the changelog</p><h2 id="patch">Patch notes</h2><p style="margin-top:20px" class="mute">Newest first. The changelog gives release numbers, not dates.</p><p class="more small"><a href="https://github.com/peonist-ai/halogen-flash-server/blob/main/CHANGELOG.md">The whole changelog</a></p></div>
 <div class="r"><ol class="timeline">
-<li><h3>0.18.15</h3><p>Long answers no longer stop inside a code block, and a request whose client has gone no longer holds up the requests behind it. The Flash checkpoints are unchanged.</p></li>
-<li><h3>0.18.14</h3><p>Text to speech on the NPU, and a long answer the prompt cache had cut short now gets the room it asked for. Generation is a little faster. The Flash checkpoints are unchanged. At temperature 0 each reply is byte-identical to 0.18.13's, to the same request alone and to serial greedy decode.</p></li>
-<li><h3>0.18.13</h3><p>Replies that are streaming keep moving while another request's long prompt is read in, a short request no longer waits behind one, and a fault on the NPU no longer takes the server down. The Flash checkpoints are unchanged.</p></li>
+{{patch_notes}}
 </ol></div></div></section>
 
 <section class="blk" aria-labelledby="req"><div class="wrap">
@@ -77,12 +75,12 @@ podman run --rm -p 8731:8731 \
 <h2 id="req">System requirements</h2>
 <div class="hd" aria-hidden="true"><span>Required</span><span>Notes</span></div>
 <dl>
-<div class="rw"><dt>Machine</dt><dd><p>An AMD Strix Halo machine: Ryzen AI Max+ 395, 128 GB. One GPU, gfx1151 only; the build rejects other architectures. Built to own its machine: the weights stay resident and the KV pool is reserved up front, which on a 128 GB machine leaves roughly twelve gigabytes free.</p></dd></div>
+<div class="rw"><dt>Machine</dt><dd><p>An AMD Strix Halo machine: Ryzen AI Max+ 395, 128 GB. One GPU, gfx1151 only; the build rejects other architectures. Built to own its machine: the weights stay resident and the KV pool is reserved up front, which on a 128 GB machine leaves roughly {{fig:req.free}} free.</p></dd></div>
 <div class="rw"><dt>Operating system</dt><dd><p>Native Linux only. WSL2 is not a supported host.</p></dd></div>
 <div class="rw"><dt>Kernel</dt><dd><p>AMD's two gfx1151 fixes to the KFD driver, with <code>CONFIG_HSA_AMD_SVM</code> built in. AMD's floor is Linux 6.18.4, Ubuntu 24.04 HWE <code>6.17.0-19.19~24.04.2</code>, or Ubuntu 24.04 OEM <code>6.14.0-1018</code>, each or later.</p></dd></div>
 <div class="rw"><dt>BIOS</dt><dd><p>The UMA frame buffer (dedicated graphics memory) at its smallest explicit value, not Auto.</p></dd></div>
 <div class="rw"><dt>Containers</dt><dd><p>Podman with <code>--group-add keep-groups</code>. On Docker, use <code>--group-add video --group-add render</code> instead.</p></dd></div>
-<div class="rw"><dt>Disk</dt><dd><p>The first start fetches the weights, about 111 GiB.</p></dd></div>
+<div class="rw"><dt>Disk</dt><dd><p>The first start fetches the weights, about {{fig:req.weights}}.</p></dd></div>
 <div class="rw"><dt>NPU models (optional)</dt><dd><p>The NPU driver, XRT with its NPU plugin, the NPU firmware, and the IOMMU on. The GPU's fabric clock held at its top speed, or the server refuses to start and prints the commands for your machine.</p></dd></div>
 </dl>
 <p class="src">Sources: <a href="docs/troubleshooting/#the-host-settings-these-numbers-were-measured-on">host settings</a>, <a href="docs/host-setup/">a machine of its own</a>, <a href="docs/NPU/">NPU host details</a>, <a href="docs/getting-started/">Quickstart</a>, <a href="docs/limits/">limits</a>.</p>

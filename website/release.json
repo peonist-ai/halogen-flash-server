@@ -1,0 +1,1133 @@
+{
+  "version": "0.18.15",
+  "release_date": "2026-10-25",
+  "patch_notes": [
+    {
+      "version": "0.18.15",
+      "text": "Long answers no longer stop inside a code block, and a request whose client has gone no longer holds up the requests behind it. The Flash checkpoints are unchanged."
+    },
+    {
+      "version": "0.18.14",
+      "text": "Text to speech on the NPU, and a long answer the prompt cache had cut short now gets the room it asked for. Generation is a little faster. The Flash checkpoints are unchanged. At temperature 0 each reply is byte-identical to 0.18.13's, to the same request alone and to serial greedy decode."
+    },
+    {
+      "version": "0.18.13",
+      "text": "Replies that are streaming keep moving while another request's long prompt is read in, a short request no longer waits behind one, and a fault on the NPU no longer takes the server down. The Flash checkpoints are unchanged."
+    }
+  ],
+  "figures": {
+    "decode.kind.code.v2": {
+      "value": "72.9",
+      "unit": "tok/s",
+      "label": "Decode, writing code, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.code.ht43": {
+      "value": "69.0",
+      "unit": "tok/s",
+      "label": "Decode, writing code, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.edit.v2": {
+      "value": "81.0",
+      "unit": "tok/s",
+      "label": "Decode, editing about 8,000 tokens of code, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.edit.ht43": {
+      "value": "78.6",
+      "unit": "tok/s",
+      "label": "Decode, editing about 8,000 tokens of code, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.tool.v2": {
+      "value": "70.6",
+      "unit": "tok/s",
+      "label": "Decode, an agent's tool call after reading a file of about 3,000 tokens, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.tool.ht43": {
+      "value": "72.9",
+      "unit": "tok/s",
+      "label": "Decode, an agent's tool call after reading a file of about 3,000 tokens, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.prose.v2": {
+      "value": "54.3",
+      "unit": "tok/s",
+      "label": "Decode, English prose, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.prose.ht43": {
+      "value": "52.3",
+      "unit": "tok/s",
+      "label": "Decode, English prose, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.lang.v2": {
+      "value": "52.2",
+      "unit": "tok/s",
+      "label": "Decode, six other languages, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.lang.ht43": {
+      "value": "49.7",
+      "unit": "tok/s",
+      "label": "Decode, six other languages, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.doc.v2": {
+      "value": "54.8",
+      "unit": "tok/s",
+      "label": "Decode, explaining a document of about 8,000 tokens, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.doc.ht43": {
+      "value": "54.2",
+      "unit": "tok/s",
+      "label": "Decode, explaining a document of about 8,000 tokens, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.rep.v2.lo": {
+      "value": "83",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, lowest of five repetitive prompts, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.rep.v2.hi": {
+      "value": "94",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, highest of five repetitive prompts, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.rep.v2.one": {
+      "value": "61",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, one word 300 times, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.rep.ht43.lo": {
+      "value": "80",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, lowest of five repetitive prompts, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.rep.ht43.hi": {
+      "value": "91",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, highest of five repetitive prompts, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.kind.rep.ht43.one": {
+      "value": "63",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, one word 300 times, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "decode.rel.prev.v2": {
+      "value": "66.66",
+      "unit": "tok/s",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.14, v2",
+      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.14 side of an A/B pair.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "decode.rel.cur.v2": {
+      "value": "65.88",
+      "unit": "tok/s",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.15, v2",
+      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.15 side of an A/B pair.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "decode.rel.prev.ht43": {
+      "value": "67.16",
+      "unit": "tok/s",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.14, ht43",
+      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.14 side of an A/B pair.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "decode.rel.cur.ht43": {
+      "value": "66.11",
+      "unit": "tok/s",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.15, ht43",
+      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.15 side of an A/B pair.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "decode.rel.note.drift": {
+      "value": "1",
+      "unit": "%",
+      "label": "Generation with drafting reads lower in 0.18.15 by about this much",
+      "conditions": "Generation with drafting, 0.18.15 against 0.18.14, with the answer guard and the reply-end keep on by default; with HALOGEN_ANSWER_GUARD=0 and HALOGEN_FORK=0 it reads 0.18.14's figure.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.off.8k.v2": {
+      "value": "1,821",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, sweep, cache off, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.off.8k.ht43": {
+      "value": "1,630",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, sweep, cache off, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.off.32k.v2": {
+      "value": "1,740",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, sweep, cache off, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.off.32k.ht43": {
+      "value": "1,604",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, sweep, cache off, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.off.128k.v2": {
+      "value": "1,675",
+      "unit": "tok/s",
+      "label": "Prefill of a 131,072-token prompt, sweep, cache off, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.off.128k.ht43": {
+      "value": "1,551",
+      "unit": "tok/s",
+      "label": "Prefill of a 131,072-token prompt, sweep, cache off, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.on.8k.v2": {
+      "value": "1,646",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, sweep, cache on (a cold request), v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.on.8k.ht43": {
+      "value": "1,502",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, sweep, cache on (a cold request), ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.on.32k.v2": {
+      "value": "1,806",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, sweep, cache on (a cold request), v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.on.32k.ht43": {
+      "value": "1,647",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, sweep, cache on (a cold request), ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "prefill.rel.prev.v2.8k": {
+      "value": "1,876",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.14, v2",
+      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.cur.v2.8k": {
+      "value": "1,878",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.15, v2",
+      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.prev.v2.32k": {
+      "value": "1,822",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.14, v2",
+      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.cur.v2.32k": {
+      "value": "1,824",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.15, v2",
+      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.prev.ht43.8k": {
+      "value": "1,824",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.14, ht43",
+      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.cur.ht43.8k": {
+      "value": "1,806",
+      "unit": "tok/s",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.15, ht43",
+      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.prev.ht43.32k": {
+      "value": "1,854",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.14, ht43",
+      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.rel.cur.ht43.32k": {
+      "value": "1,849",
+      "unit": "tok/s",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.15, ht43",
+      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
+      "measured_at": "0.18.15",
+      "source": {
+        "page": "performance/",
+        "anchor": "01815-against-01814"
+      }
+    },
+    "prefill.real.drop": {
+      "value": "8 to 12",
+      "unit": "%",
+      "label": "Real text through the chat template, cold, below the sweep's cold rate",
+      "conditions": "Agent sessions' cold first turns, real source code through the chat template with tools, against the sweep's cold rate; AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "setup.power": {
+      "value": "85",
+      "unit": "W",
+      "label": "Sustained package power the figures were measured at",
+      "conditions": "Package power sustained during the measurements, AMD Ryzen AI Max+ 395, 128 GB.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "setup.clock.prefill": {
+      "value": "2,358",
+      "unit": "MHz",
+      "label": "GPU clock, median, during prefill",
+      "conditions": "The published 0.18.0 image, one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "setup.clock.decode": {
+      "value": "2,500 to 2,750",
+      "unit": "MHz",
+      "label": "GPU clock during decode",
+      "conditions": "The published 0.18.0 image, one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.turn.v2": {
+      "value": "4.2",
+      "unit": "s",
+      "label": "Agent turn, median turn, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.turn.ht43": {
+      "value": "5.3",
+      "unit": "s",
+      "label": "Agent turn, median turn, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.ft.v2": {
+      "value": "1.6",
+      "unit": "s",
+      "label": "Agent turn, median first token, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.ft.ht43": {
+      "value": "1.6",
+      "unit": "s",
+      "label": "Agent turn, median first token, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.ft90.v2": {
+      "value": "2.3",
+      "unit": "s",
+      "label": "Agent turn, 90th percentile first token, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.ft90.ht43": {
+      "value": "2.4",
+      "unit": "s",
+      "label": "Agent turn, 90th percentile first token, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.tokens.v2": {
+      "value": "196",
+      "unit": "tokens",
+      "label": "Agent turn, median answer length, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.tokens.ht43": {
+      "value": "263",
+      "unit": "tokens",
+      "label": "Agent turn, median answer length, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.rate.v2": {
+      "value": "83",
+      "unit": "tok/s",
+      "label": "Agent turn, decode rate within the answer, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.rate.ht43": {
+      "value": "77",
+      "unit": "tok/s",
+      "label": "Agent turn, decode rate within the answer, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.cold.v2": {
+      "value": "21.2",
+      "unit": "s",
+      "label": "Agent turn, first turn of a 34,174-token prompt, cold, v2",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "agent.cold.ht43": {
+      "value": "22.1",
+      "unit": "s",
+      "label": "Agent turn, first turn of a 34,174-token prompt, cold, ht43",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Three sessions of a coding agent a checkpoint, 30,000 to 96,000 tokens of context, answers capped at 512 tokens; times are the client's, over HTTP, request to last byte.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "many.3.v2.off": {
+      "value": "74.6",
+      "unit": "tok/s",
+      "label": "Three requests at once, greedy code, total, HALOGEN_SPEC_GROUP=0, v2",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.3.v2.on": {
+      "value": "91.6",
+      "unit": "tok/s",
+      "label": "Three requests at once, greedy code, total, default, v2",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.3.ht43.off": {
+      "value": "72.7",
+      "unit": "tok/s",
+      "label": "Three requests at once, greedy code, total, HALOGEN_SPEC_GROUP=0, ht43",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.3.ht43.on": {
+      "value": "88.8",
+      "unit": "tok/s",
+      "label": "Three requests at once, greedy code, total, default, ht43",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.4.v2.off": {
+      "value": "85.3",
+      "unit": "tok/s",
+      "label": "Four requests at once, greedy code, total, HALOGEN_SPEC_GROUP=0, v2",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.4.v2.on": {
+      "value": "103.0",
+      "unit": "tok/s",
+      "label": "Four requests at once, greedy code, total, default, v2",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.4.ht43.off": {
+      "value": "83.7",
+      "unit": "tok/s",
+      "label": "Four requests at once, greedy code, total, HALOGEN_SPEC_GROUP=0, ht43",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.4.ht43.on": {
+      "value": "99.4",
+      "unit": "tok/s",
+      "label": "Four requests at once, greedy code, total, default, ht43",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.sampled.3": {
+      "value": "13 to 14",
+      "unit": "%",
+      "label": "Gain for sampled prose (temperature 0.7) at three requests at once",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "many.sampled.4": {
+      "value": "9 to 10",
+      "unit": "%",
+      "label": "Gain for sampled prose (temperature 0.7) at four requests at once",
+      "conditions": "0.18.11 with HALOGEN_SPEC_GROUP=0 against its default; each request its own short prompt, 384 tokens, greedy code, prompt cache off, mean of two server starts on each of two further machines of the same kind for each checkpoint.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "performance/",
+        "anchor": "01811-against-01810"
+      }
+    },
+    "stat.turn": {
+      "value": "4.2",
+      "unit": "s",
+      "label": "An agent turn, start to last byte",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Agent turns are three sessions of a coding agent fixing a bug in a Python repository, on the client's clock. Context of 30,000 to 96,000 tokens, median of 115 turns.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "stat.prefill": {
+      "value": "1,821",
+      "unit": "tok/s",
+      "label": "Prefill, 8,192-token prompt",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Prefill rows are the image's own sweep on a synthetic prompt. Prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "stat.decode.max": {
+      "value": "94",
+      "unit": "tok/s",
+      "label": "Decode, repetitive output, highest of five prompts",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "stat.decode.code": {
+      "value": "73",
+      "docs_value": "72.9",
+      "unit": "tok/s",
+      "label": "Decode, writing code",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "stat.decode.prose": {
+      "value": "54",
+      "docs_value": "54.3",
+      "unit": "tok/s",
+      "label": "Decode, English prose",
+      "conditions": "The published 0.18.0 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "performance/",
+        "anchor": "0180-both-checkpoints"
+      }
+    },
+    "req.weights": {
+      "value": "111",
+      "unit": "GiB",
+      "label": "Weights fetched on the first start",
+      "conditions": "The Flash model's weights, fetched on the first start.",
+      "measured_at": "0.15.0",
+      "source": {
+        "page": "getting-started/",
+        "anchor": "quickstart"
+      }
+    },
+    "req.free": {
+      "value": "twelve",
+      "unit": "gigabytes",
+      "label": "Memory left free on a 128 GB machine",
+      "conditions": "The weights stay resident and the KV pool is reserved up front; on a 128 GB machine this leaves roughly this much free.",
+      "measured_at": "0.5.6",
+      "source": {
+        "page": "host-setup/",
+        "anchor": "give-it-a-machine-of-its-own"
+      }
+    },
+    "npu.decisions.files.lite": {
+      "value": "2.5",
+      "unit": "GB",
+      "label": "Files on disk, d3-lite",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.files.nano": {
+      "value": "3.0",
+      "unit": "GB",
+      "label": "Files on disk, d3-nano",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.short.lite": {
+      "value": "80",
+      "unit": "ms",
+      "label": "One question, short state, d3-lite",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.short.nano": {
+      "value": "110",
+      "unit": "ms",
+      "label": "One question, short state, d3-nano",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t600.lite": {
+      "value": "190",
+      "unit": "ms",
+      "label": "One question at 600 tokens, d3-lite",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t600.nano": {
+      "value": "320",
+      "unit": "ms",
+      "label": "One question at 600 tokens, d3-nano",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t3500.lite": {
+      "value": "650",
+      "unit": "ms",
+      "label": "One question at 3,500 tokens, d3-lite",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t3500.nano": {
+      "value": "1.1",
+      "unit": "s",
+      "label": "One question at 3,500 tokens, d3-nano",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.pic256.lite": {
+      "value": "0.2",
+      "unit": "s",
+      "label": "One question with a 256 x 256 picture, d3-lite",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.pic256.nano": {
+      "value": "0.35",
+      "unit": "s",
+      "label": "One question with a 256 x 256 picture, d3-nano",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.pic768.lite": {
+      "value": "0.5",
+      "unit": "s",
+      "label": "One question with a 768 x 768 picture, d3-lite",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.pic768.nano": {
+      "value": "0.9",
+      "unit": "s",
+      "label": "One question with a 768 x 768 picture, d3-nano",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.shared.pic": {
+      "value": "15 to 25",
+      "unit": "%",
+      "label": "Longer picture questions on d3-nano when both models are loaded",
+      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
+      "measured_at": "0.18.11",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.batch.two": {
+      "value": "0.38",
+      "unit": "s",
+      "label": "A batch of 2 inputs, or of 8, of short inputs",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks. A batch holds up to 8 inputs of up to 512 tokens each, padded to the bucket.",
+      "measured_at": "0.16.3",
+      "source": {
+        "page": "NPU/",
+        "anchor": "batching"
+      }
+    },
+    "npu.batch.short": {
+      "value": "0.07",
+      "unit": "s",
+      "label": "A single input up to 128 tokens",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.16.3",
+      "source": {
+        "page": "NPU/",
+        "anchor": "batching"
+      }
+    },
+    "npu.batch.long": {
+      "value": "0.09",
+      "unit": "s",
+      "label": "A single input above 128 tokens",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.16.3",
+      "source": {
+        "page": "NPU/",
+        "anchor": "batching"
+      }
+    },
+    "npu.images.512": {
+      "value": "3",
+      "unit": "seconds",
+      "label": "A 512x512 image",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "NPU/",
+        "anchor": "images"
+      }
+    },
+    "npu.images.1024": {
+      "value": "10",
+      "unit": "seconds",
+      "label": "A 1024x1024 image",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.0",
+      "source": {
+        "page": "NPU/",
+        "anchor": "images"
+      }
+    },
+    "npu.mem.image": {
+      "value": "8",
+      "unit": "GB",
+      "label": "Host memory held while the image model is loaded",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.17.0",
+      "source": {
+        "page": "NPU/",
+        "anchor": "images"
+      }
+    },
+    "npu.images.edit.one": {
+      "value": "5",
+      "unit": "seconds",
+      "label": "An edit, one picture",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.12",
+      "source": {
+        "page": "NPU/",
+        "anchor": "image-edits"
+      }
+    },
+    "npu.images.edit.two": {
+      "value": "7.5",
+      "unit": "seconds",
+      "label": "An edit, two pictures",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.12",
+      "source": {
+        "page": "NPU/",
+        "anchor": "image-edits"
+      }
+    },
+    "npu.images.edit.three": {
+      "value": "10",
+      "unit": "seconds",
+      "label": "An edit, three pictures",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.12",
+      "source": {
+        "page": "NPU/",
+        "anchor": "image-edits"
+      }
+    },
+    "npu.images.edit.four": {
+      "value": "12.5",
+      "unit": "seconds",
+      "label": "An edit, four pictures",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.12",
+      "source": {
+        "page": "NPU/",
+        "anchor": "image-edits"
+      }
+    },
+    "npu.images.edit.1024": {
+      "value": "12.5",
+      "unit": "seconds",
+      "label": "An edit at 1024x1024",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.12",
+      "source": {
+        "page": "NPU/",
+        "anchor": "image-edits"
+      }
+    },
+    "npu.tts.06.speed": {
+      "value": "1.5",
+      "unit": "times",
+      "label": "qwen3-tts-0.6b-customvoice speed against real time (faster than)",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks. The talker runs on the NPU, the audio is decoded on the CPU.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-to-speech"
+      }
+    },
+    "npu.tts.06.first": {
+      "value": "0.3",
+      "unit": "seconds",
+      "label": "qwen3-tts-0.6b-customvoice, first audio",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-to-speech"
+      }
+    },
+    "npu.tts.17.first": {
+      "value": "0.4",
+      "unit": "seconds",
+      "label": "qwen3-tts-1.7b-customvoice, first audio",
+      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
+      "measured_at": "0.18.14",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-to-speech"
+      }
+    }
+  }
+}

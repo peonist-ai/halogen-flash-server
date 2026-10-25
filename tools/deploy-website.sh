@@ -11,6 +11,13 @@
 # delete the docs: the sync sees them. A stage without docs/index.html and the
 # search index is refused before any AWS call.
 #
+# website/*.html are templates: tools/site_release.py renders them from
+# website/release.json (the version, the patch notes, every measured number)
+# into the stage, and release.json itself is not published. Two gates: the
+# text checks run on the rendered pages, and `site_release.py check` fails if
+# release.json's version is not CHANGELOG.md's newest, or a figure's heading
+# or value is not in the built docs.
+#
 # Also at the root: llms.txt (copied from the repo) and sitemap.xml (site pages
 # plus the docs' pages).
 #
@@ -28,12 +35,23 @@ MODE="${1:-dry}"
 [ -f "$SRC/index.html" ] || { echo "no site at $SRC" >&2; exit 1; }
 [ ! -e "$SRC/docs" ] || { echo "website/docs would collide with the built docs" >&2; exit 1; }
 
+# Stage first: the site copied, its templates rendered over it, release.json
+# dropped (it is data, not published).
+command -v mkdocs >/dev/null || { echo "mkdocs not found (pip install -r docs/requirements.txt)" >&2; exit 1; }
+STAGE="$(mktemp -d)"
+LOG="$STAGE.log"
+trap 'rm -rf "$STAGE" "$LOG"' EXIT
+cp -R "$SRC/." "$STAGE/"
+python3 "$ROOT/tools/site_release.py" render "$SRC" "$STAGE"
+rm -f "$STAGE/release.json"
+
 # Public text rules the docs follow too: no em-dash or en-dash, and no
 # request to another host at runtime (plain links to our own pages only).
-# These are checks on the site's own files, not on the built docs.
+# These are checks on the site's own files (the rendered pages, the css and
+# release.json), not on the built docs.
 fail=0
-pages=("$SRC"/*.html "$SRC"/*.css)
-if grep -n -e "$(printf '\342\200\224')" -e "$(printf '\342\200\223')" "${pages[@]}"; then
+pages=("$STAGE"/*.html "$SRC"/*.css)
+if grep -n -e "$(printf '\342\200\224')" -e "$(printf '\342\200\223')" "${pages[@]}" "$SRC/release.json"; then
   echo "FAIL: em-dash or en-dash in the site" >&2; fail=1
 fi
 ext=$(grep -n -o -E '(src|href)="https?://[^"]+"|url\(["'\'']?https?://[^)]+' "${pages[@]}" \
@@ -45,11 +63,6 @@ fi
 echo "checks: OK"
 
 # One staged tree: the site, then the docs built into docs/.
-command -v mkdocs >/dev/null || { echo "mkdocs not found (pip install -r docs/requirements.txt)" >&2; exit 1; }
-STAGE="$(mktemp -d)"
-LOG="$STAGE.log"
-trap 'rm -rf "$STAGE" "$LOG"' EXIT
-cp -R "$SRC/." "$STAGE/"
 find "$STAGE" -name SOURCES.md -o -name '.*' -not -path "$STAGE" | xargs rm -rf
 mkdocs build --strict -q -f "$ROOT/mkdocs.yml" -d "$STAGE/docs"
 # llms.txt at the site root, and a root sitemap: the three site pages, then
@@ -79,7 +92,7 @@ done
 
 # Every link from the site into docs/ must resolve in the build, fragment included.
 bad=0
-for page in "$SRC"/*.html; do
+for page in "$STAGE"/*.html; do
   while IFS= read -r href; do
     path="${href#docs/}"; frag=""
     case "$path" in *'#'*) frag="${path#*#}"; path="${path%%#*}";; esac
@@ -93,6 +106,9 @@ for page in "$SRC"/*.html; do
 done
 [ "$bad" = 0 ] || exit 1
 echo "docs links from the site: OK"
+
+# Every figure on the site is in its docs section, and the version is the changelog's.
+python3 "$ROOT/tools/site_release.py" check "$SRC/release.json" "$STAGE/docs" "$ROOT/CHANGELOG.md"
 
 # Upload passes: NAME|DELETE|CACHE|CONTENT-TYPE|FILTERS, in aws's order (the
 # last matching filter wins; x: exclude, i: include; "*" matches across "/").
