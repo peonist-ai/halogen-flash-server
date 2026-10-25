@@ -3,6 +3,7 @@ site_description: Run Qwen3.8-Flash-Next on AMD Strix Halo — a dedicated ROCm/
 site_url: https://peonist.ai/halogen/docs/
 repo_url: https://github.com/peonist-ai/halogen-flash-server
 repo_name: peonist-ai/halogen-flash-server
+copyright: 'halogen is a product of Peonist, LLC · <a href="mailto:info@peonist.ai">info@peonist.ai</a>'
 docs_dir: docs
 
 theme:
