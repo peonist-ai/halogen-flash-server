@@ -1,5 +1,8 @@
 name: docs
 
+# GitHub Pages now only redirects to https://peonist.ai/halogen/docs/,
+# which the site workflow publishes.
+
 on:
   push:
     branches: [main]
@@ -9,6 +12,8 @@ on:
       - "llms.txt"
       - "mkdocs.yml"
       - "tools/check_docs.py"
+      - "tools/docs_redirects.py"
+      - "tools/check_redirects.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -32,10 +37,12 @@ jobs:
       - run: pip install -r docs/requirements.txt
       - run: python tools/check_docs.py
       - run: mkdocs build --strict
+      - run: python tools/docs_redirects.py site pages
+      - run: python tools/check_redirects.py --local site pages
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: pages
 
   deploy:
     needs: build
