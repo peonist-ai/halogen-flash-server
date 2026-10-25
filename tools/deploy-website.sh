@@ -11,6 +11,9 @@
 # delete the docs: the sync sees them. A stage without docs/index.html and the
 # search index is refused before any AWS call.
 #
+# Also at the root: llms.txt (copied from the repo) and sitemap.xml (site pages
+# plus the docs' pages).
+#
 # The site workflow (.github/workflows/site.yml) runs --go on every push to
 # main that touches the site or the docs. It needs SITE_BUCKET and
 # SITE_DISTRIBUTION in the environment; it only ever writes under
@@ -34,7 +37,7 @@ if grep -n -e "$(printf '\342\200\224')" -e "$(printf '\342\200\223')" "${pages[
   echo "FAIL: em-dash or en-dash in the site" >&2; fail=1
 fi
 ext=$(grep -n -o -E '(src|href)="https?://[^"]+"|url\(["'\'']?https?://[^)]+' "${pages[@]}" \
-  | grep -v -E 'href="https://(github\.com/peonist-ai/halogen-flash-server|discord\.gg/bcm6QknaV6)' || true)
+  | grep -v -E 'href="https://(github\.com/peonist-ai/halogen-flash-server|discord\.gg/bcm6QknaV6|peonist\.ai/)' || true)
 if [ -n "$ext" ]; then
   echo "$ext"; echo "FAIL: a link or asset on another host" >&2; fail=1
 fi
@@ -49,6 +52,21 @@ trap 'rm -rf "$STAGE" "$LOG"' EXIT
 cp -R "$SRC/." "$STAGE/"
 find "$STAGE" -name SOURCES.md -o -name '.*' -not -path "$STAGE" | xargs rm -rf
 mkdocs build --strict -q -f "$ROOT/mkdocs.yml" -d "$STAGE/docs"
+# llms.txt at the site root, and a root sitemap: the three site pages, then
+# every page the docs build lists.
+cp "$ROOT/llms.txt" "$STAGE/llms.txt"
+{
+  echo '<?xml version="1.0" encoding="UTF-8"?>'
+  echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+  for u in https://peonist.ai/halogen/ https://peonist.ai/halogen/benchmarks.html https://peonist.ai/halogen/models.html; do
+    echo "<url><loc>$u</loc></url>"
+  done
+  grep -o '<loc>[^<]*</loc>' "$STAGE/docs/sitemap.xml" | sed 's#^\(.*\)$#<url>\1</url>#' > "$STAGE/.docs-locs"
+  cat "$STAGE/.docs-locs"
+  echo '</urlset>'
+} > "$STAGE/sitemap.xml"
+[ -s "$STAGE/.docs-locs" ] || { echo "FAIL: the docs sitemap has no locs" >&2; exit 1; }
+rm -f "$STAGE/.docs-locs"
 # Not published: the docs' pip pin, and the gzipped sitemap (the CLI would
 # label it text/xml with no gzip encoding; sitemap.xml is the one we list).
 rm -f "$STAGE/docs/requirements.txt" "$STAGE/docs/sitemap.xml.gz"
@@ -82,16 +100,18 @@ echo "docs links from the site: OK"
 # Material assets run without --delete (a page cached for 5 minutes may still
 # name the previous hash), so the catch-all pass excludes them.
 B='i:docs/assets/stylesheets/*.min.css i:docs/assets/stylesheets/*.min.css.map i:docs/assets/javascripts/bundle.*.min.js i:docs/assets/javascripts/bundle.*.min.js.map i:docs/assets/javascripts/workers/*.min.js i:docs/assets/javascripts/workers/*.min.js.map'
-C='i:docs/search/search_index.json i:docs/sitemap.xml'
+C='i:docs/search/search_index.json i:docs/sitemap.xml i:sitemap.xml'
+L='i:llms.txt'
 PASSES=(
   # HTML: short cache, so an edit shows within minutes even before invalidation.
   "html|1|public, max-age=300|text/html; charset=utf-8|x:* i:*.html"
   "hashed|0|public, max-age=31536000, immutable||x:* $B"
   "index|1|public, max-age=300||x:* $C"
+  "llms|1|public, max-age=300|text/plain; charset=utf-8|x:* $L"
   # Fonts get an explicit type (the CLI's guess for .ttf varies by platform).
   "fonts|0|public, max-age=86400|font/ttf|x:* i:*.ttf"
   # Everything else (css, images, the font licence): one day.
-  "rest|1|public, max-age=86400||x:*.html x:*.ttf ${B//i:/x:} ${C//i:/x:}"
+  "rest|1|public, max-age=86400||x:*.html x:*.ttf ${B//i:/x:} ${C//i:/x:} ${L//i:/x:}"
 )
 
 # Would pass filters FILTERS transfer key KEY? (the include-by-default rule)

@@ -13,6 +13,8 @@ on:
       - "mkdocs.yml"
       - "tools/check_docs.py"
       - "tools/docs_redirects.py"
+      - "overrides/**"
+      - "tools/mkdocs_hooks.py"
       - "tools/check_redirects.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:

@@ -7,6 +7,8 @@
 > byte-identical to serial greedy decode; speculation is a pure speed
 > optimization, verified on every release.
 
+The same pages, rendered: https://peonist.ai/halogen/docs/
+
 Start with AGENTS.md for the deploy-and-debug playbook, then the page you
 need below. All links are raw markdown, readable without a browser.
 

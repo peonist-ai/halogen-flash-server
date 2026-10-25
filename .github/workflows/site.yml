@@ -11,6 +11,8 @@ on:
       - "README.md"
       - "tools/check_docs.py"
       - "tools/deploy-website.sh"
+      - "overrides/**"
+      - "tools/mkdocs_hooks.py"
       - ".github/workflows/site.yml"
   workflow_dispatch:
     inputs:
