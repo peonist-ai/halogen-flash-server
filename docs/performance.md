@@ -6,6 +6,16 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.18.16 against 0.18.15
+
+The 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.15 table below; 0.18.15 is the left figure of each pair. Generation with drafting reads about 1.5% above 0.18.15's figure and at or above 0.18.14's: the answer guard no longer costs any of it, and the reply-end keep is off by default. Prefill is unchanged:
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 65.94 / 66.80 tok/s | 66.47 / 67.54 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,874 / 1,821 vs 1,876 / 1,822 | 1,824 / 1,851 vs 1,824 / 1,856 |
+| prefill cache on (cold), 8,192 / 32,768 | 1,789 / 1,849 vs 1,786 / 1,850 | 1,807 / 1,854 vs 1,809 / 1,856 |
+
 ## 0.18.15 against 0.18.14
 
 The 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.14 table below; 0.18.14 is the left figure of each pair. Generation with drafting reads about 1% lower: the answer guard and the reply-end keep, both on by default, each cost a little of it (with `HALOGEN_ANSWER_GUARD=0` and `HALOGEN_FORK=0` it reads 0.18.14's figure). Prefill is unchanged:
@@ -350,8 +360,8 @@ produced byte-identical output on every case**, on both checkpoints.
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.15 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.15 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.16 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.16 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per

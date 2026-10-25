@@ -1,7 +1,11 @@
 {
-  "version": "0.18.15",
+  "version": "0.18.16",
   "release_date": "2026-10-25",
   "patch_notes": [
+    {
+      "version": "0.18.16",
+      "text": "The automatic reply-end keep is off by default again, a conversation the server moves aside to make room keeps its whole history, and generation with drafting is back to full speed. The Flash checkpoints are unchanged."
+    },
     {
       "version": "0.18.15",
       "text": "Long answers no longer stop inside a code block, and a request whose client has gone no longer holds up the requests behind it. The Flash checkpoints are unchanged."
@@ -9,10 +13,6 @@
     {
       "version": "0.18.14",
       "text": "Text to speech on the NPU, and a long answer the prompt cache had cut short now gets the room it asked for. Generation is a little faster. The Flash checkpoints are unchanged. At temperature 0 each reply is byte-identical to 0.18.13's, to the same request alone and to serial greedy decode."
-    },
-    {
-      "version": "0.18.13",
-      "text": "Replies that are streaming keep moving while another request's long prompt is read in, a short request no longer waits behind one, and a fault on the NPU no longer takes the server down. The Flash checkpoints are unchanged."
     }
   ],
   "figures": {

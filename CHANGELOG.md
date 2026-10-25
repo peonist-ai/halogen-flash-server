@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.18.16
+
+The automatic reply-end keep is off by default again, a conversation the server moves aside to make room keeps its whole
+history, and generation with drafting is back to full speed. The Flash checkpoints are unchanged. At temperature 0 every
+reply is byte-identical to 0.18.15's with `HALOGEN_FORK=0`.
+
+### Changed
+
+- **The automatic keep is off by default (#207, #208).** 0.18.15 kept each conversation's state at the end of its reply
+  for its next turn. That keep could stall a request for up to ten minutes with one core busy (#207), and it put every
+  conversation behind the fault fixed below (#208). Each turn reads its history in again, as in 0.18.14. Named keeps
+  (`X-Halogen-Keep`) and `HALOGEN_FORK_MAP=claude-code` are unchanged. Thanks @peterurbanec and @dgalaganov for the
+  reports and logs.
+- **Generation with drafting is back to full speed**, about 1.5% faster than 0.18.15 and at or above 0.18.14
+  ([measured](docs/performance.md#measured)). Replies are unchanged.
+
+### Fixed
+
+- **A conversation moved aside to make room keeps its kept reply (towards #208).** When the KV pool slides an idle
+  conversation aside so another can grow, it now copies the state kept for that conversation's next turn whole. Before,
+  it copied the conversation's history but not its last reply, so a turn started from a named keep or the Claude Code map
+  could read another conversation's text in place of its own reply. With the automatic keep, every conversation was
+  exposed to this in 0.18.15.
+
 ## 0.18.15
 
 A conversation's next turn now starts where the previous reply ended, long answers no longer stop inside a code
