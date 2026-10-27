@@ -60,7 +60,7 @@ The Anthropic Messages API: `system` blocks, `content` blocks, `tools` and
 | route | what it is |
 |---|---|
 | `GET /health` | the build's own account: version (front end and engine), `supported` fields, `structured_output`, `token_budget_aliases` and `max_tokens_default`, `thinking_answer_room`, `indexer_budget`, `chat_template` (path, sha256, check), `request_records`, `composable_context`, `stop_ids` (every token id that ends a reply), `queued` and `longest_wait_s` (how long the oldest queued request has waited, 0 when none). Always open, even with an API key set |
-| `GET /v1/models` | the one model id this server serves |
+| `GET /v1/models` | the one model id this server serves, with `architecture.input_modalities` (`["text", "image"]` with the vision tower loaded, `["text"]` without) and `output_modalities` (`["text"]`) |
 | `GET /cache` | the prompt cache's full report: `hit_rate` and `token_hit_rate`, and under `pool`: `positions`, `used`, `usage_ratio`, `busy_regions`, `held_regions`, `room_clamped`, `moved`, `dropped`, `waiting_for_room`, `waiting_s`, `relocated`, `cold_resorts`; `stale_s` when the engine is mid-prefill |
 | `GET /metrics` | Prometheus format, llama-server's names plus `halogen:` counters; a scrape never stalls on a busy engine. [The metric table](codex.md#observability) |
 | `GET /props` | llama.cpp's shape: `total_slots`, `default_generation_settings.n_ctx` and `.params.n_predict`, `chat_template`, `modalities.vision`, `build_info` |

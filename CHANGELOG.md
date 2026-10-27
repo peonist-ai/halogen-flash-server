@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.18.17
+
+A fix for conversations that keep their state between turns on a full server, plus four fixes and one addition
+from the issue tracker. The Flash checkpoints are unchanged. At temperature 0 every reply is byte-identical to
+0.18.16's, and speed is unchanged ([measured](docs/performance.md#measured)).
+
+### Fixed
+
+- **With a keep in use, a full KV pool no longer hands one conversation another's turn.** With
+  `HALOGEN_FORK_MAP=claude-code`, `HALOGEN_FORK_MAP=auto` or named keeps (`X-Halogen-Keep`), when the pool had no
+  room and two conversations shared an opening (the same system prompt, as a coding agent's main thread and its
+  subagents do), the server could make room by writing one conversation's turn over rows another conversation had
+  kept for its next turn. That conversation then answered as if the other's turn were its own. The server now leaves
+  a conversation's kept rows alone when it makes room, and lets an automatic keep go first. At the defaults (no keep)
+  nothing changes. Thanks @dgalaganov for the report that led here (#208), and to the Discord users who described
+  agents going off script.
+- **With `HALOGEN_FORK_MAP=auto`, a resumed conversation no longer waits on its own kept reply (#207).** A request
+  that resumed a conversation partway through its history could wait for the kept reply's timer, up to ten minutes,
+  with one core busy. It now takes its place at once, as with the keep off; a request waiting for room with nothing
+  running no longer keeps a core busy, and the server stops promptly while one waits. Thanks @peterurbanec for the
+  report and the logs.
+- **Claude Code's MCP tool search works on `/v1/messages`.** A `tool_result` holding `tool_reference` blocks, which
+  Claude Code sends after its tool search loads MCP tools, was refused with a 400, so each session paid a rejected
+  request and fell back to loading every tool up front (#210). Each reference now reads as a line naming the loaded
+  tool; every declared tool, `defer_loading` or not, is already in the prompt. Thanks @Tsury for the report and repro.
+- **A tool call's string argument that contains tool-call markup arrives as the model wrote it.** An argument holding
+  `</function>`, a whole example `<tool_call>` block or a repeated `<parameter=...>` tag (a parser fixture, a test, a
+  heredoc) was cut short, had another parameter overwritten, or gained a key the tool never declared, on every route,
+  streamed or not (#209). The parser now ends a call where its markup balances and opens a parameter only on a name not
+  yet written. Long file writes also cost the server less time per token. Thanks @Tsury for the report and cases, and
+  @eliasstepanik for the analysis.
+- **A short request starts during a long prompt even while `/metrics` is scraped (#212).** A `/metrics` or `/cache`
+  read during a long prompt made a short request that arrived after it wait for the whole prompt instead of starting
+  inside it: 41.5 s instead of about 1.5 s beside an 85,000-token prompt in our tests. Thanks @fiddlythings for the
+  report and the repro.
+
+### Added
+
+- **`/v1/models` says whether the model takes images.** Each model entry now carries `architecture.input_modalities`
+  (`["text", "image"]` with the vision tower loaded, `["text"]` without) and `output_modalities` (`["text"]`), in
+  OpenRouter's spelling, so a harness that builds its model list from `/v1/models` no longer needs the capability set
+  by hand. The value always matches `/health`'s `vision.enabled` (#211). Thanks @claudejaune for the request.
+
 ## 0.18.16
 
 The automatic reply-end keep is off by default again, a conversation the server moves aside to make room keeps its whole

@@ -15,7 +15,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.16
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.17
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -187,7 +187,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.16 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.17 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 

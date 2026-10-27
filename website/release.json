@@ -1,7 +1,11 @@
 {
-  "version": "0.18.16",
-  "release_date": "2026-10-25",
+  "version": "0.18.17",
+  "release_date": "2026-10-27",
   "patch_notes": [
+    {
+      "version": "0.18.17",
+      "text": "With a keep in use, a full server no longer hands one conversation another's turn. Claude Code's MCP tool search works, tool arguments that hold tool-call markup arrive whole, a short request starts during a long prompt while /metrics is scraped, and /v1/models says whether the model takes images. The Flash checkpoints are unchanged."
+    },
     {
       "version": "0.18.16",
       "text": "The automatic reply-end keep is off by default again, a conversation the server moves aside to make room keeps its whole history, and generation with drafting is back to full speed. The Flash checkpoints are unchanged."
@@ -9,10 +13,6 @@
     {
       "version": "0.18.15",
       "text": "Long answers no longer stop inside a code block, and a request whose client has gone no longer holds up the requests behind it. The Flash checkpoints are unchanged."
-    },
-    {
-      "version": "0.18.14",
-      "text": "Text to speech on the NPU, and a long answer the prompt cache had cut short now gets the room it asked for. Generation is a little faster. The Flash checkpoints are unchanged. At temperature 0 each reply is byte-identical to 0.18.13's, to the same request alone and to serial greedy decode."
     }
   ],
   "figures": {
@@ -215,58 +215,47 @@
       }
     },
     "decode.rel.prev.v2": {
-      "value": "66.66",
+      "value": "66.64",
       "unit": "tok/s",
-      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.14, v2",
-      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.14 side of an A/B pair.",
-      "measured_at": "0.18.14",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.16, v2",
+      "conditions": "The published 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.16 side of an A/B pair.",
+      "measured_at": "0.18.16",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "decode.rel.cur.v2": {
-      "value": "65.88",
+      "value": "66.64",
       "unit": "tok/s",
-      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.15, v2",
-      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.15 side of an A/B pair.",
-      "measured_at": "0.18.15",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.17, v2",
+      "conditions": "The published 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.17 side of an A/B pair.",
+      "measured_at": "0.18.17",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "decode.rel.prev.ht43": {
-      "value": "67.16",
+      "value": "67.54",
       "unit": "tok/s",
-      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.14, ht43",
-      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.14 side of an A/B pair.",
-      "measured_at": "0.18.14",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.16, ht43",
+      "conditions": "The published 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.16 side of an A/B pair.",
+      "measured_at": "0.18.16",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "decode.rel.cur.ht43": {
-      "value": "66.11",
+      "value": "67.53",
       "unit": "tok/s",
-      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.15, ht43",
-      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.15 side of an A/B pair.",
-      "measured_at": "0.18.15",
+      "label": "bench with drafting over ten prompt shapes, greedy, mean, 0.18.17, ht43",
+      "conditions": "The published 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. The 0.18.17 side of an A/B pair.",
+      "measured_at": "0.18.17",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
-      }
-    },
-    "decode.rel.note.drift": {
-      "value": "1",
-      "unit": "%",
-      "label": "Generation with drafting reads lower in 0.18.15 by about this much",
-      "conditions": "Generation with drafting, 0.18.15 against 0.18.14, with the answer guard and the reply-end keep on by default; with HALOGEN_ANSWER_GUARD=0 and HALOGEN_FORK=0 it reads 0.18.14's figure.",
-      "measured_at": "0.18.15",
-      "source": {
-        "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.off.8k.v2": {
@@ -380,91 +369,91 @@
       }
     },
     "prefill.rel.prev.v2.8k": {
-      "value": "1,876",
+      "value": "1,877",
       "unit": "tok/s",
-      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.14, v2",
-      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
-      "measured_at": "0.18.14",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.16, v2",
+      "conditions": "The published 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.16 side of an A/B pair.",
+      "measured_at": "0.18.16",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.cur.v2.8k": {
-      "value": "1,878",
+      "value": "1,877",
       "unit": "tok/s",
-      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.15, v2",
-      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
-      "measured_at": "0.18.15",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.17, v2",
+      "conditions": "The published 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.17 side of an A/B pair.",
+      "measured_at": "0.18.17",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.prev.v2.32k": {
-      "value": "1,822",
+      "value": "1,823",
       "unit": "tok/s",
-      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.14, v2",
-      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
-      "measured_at": "0.18.14",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.16, v2",
+      "conditions": "The published 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.16 side of an A/B pair.",
+      "measured_at": "0.18.16",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.cur.v2.32k": {
-      "value": "1,824",
+      "value": "1,823",
       "unit": "tok/s",
-      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.15, v2",
-      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
-      "measured_at": "0.18.15",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.17, v2",
+      "conditions": "The published 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.17 side of an A/B pair.",
+      "measured_at": "0.18.17",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.prev.ht43.8k": {
-      "value": "1,824",
+      "value": "1,821",
       "unit": "tok/s",
-      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.14, ht43",
-      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
-      "measured_at": "0.18.14",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.16, ht43",
+      "conditions": "The published 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.16 side of an A/B pair.",
+      "measured_at": "0.18.16",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.cur.ht43.8k": {
-      "value": "1,806",
+      "value": "1,821",
       "unit": "tok/s",
-      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.15, ht43",
-      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
-      "measured_at": "0.18.15",
+      "label": "Prefill of a 8,192-token prompt, cache off, 0.18.17, ht43",
+      "conditions": "The published 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.17 side of an A/B pair.",
+      "measured_at": "0.18.17",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.prev.ht43.32k": {
-      "value": "1,854",
+      "value": "1,851",
       "unit": "tok/s",
-      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.14, ht43",
-      "conditions": "The published 0.18.14 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.14 side of an A/B pair.",
-      "measured_at": "0.18.14",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.16, ht43",
+      "conditions": "The published 0.18.16 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.16 side of an A/B pair.",
+      "measured_at": "0.18.16",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.rel.cur.ht43.32k": {
-      "value": "1,849",
+      "value": "1,848",
       "unit": "tok/s",
-      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.15, ht43",
-      "conditions": "The published 0.18.15 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.15 side of an A/B pair.",
-      "measured_at": "0.18.15",
+      "label": "Prefill of a 32,768-token prompt, cache off, 0.18.17, ht43",
+      "conditions": "The published 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. Cache off; the 0.18.17 side of an A/B pair.",
+      "measured_at": "0.18.17",
       "source": {
         "page": "performance/",
-        "anchor": "01815-against-01814"
+        "anchor": "01817-against-01816"
       }
     },
     "prefill.real.drop": {
