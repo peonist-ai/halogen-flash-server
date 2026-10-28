@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.18.18
+
+A fixes-only release: fixes from the issue tracker and Discord, and ggml-org's official GGUF of this model now
+loads. The Flash checkpoints are unchanged. Apart from the fixes below, at temperature 0 every reply is
+byte-identical to 0.18.17's, and speed is unchanged ([measured](docs/performance.md#measured)).
+
+### Fixed
+
+- **Claude Code sessions that load tools on demand keep their prompt cache.** Since 0.18.17, each tool Claude Code's
+  tool search loaded (MCP tools included) made the server read the whole conversation again, tens of seconds on a
+  long session. A loaded tool now joins the conversation where Claude Code loads it, and the rest of the prompt stays
+  cached: in a Claude Code session with MCP tools, every turn reused all of the previous turn's prompt. If you set
+  `ENABLE_TOOL_SEARCH=false` as a workaround, you can remove it. Thanks to the Discord user who reported it.
+- **A short request that takes a paused reply's slot starts during a long prompt (#214).** With a reply paused by
+  `HALOGEN_RETRY_GRACE_S` (its client went away), a short request that needed its slot waited for another
+  conversation's whole long prompt to be read instead of starting inside it: 29.5 s instead of 0.5 to 1.4 s beside a
+  60,000-token prompt in our tests. A stop, a pause or a resume arriving during a long prompt no longer holds back a
+  short request that comes after it. Thanks @fiddlythings for the report and the analysis.
+- **A tool call's string argument holding a literal `</tool_call>` arrives whole (#216).** An argument with
+  `</function>`, `</parameter>` or a `<function=NAME>` tag followed by `</tool_call>` was cut there, and the rest
+  came back as content, streamed or not. A `</tool_call>` now ends a call only when the reply ends there or another
+  call follows. A call followed by prose now finishes at the end of the reply. Thanks @eliasstepanik for the report
+  and the cases.
+- **ggml-org's `Qwen3.8-Flash-Next-GGUF` (`IQ4_NL`) loads (#217).** Its lookup table is stored as `Q4_0`, which the
+  engine refused; it is now read losslessly. A GGUF re-encoded from an already quantized file (a tensor written
+  back as `F32`) is still refused, and the message now says why. Thanks @johnlkj for the report and the workaround.
+- The log no longer prints a progress line at every reply's second token.
+
+### Documentation
+
+- The Hugging Face repositories are linked: the Flash model's from the README and the Quickstart, and each NPU
+  model's beside its short name on the NPU page (#215). Thanks @kamjin3086.
+
 ## 0.18.17
 
 A fix for conversations that keep their state between turns on a full server, plus four fixes and one addition

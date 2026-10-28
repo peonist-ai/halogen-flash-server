@@ -15,7 +15,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.17
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -43,7 +43,13 @@ types is read on every tensor**, so bartowski's `IQ4_XS` loads as it is
 and so is a K-quant on `ssm_out`. The engine reorders that tensor's
 columns in 128-wide blocks at load and those formats' scale groups are 256
 wide, so a K-quant `ssm_out` is stored as the bf16 the engine computes it
-in. `Q6_K` on `ssm_out` is still refused. `Q4_1`, `Q2_K`,
+in. `Q6_K` on `ssm_out` is still refused. **Since 0.18.18 a `Q4_0` lookup
+table is read too**, exactly: ggml-org's official `Qwen3.8-Flash-Next-GGUF`
+stores its table that way, and its `IQ4_NL` build loads as it is (issue #217;
+WikiText-2 perplexity 3.821, against 3.817 for unsloth's `UD-IQ4_XS` on the
+same image). A file re-encoded from an already quantized one, with a tensor
+written back as `F32`, carries the first quantizer's rounding and is
+refused by the bf16-clean check: use the original file. `Q4_1`, `Q2_K`,
 `Q3_K` and the IQ2/IQ1 families stay **refused by name at startup**, before
 anything is loaded, because reading them needs kernels for their block
 layouts rather than a repack, and a lossy fallback would make "the same
@@ -187,7 +193,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.17 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.18 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 

@@ -16,10 +16,12 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.17
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
 ```
 
-That is the whole thing. It fetches the weights on first start (about 111 GiB, so
+That is the whole thing. It fetches the weights from
+[peonist-ai/halogen-qwen3.8-flash-next](https://huggingface.co/peonist-ai/halogen-qwen3.8-flash-next)
+on first start (about 111 GiB, so
 give it a while; the transfer resumes if interrupted; since 0.13.2 the log
 says how many gigabytes have arrived every 30 seconds instead of counting
 files) and serves an OpenAI-compatible endpoint on `:8731`, reachable from
@@ -67,7 +69,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.17
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.

@@ -6,6 +6,16 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.18.18 against 0.18.17
+
+The 0.18.18 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.17 table below; 0.18.17 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order. Generation and prefill are unchanged, every row within its run-to-run spread:
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 66.56 / 66.58 tok/s | 67.78 / 67.77 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,874 / 1,820 vs 1,876 / 1,821 | 1,820 / 1,850 vs 1,821 / 1,849 |
+| prefill cache on (cold), 8,192 / 32,768 | 1,785 / 1,847 vs 1,787 / 1,848 | 1,801 / 1,850 vs 1,807 / 1,851 |
+
 ## 0.18.17 against 0.18.16
 
 The 0.18.17 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.16 table below; 0.18.16 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order. Generation and prefill are unchanged, every row within its run-to-run spread:
@@ -370,8 +380,8 @@ produced byte-identical output on every case**, on both checkpoints.
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.17 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.17 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.18 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.18 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per

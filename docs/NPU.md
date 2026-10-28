@@ -71,7 +71,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.17
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -100,6 +100,33 @@ fetched and served like the others.
 
 Each holds about 5 GB in memory beside the Flash model. A fine-tune of either Qwen3 model, from a path under
 `/models`, loads the same way as at the smaller size.
+
+## Where the files are
+
+Each model's files are in its own Hugging Face repository, fetched by name when the model is listed in
+`HALOGEN_NPU_MODELS`. The Flash model's are in
+[peonist-ai/halogen-qwen3.8-flash-next](https://huggingface.co/peonist-ai/halogen-qwen3.8-flash-next).
+
+| model | repository |
+|---|---|
+| `decider-0.8b` | [peonist-ai/halogen-npu-decider-0.8b](https://huggingface.co/peonist-ai/halogen-npu-decider-0.8b) |
+| `decider-4b` | [peonist-ai/halogen-npu-decider-4b](https://huggingface.co/peonist-ai/halogen-npu-decider-4b) |
+| `d3-lite` | [peonist-ai/halogen-npu-d3-lite](https://huggingface.co/peonist-ai/halogen-npu-d3-lite) |
+| `d3-nano` | [peonist-ai/halogen-npu-d3-nano](https://huggingface.co/peonist-ai/halogen-npu-d3-nano) |
+| `qwen3-embedding-0.6b` | [peonist-ai/halogen-npu-qwen3-embedding-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-embedding-0.6b) |
+| `qwen3-embedding-4b` | [peonist-ai/halogen-npu-qwen3-embedding-4b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-embedding-4b) |
+| `embeddinggemma-2` | [peonist-ai/halogen-npu-embeddinggemma-2](https://huggingface.co/peonist-ai/halogen-npu-embeddinggemma-2) |
+| `wemm-embedding-4b` | [peonist-ai/halogen-npu-wemm-embedding-4b](https://huggingface.co/peonist-ai/halogen-npu-wemm-embedding-4b) |
+| `qwen3-reranker-0.6b` | [peonist-ai/halogen-npu-qwen3-reranker-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-reranker-0.6b) |
+| `qwen3-reranker-4b` | [peonist-ai/halogen-npu-qwen3-reranker-4b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-reranker-4b) |
+| `qwen3guard-gen-0.6b` | [peonist-ai/halogen-npu-qwen3guard-gen-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3guard-gen-0.6b) |
+| `qwen3guard-stream-0.6b` | [peonist-ai/halogen-npu-qwen3guard-stream-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3guard-stream-0.6b) |
+| `qwen3.5-2b` | [peonist-ai/halogen-npu-qwen3.5-2b](https://huggingface.co/peonist-ai/halogen-npu-qwen3.5-2b) |
+| `flux2-klein-4b` | [peonist-ai/halogen-npu-flux2-klein-4b](https://huggingface.co/peonist-ai/halogen-npu-flux2-klein-4b) |
+| `qwen3-asr-0.6b` | [peonist-ai/halogen-npu-qwen3-asr-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-asr-0.6b) |
+| `qwen3-asr-1.7b` | [peonist-ai/halogen-npu-qwen3-asr-1.7b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-asr-1.7b) |
+| `qwen3-tts-0.6b-customvoice` | [peonist-ai/halogen-npu-qwen3-tts-0.6b-customvoice](https://huggingface.co/peonist-ai/halogen-npu-qwen3-tts-0.6b-customvoice) |
+| `qwen3-tts-1.7b-customvoice` | [peonist-ai/halogen-npu-qwen3-tts-1.7b-customvoice](https://huggingface.co/peonist-ai/halogen-npu-qwen3-tts-1.7b-customvoice) |
 
 ## Decisions
 

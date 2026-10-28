@@ -56,9 +56,9 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.18.17: with a keep in use, a full server no longer hands one conversation another's turn;
-Claude Code's MCP tool search works, and tool arguments that hold tool-call markup arrive whole.
-[Measured](docs/performance.md#measured).
+0.18.18: Claude Code sessions that load tools on demand keep their prompt cache, a short request
+starts during a long prompt after a cancel or a retry, tool arguments holding a literal `</tool_call>`
+arrive whole, and ggml-org's GGUF loads. [Measured](docs/performance.md#measured).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
 point it at the file you already have (unsloth's `UD-IQ4_XS`, say) and it
@@ -105,8 +105,13 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.17
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
 ```
+
+The weights come from
+[peonist-ai/halogen-qwen3.8-flash-next](https://huggingface.co/peonist-ai/halogen-qwen3.8-flash-next)
+on Hugging Face; each NPU model's repository is listed on the
+[NPU page](docs/NPU.md#where-the-files-are).
 
 One condition first: **set the BIOS carve-out (UMA frame buffer) to its
 minimum**, not Auto: this engine wants host RAM, not dedicated VRAM. The
