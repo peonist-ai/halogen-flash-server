@@ -56,9 +56,10 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.18.18: Claude Code sessions that load tools on demand keep their prompt cache, a short request
-starts during a long prompt after a cancel or a retry, tool arguments holding a literal `</tool_call>`
-arrive whole, and ggml-org's GGUF loads. [Measured](docs/performance.md#measured).
+0.18.19: three requests at once decode about 3% faster, a request may carry more than
+64 images, an over-long prompt on `/v1/messages` gets the error Claude Code compacts on, and
+0.18.18's regressions in tool-call parsing and in image requests during a long prompt are fixed.
+[Measured](docs/performance.md#measured).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
 point it at the file you already have (unsloth's `UD-IQ4_XS`, say) and it
@@ -105,7 +106,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.19
 ```
 
 The weights come from

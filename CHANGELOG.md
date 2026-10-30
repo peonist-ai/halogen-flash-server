@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.18.19
+
+Slightly faster decoding with three requests at once, and fixes from the issue tracker. The Flash checkpoints are
+unchanged. At temperature 0 every reply is byte-identical to 0.18.18's, alone or beside other requests
+([measured](docs/performance.md#measured)).
+
+### Changed
+
+- **Three requests decoding at once are about 3% faster, and a request alone up to 1% faster.** Measured served, greedy and
+  sampled, against 0.18.18 on the same machines. At temperature 0 every reply is still byte-identical to the same
+  request run alone.
+
+### Fixed
+
+- **A request may carry more than 64 images (#218, #219).** The server refused any request with more than 64
+  images, so an agent session that reads a screenshot each turn failed on every turn after its 65th. There is no
+  fixed limit now: a request may carry as many images as fit in the context. Thanks @wangbinyq and @Tsury for the
+  reports.
+- **On `/v1/messages`, a prompt over the context is refused with the Anthropic API's own message** (`prompt is too
+  long: N tokens > M maximum`), which Claude Code compacts and retries on. Other endpoints keep their message.
+- **A streamed `/v1/responses` error names its class in `code`** (`invalid_request_error` for a refused request,
+  `engine_busy` as before), so a gateway can tell a request it must not retry from a busy server (#218).
+- **Two tool-call regressions from 0.18.18 (#221).** When text after a finished call held another closing tag,
+  it was folded into the call's last argument. A call with no parameter was dropped when another call's opener
+  came later in the reply, so a request with a forced `tool_choice` failed with a 502. Both read as they did in
+  0.18.17 again, and every argument from #216 still arrives whole. A call that ends with its own closing tags now
+  finishes there again when prose follows it, not at the end of the reply. Thanks @pugant for the report.
+- **A `HALOGEN_KV_POOL_POSITIONS` that is not a multiple of 256 no longer stops the server.** The pool is allocated
+  in units of 256 positions; such a size, or a `HALOGEN_CTX` whose default pool (twice the context) is not one, was
+  refused at startup. It is now rounded up to the next multiple of 256 and the log says so.
+- **An image request that arrived while another request's prompt was being read could be refused.** With a
+  slot free, 0.18.18 could start it before its pictures reached the engine, and it failed with `GEN declared N
+  images but 0 arrived` (a 400 inside the stream). It now waits for its pictures as it did in 0.18.17, and a
+  short text request still starts inside a long read. Reported on Discord.
+
+### Documentation
+
+- **`HALOGEN_WEIGHTS_LOCK` is in `docs/FLAGS.md` (#222).** It was described in `docs/host-setup.md` and missing
+  from the flag reference. Thanks @svenstaro for the report.
+- **NPU page: holding the fabric clock is not a full fix on every host (#139).** Some owners still get hard hangs
+  with it held. The page links AMD's tracking issue and says to install the maker's newest BIOS.
+
 ## 0.18.18
 
 A fixes-only release: fixes from the issue tracker and Discord, and ggml-org's official GGUF of this model now

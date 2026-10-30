@@ -31,9 +31,11 @@ Larger sizes of the first three are named the same way (see [Larger sizes](#larg
 
 - The NPU driver, XRT with its NPU plugin, the NPU firmware, and the IOMMU on. See [the host](#host).
 - **The GPU's fabric clock held at its top speed.** On Strix Halo, GPU work and NPU work at the same time can hang the
-  machine and corrupt the NPU's results while that clock changes speed. Held, they run together cleanly. It is a
-  setting of the host's GPU driver that only the host's root may change, so how it gets held depends on how you run
-  the container:
+  machine and corrupt the NPU's results while that clock changes speed. Held, they run together cleanly on our
+  machines, but some owners still get hard hangs with it held. AMD tracks that fault in
+  [ROCm/TheRock#8709](https://github.com/ROCm/TheRock/issues/8709) and expects the fix in a BIOS update with newer
+  SMU firmware, so install your maker's newest BIOS. Holding the clock is a setting of the host's GPU driver that only
+  the host's root may change, so how it gets held depends on how you run the container:
 
   - **As root** (`docker run`, or `sudo podman run`): add `-v /sys:/host/sys`. The server then holds the clock itself
     while it runs and gives it back when it stops. Nothing to install.
@@ -71,7 +73,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.18
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.19
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the

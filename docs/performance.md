@@ -6,6 +6,17 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.18.19 against 0.18.18
+
+The 0.18.19 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.18 table below; 0.18.18 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order (six on ht43). Generation with drafting reads about 0.4 to 0.5% above 0.18.18's, and prefill is unchanged. On ht43 the 8,192-token cache-off and 32,768-token cache-on runs fell into two speed bands in both images (a state of that machine, not of the release); those two figures are the means of the faster band. Served, three requests decoding at once are 2.6% (ht43) to 3.5% (v2) faster in total than on 0.18.18, a request alone 0.4% to 0.9%, two at once unchanged, and every reply at temperature 0 is identical to 0.18.18's:
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 66.09 / 66.41 tok/s | 67.15 / 67.41 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,877 / 1,822 vs 1,879 / 1,823 | 1,814 / 1,848 vs 1,817 / 1,848 |
+| prefill cache on (cold), 8,192 / 32,768 | 1,790 / 1,851 vs 1,790 / 1,852 | 1,800 / 1,849 vs 1,800 / 1,848 |
+| three requests decoding at once, served, greedy, total | 95.49 / 98.84 tok/s | 98.16 / 100.76 tok/s |
+
 ## 0.18.18 against 0.18.17
 
 The 0.18.18 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.17 table below; 0.18.17 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order. Generation and prefill are unchanged, every row within its run-to-run spread:
@@ -380,8 +391,8 @@ produced byte-identical output on every case**, on both checkpoints.
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.18 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.18 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.19 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.19 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
