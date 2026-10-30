@@ -6,6 +6,18 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.18.20 against 0.18.19
+
+The 0.18.20 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.19 table below; 0.18.19 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order. A single request decodes and reads prompts as fast as on 0.18.19. On ht43 the 8,192-token cache-off run fell into two speed bands again (one 0.18.20 run in the slower band, a state of that machine, not of the release); that figure is the mean of the faster band. Served, two requests decoding at once are about 20% faster in total than on 0.18.19 and three about 9% (greedy; sampled, two about 7% and three up to 3%), a request alone is unchanged, and every reply at temperature 0 is identical to 0.18.19's:
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 66.14 / 66.12 tok/s | 67.44 / 67.44 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,874 / 1,820 vs 1,875 / 1,821 | 1,817 / 1,850 vs 1,817 / 1,849 |
+| prefill cache on (cold), 8,192 / 32,768 | 1,789 / 1,849 vs 1,787 / 1,849 | 1,800 / 1,851 vs 1,800 / 1,849 |
+| two requests decoding at once, served, greedy, total | 84.81 / 101.64 tok/s | 87.28 / 105.12 tok/s |
+| three requests decoding at once, served, greedy, total | 98.26 / 107.23 tok/s | 101.07 / 109.92 tok/s |
+
 ## 0.18.19 against 0.18.18
 
 The 0.18.19 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.18 table below; 0.18.18 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order (six on ht43). Generation with drafting reads about 0.4 to 0.5% above 0.18.18's, and prefill is unchanged. On ht43 the 8,192-token cache-off and 32,768-token cache-on runs fell into two speed bands in both images (a state of that machine, not of the release); those two figures are the means of the faster band. Served, three requests decoding at once are 2.6% (ht43) to 3.5% (v2) faster in total than on 0.18.18, a request alone 0.4% to 0.9%, two at once unchanged, and every reply at temperature 0 is identical to 0.18.18's:
@@ -391,8 +403,8 @@ produced byte-identical output on every case**, on both checkpoints.
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.19 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.19 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.18.20 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.18.20 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per

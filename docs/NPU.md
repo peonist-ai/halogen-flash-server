@@ -73,7 +73,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.19
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.20
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -592,8 +592,10 @@ changes no result.
 
 - **The NPU driver, `amdxdna`.** Recent kernels carry it. Otherwise, install AMD's xdna-driver package. We test the
   kernel's own driver on Ubuntu 26.04 (kernel 7.0), and AMD's driver 2.25 on kernel 6.17.
-- **XRT with its NPU plugin**, from AMD's packages or from your distribution. The container uses the host's XRT, so it
-  matches the host's driver. We test AMD's XRT 2.25 and Ubuntu 26.04's XRT 2.21 (`libxrt2`, `libxrt-npu2`).
+- **XRT 2.20 or newer with its NPU plugin**, from AMD's packages or from your distribution. The container uses the host's
+  XRT, so it matches the host's driver. We test AMD's XRT 2.25 and Ubuntu 26.04's XRT 2.21 (`libxrt2`, `libxrt-npu2`).
+  XRT 2.19 and older cannot read the server's NPU programs. The NPU engine then stops at start and names your XRT's
+  version. Some distributions still package 2.19.
 - **The NPU firmware.** The driver package or `linux-firmware` installs it.
 - **The IOMMU on.** The NPU driver needs it. `amd_iommu=off`, which the README measures for GPU prefill, turns the NPU
   off. `iommu=pt` keeps it.

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.18.20
+
+Faster decoding with two or three requests at once, a JSON schema and strict tools on requests with images, and a
+clear NPU error on an old XRT. The Flash checkpoints are unchanged. At temperature 0 every reply is byte-identical to
+0.18.19's, alone or beside other requests ([measured](docs/performance.md#measured)).
+
+### Changed
+
+- **Two requests decoding at once are about 20% faster, three about 9%.** With several requests running, each now
+  drafts several tokens ahead in the shared round, as a request alone already did. Sampled requests gain less (about
+  7 to 10% for two, 3 to 4% for three). One request alone is unchanged. Measured served against 0.18.19 on the same
+  machines. At temperature 0 every reply is still byte-identical to the same request run alone; a sampled reply with a
+  fixed seed, run beside other requests, now reads differently from its alone text more often (each token is still
+  drawn from the model's own distribution, see `docs/sampling.md`).
+
+### Fixed
+
+- **A JSON schema now works on a request with images.** `response_format` (`json_schema` or `json_object`),
+  `text.format` on `/v1/responses` and `output_config.format` on `/v1/messages` used to be a 400 when the
+  request also carried an image. They now hold the reply to the schema as on any other request, at any temperature.
+  `/health` `structured_output.images` says so. Reported on Discord.
+- **Strict tools are enforced on a request with images.** A tool declared `strict: true` used to run as if not strict
+  when the request carried an image. Its calls are now held to its schema as on any other request.
+- **On a host whose XRT is older than 2.20, the NPU engine stopped at start with only `halogen-npu: stoul`
+  (#224).** XRT 2.19 and older cannot read the server's NPU programs. The engine now names the host's XRT
+  version and says to install 2.20 or newer, and the NPU page states the floor. Thanks @bin1357 for the
+  report.
+
 ## 0.18.19
 
 Slightly faster decoding with three requests at once, and fixes from the issue tracker. The Flash checkpoints are
