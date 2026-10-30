@@ -1,7 +1,11 @@
 {
-  "version": "0.18.20",
+  "version": "0.18.21",
   "release_date": "2026-10-30",
   "patch_notes": [
+    {
+      "version": "0.18.21",
+      "text": "Your own LFM3-1.7B runs on the NPU, and a long request to an NPU model no longer waits for a whole generated reply. The Flash checkpoints and the Flash engine are unchanged."
+    },
     {
       "version": "0.18.20",
       "text": "Two requests decoding at once are about 20% faster and three about 9%, a JSON schema and strict tools work on requests with images, and the NPU engine names an XRT that is too old. The Flash checkpoints are unchanged."
@@ -9,10 +13,6 @@
     {
       "version": "0.18.19",
       "text": "Three requests decoding at once are about 3% faster, a request may carry more than 64 images, an over-long prompt on /v1/messages gets the error Claude Code compacts on, and 0.18.18's regressions in tool-call parsing and in image requests during a long prompt are fixed. The Flash checkpoints are unchanged."
-    },
-    {
-      "version": "0.18.18",
-      "text": "Claude Code sessions that load tools on demand keep their prompt cache, a short request starts during a long prompt after a cancel or a retry, tool arguments holding a literal </tool_call> arrive whole, and ggml-org's official GGUF loads. The Flash checkpoints are unchanged."
     }
   ],
   "figures": {

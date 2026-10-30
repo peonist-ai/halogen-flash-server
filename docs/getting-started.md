@@ -16,7 +16,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.20
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.21
 ```
 
 That is the whole thing. It fetches the weights from
@@ -69,7 +69,7 @@ podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.20
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.21
 ```
 
 The weights repo carries the tokenizer, so one `-v` is all either form needs.

@@ -73,7 +73,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.20
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.21
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -395,6 +395,11 @@ follows OpenAI's chat completions, streamed or not, with `stop` strings and usag
 tools, and answers without thinking. A request that sets no sampling fields gets the model card's (temperature 1.0,
 `top_k` 20, `presence_penalty` 2.0), and any of them can be set per request. `max_tokens` defaults to 2,048.
 
+While a reply is being generated, a request to another NPU model (a decision, an embedding, a rerank or a moderation, of
+any length) runs between two of its tokens instead of waiting for the whole reply. Under a heavy mix of NPU requests the
+reply keeps about a third of the NPU and takes longer in turn. Another generation, a speech, an image or a transcription
+waits until the reply in progress is done.
+
 ## Images
 
 Name `flux2-klein-4b` in `HALOGEN_NPU_MODELS` and it is fetched and served. It draws an image from a prompt, on
@@ -545,11 +550,43 @@ again. It is served under the directory's name, here `my-guard`. What it does co
 - a Qwen3-0.6B or Qwen3-Embedding-0.6B fine-tune saved as a sequence classifier answers `/classify`.
 - a fine-tune of Qwen3Guard-Gen-0.6B answers `/v1/moderations`. It must keep that model's chat template: the server
   writes the prompt the way the template does, so a changed policy would not be what runs.
+- a LiquidAI LFM3-1.7B checkpoint or fine-tune answers chat completions (see [Your own LFM3-1.7B](#your-own-lfm3-17b)).
 
 It runs on the NPU program of the model it was tuned from, so that program is fetched too under `HALOGEN_DOWNLOAD`
 (the program only, not that model's weights). Anything else is refused at start with a line that says what it found
 and what runs: another size or architecture, or a LoRA adapter on its own (merge it into the model first). A read-only
 volume works, but then the conversion runs at every start.
+
+## Your own LFM3-1.7B
+
+The NPU runs a LiquidAI LFM3-1.7B checkpoint you supply: LFM3-1.7B itself, LFM3-1.7B-Base, or a fine-tune of either.
+Put it on the models volume as it was saved (a directory with `config.json`, `model.safetensors` and `tokenizer.json`)
+and name its path, once for each format you want:
+
+```
+-e HALOGEN_NPU_MODELS=/models/LFM3-1.7B,/models/LFM3-1.7B:fast
+```
+
+`/models/LFM3-1.7B` runs at full quality (8-bit) and is served as `LFM3-1.7B`; `/models/LFM3-1.7B:fast` runs a
+5-bit format of the same checkpoint, faster with a small quality cost, served as `LFM3-1.7B-fast`. The server
+converts the checkpoint at start (about a minute for both) and fetches the NPU programs under `HALOGEN_DOWNLOAD`
+(the programs only; no LFM3 weights are downloaded or shipped). A read-only volume works.
+
+```
+curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d '{
+  "model": "LFM3-1.7B-fast",
+  "messages": [{"role": "user", "content": "What is the weather in Lisbon?"}],
+  "tools": [{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object",
+    "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]}'
+```
+
+Chat completions follow OpenAI's format, streamed or not, with tool calls; a base checkpoint takes raw text on
+`/v1/completions`. A prompt may be as long as the model's 262,144-token context. On a short prompt it decodes about
+27 tokens a second at full quality and 38 with `:fast` (about 22 and 28 at 32k tokens, 18 and 20 at 130k), and reads
+a prompt at about 3,700 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
+to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
+
+Naming `lfm3-1.7b` alone is refused: there is no LFM3 checkpoint in the image, only the programs that run yours.
 
 ## Batching
 

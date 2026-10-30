@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.18.21
+
+Your own LFM3-1.7B on the NPU, and a long request to an NPU model no longer waits for a whole generated reply. The
+Flash checkpoints and the Flash engine are unchanged: every Flash reply is byte-identical to 0.18.20's.
+
+### Added
+
+- **Your own LFM3-1.7B on the NPU.** Put a LiquidAI LFM3-1.7B checkpoint (or a fine-tune of it, or LFM3-1.7B-Base) on
+  the models volume and name its path in `HALOGEN_NPU_MODELS`: `/models/<dir>` runs it at full quality (8-bit), and
+  `/models/<dir>:fast` runs a faster 5-bit format of the same checkpoint, served as `<dir>-fast`. The server converts
+  the checkpoint at start; the NPU programs are fetched under `HALOGEN_DOWNLOAD` (programs only, no weights). Chat
+  completions stream with tool calls, `/v1/completions` takes raw text for a base checkpoint, and a prompt may be as
+  long as the model's 262,144-token context. It decodes about 27 tokens a second on a short prompt and 22 at 32k
+  tokens at full quality, about 38 and 28 with `:fast`. The weights stay yours, under their own license (LFM Open
+  License v1.0). See docs/NPU.md.
+
+### Changed
+
+- **A long request to an NPU model no longer waits for a whole generated reply.** While `qwen3.5-2b` or an LFM3 model
+  generates, a decision, embedding, rerank or moderation request to another NPU model, of any length, now runs between
+  two of its tokens. Before, one over 1,024 tokens waited for the reply in progress: beside two LFM3 generations a
+  2,900-token decision took up to 80 seconds or timed out, and now takes under 3. Under a heavy, continuous mix of NPU
+  requests the generating reply keeps about a third of the NPU, so it finishes sooner than before (about 46 seconds
+  instead of 83 in our heaviest test), while short requests beside it take longer (an embedding's median about 0.6
+  seconds instead of 0.1). With no generation running nothing changes. Every answer is the same as before.
+
+### Documentation
+
+- **The README's Flint preview command named a tag that does not exist** (`0.18.20-flint-preview`, since 0.18.20). It
+  names the preview's own tag, `0.18.14-flint-preview`, again.
+
 ## 0.18.20
 
 Faster decoding with two or three requests at once, a JSON schema and strict tools on requests with images, and a

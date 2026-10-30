@@ -1364,7 +1364,9 @@ PINS
 }
 
 npu_finetune_ready() {
-  local p="${1%/}" bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own
+  local p="${1%:fast}" fast=0 bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own
+  [ "$p" != "$1" ] && fast=1
+  p="${p%/}"
   if [ ! -d "$p" ]; then
     echo "halogen npu: $p is not a directory. A path in HALOGEN_NPU_MODELS is your own model: a directory on the models volume holding config.json, model.safetensors and tokenizer.json." >&2
     return 1
@@ -1382,9 +1384,16 @@ npu_finetune_ready() {
   [ "$rc" = 0 ] || return 1
   task=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "task" {print $2}')
   base=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "base" {print $2}')
+  if [ "$fast" = 1 ]; then
+    if [ -z "$(npu_pin_get "$base-fast" task)" ]; then
+      echo "halogen npu: $p:fast: this image has no faster format for $base (drop ':fast')" >&2
+      return 1
+    fi
+    base="$base-fast"; name="$name-fast"
+  fi
   own=$(npu_devices_of "$base")
   npu_model_ready "$own" "$NPU_DIR" devices || return 1
-  if [ -w "$p" ]; then out="$p/halogen-npu.hnpw"
+  if [ -w "$p" ]; then out="$p/halogen-npu$([ "$fast" = 1 ] && echo -fast).hnpw"
   else
     out="/tmp/halogen-npu/$name.hnpw"; mkdir -p /tmp/halogen-npu
     echo "halogen npu: $p is read-only, so $name is converted into the container at every start; mount the models volume read-write once to keep the result beside it"
@@ -1539,8 +1548,13 @@ start_npu_engine() {
     enc=""; vis=""
     case "$id" in
       /*) npu_finetune_ready "$id" || exit 1
-          dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%/}" ;;
-      *) npu_model_ready "$id" "$NPU_DIR" || exit 1
+          dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%:fast}"; tokd="${tokd%/}" ;;
+      *) if [ -n "$(npu_pin_files "$id")" ] && ! npu_pin_files "$id" | awk '{print $1}' | grep -qxF -- "$id.hnpw"; then
+
+           echo "halogen npu: $id is the NPU's program for your own checkpoint; put the checkpoint under /models/<dir> and name that path in HALOGEN_NPU_MODELS" >&2
+           exit 1
+         fi
+         npu_model_ready "$id" "$NPU_DIR" || exit 1
          own=$(npu_devices_of "$id")
          if [ "$own" != "$id" ]; then npu_model_ready "$own" "$NPU_DIR" devices || exit 1; fi
          dev="$NPU_DIR/$own/devices"; w="$NPU_DIR/$id/$id.hnpw"; tokd="$NPU_DIR/$id/tokenizer"
