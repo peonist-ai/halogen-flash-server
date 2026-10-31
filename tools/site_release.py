@@ -17,6 +17,7 @@ A release updates release.json (version, release_date, patch_notes, and each
 figure it re-measured) in the same public commit as CHANGELOG.md and
 docs/performance.md. tools/deploy-website.sh runs both commands.
 """
+import hashlib
 import html
 import json
 import re
@@ -209,6 +210,17 @@ def cmd_render(src, out):
             errs.append(f"release.json: figure {fid} is on no page")
     if errs:
         return fail(errs)
+    # The stylesheet is cached for a day: stamp its link with a hash of its
+    # contents, so a page and the stylesheet it was written for arrive together.
+    css = src / "style.css"
+    if css.is_file():
+        tag = hashlib.sha256(css.read_bytes()).hexdigest()[:10]
+        for name in rendered:
+            if rendered[name].count('href="style.css"') != 1:
+                errs.append(f"{name}: expected one href=\"style.css\" to stamp")
+            rendered[name] = rendered[name].replace('href="style.css"', f'href="style.css?v={tag}"')
+        if errs:
+            return fail(errs)
     out.mkdir(parents=True, exist_ok=True)
     for name, text in rendered.items():
         (out / name).write_text(text, encoding="utf-8")
