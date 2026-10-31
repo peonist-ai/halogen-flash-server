@@ -843,75 +843,174 @@
         "anchor": "decision-30"
       }
     },
-    "npu.decisions.short.lite": {
-      "value": "80",
+    "npu.decisions.t128.lite": {
+      "value": "46",
       "unit": "ms",
-      "label": "One question, short state, d3-lite",
-      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
-      "measured_at": "0.18.11",
+      "label": "One question at 128 tokens, d3-lite",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "decision-30"
       }
     },
-    "npu.decisions.short.nano": {
-      "value": "110",
+    "npu.decisions.t128.nano": {
+      "value": "72",
       "unit": "ms",
-      "label": "One question, short state, d3-nano",
-      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
-      "measured_at": "0.18.11",
+      "label": "One question at 128 tokens, d3-nano",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "decision-30"
       }
     },
-    "npu.decisions.t600.lite": {
-      "value": "190",
+    "npu.decisions.t1024.lite": {
+      "value": "145",
       "unit": "ms",
-      "label": "One question at 600 tokens, d3-lite",
-      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
-      "measured_at": "0.18.11",
+      "label": "One question at 1,024 tokens, d3-lite",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "decision-30"
       }
     },
-    "npu.decisions.t600.nano": {
-      "value": "320",
+    "npu.decisions.t1024.nano": {
+      "value": "264",
       "unit": "ms",
-      "label": "One question at 600 tokens, d3-nano",
-      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
-      "measured_at": "0.18.11",
+      "label": "One question at 1,024 tokens, d3-nano",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "decision-30"
       }
     },
-    "npu.decisions.t3500.lite": {
-      "value": "650",
+    "npu.decisions.t2048.lite": {
+      "value": "300",
       "unit": "ms",
-      "label": "One question at 3,500 tokens, d3-lite",
-      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
-      "measured_at": "0.18.11",
+      "label": "One question at 2,048 tokens, d3-lite",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "decision-30"
       }
     },
-    "npu.decisions.t3500.nano": {
-      "value": "1.1",
-      "unit": "s",
-      "label": "One question at 3,500 tokens, d3-nano",
-      "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
-      "measured_at": "0.18.11",
+    "npu.decisions.t2048.nano": {
+      "value": "514",
+      "unit": "ms",
+      "label": "One question at 2,048 tokens, d3-nano",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t4096.lite": {
+      "value": "611",
+      "unit": "ms",
+      "label": "One question at 4,096 tokens, d3-lite",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t4096.nano": {
+      "value": "1,047",
+      "unit": "ms",
+      "label": "One question at 4,096 tokens, d3-nano",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t8192.lite": {
+      "value": "1,337",
+      "unit": "ms",
+      "label": "One question at 8,192 tokens, d3-lite",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decisions.t8192.nano": {
+      "value": "2,173",
+      "unit": "ms",
+      "label": "One question at 8,192 tokens, d3-nano",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "decision-30"
+      }
+    },
+    "npu.decider.t69": {
+      "value": "45",
+      "unit": "ms",
+      "label": "One question at 69 tokens, decider-0.8b",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "system-one-questions"
+      }
+    },
+    "npu.decider.t965": {
+      "value": "142",
+      "unit": "ms",
+      "label": "One question at 965 tokens, decider-0.8b",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "system-one-questions"
+      }
+    },
+    "npu.decider.t1989": {
+      "value": "296",
+      "unit": "ms",
+      "label": "One question at 1,989 tokens, decider-0.8b",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "system-one-questions"
+      }
+    },
+    "npu.decider.t4037": {
+      "value": "580",
+      "unit": "ms",
+      "label": "One question at 4,037 tokens, decider-0.8b",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "system-one-questions"
+      }
+    },
+    "npu.decider.t8133": {
+      "value": "1,207",
+      "unit": "ms",
+      "label": "One question at 8,133 tokens, decider-0.8b",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one question a request, served alone, the request's wall (HTTP included), with one model loaded; the median of 48 requests on two machines; a prompt's length counts the model's own template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "system-one-questions"
       }
     },
     "npu.decisions.pic256.lite": {
-      "value": "0.2",
-      "unit": "s",
+      "value": "200",
+      "unit": "ms",
       "label": "One question with a 256 x 256 picture, d3-lite",
       "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
       "measured_at": "0.18.11",
@@ -921,8 +1020,8 @@
       }
     },
     "npu.decisions.pic256.nano": {
-      "value": "0.35",
-      "unit": "s",
+      "value": "350",
+      "unit": "ms",
       "label": "One question with a 256 x 256 picture, d3-nano",
       "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
       "measured_at": "0.18.11",
@@ -932,8 +1031,8 @@
       }
     },
     "npu.decisions.pic768.lite": {
-      "value": "0.5",
-      "unit": "s",
+      "value": "500",
+      "unit": "ms",
       "label": "One question with a 768 x 768 picture, d3-lite",
       "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
       "measured_at": "0.18.11",
@@ -943,8 +1042,8 @@
       }
     },
     "npu.decisions.pic768.nano": {
-      "value": "0.9",
-      "unit": "s",
+      "value": "900",
+      "unit": "ms",
       "label": "One question with a 768 x 768 picture, d3-nano",
       "conditions": "One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded; NPU driver, XRT, firmware, IOMMU on, the GPU's fabric clock held at its top speed.",
       "measured_at": "0.18.11",
@@ -965,55 +1064,132 @@
       }
     },
     "npu.batch.two": {
-      "value": "0.38",
-      "unit": "s",
-      "label": "A batch of 2 inputs, or of 8, of short inputs",
-      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks. A batch holds up to 8 inputs of up to 512 tokens each, padded to the bucket.",
-      "measured_at": "0.16.3",
+      "value": "353",
+      "unit": "ms",
+      "label": "A batch of 8 inputs (qwen3-embedding-0.6b, 100 tokens each)",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "batching"
       }
     },
     "npu.batch.short": {
-      "value": "0.07",
-      "unit": "s",
-      "label": "A single input up to 128 tokens",
-      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
-      "measured_at": "0.16.3",
+      "value": "47",
+      "unit": "ms",
+      "label": "A single input of 100 tokens (qwen3-embedding-0.6b)",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "batching"
       }
     },
     "npu.batch.long": {
-      "value": "0.09",
-      "unit": "s",
-      "label": "A single input above 128 tokens",
-      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
-      "measured_at": "0.16.3",
+      "value": "63",
+      "unit": "ms",
+      "label": "A single input of 400 tokens (qwen3-embedding-0.6b)",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "batching"
+      }
+    },
+    "npu.eg2.1s": {
+      "value": "52",
+      "unit": "ms",
+      "label": "embeddinggemma-2, a text of 100 tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-pictures-and-sound-in-one-space"
+      }
+    },
+    "npu.eg2.1l": {
+      "value": "89",
+      "unit": "ms",
+      "label": "embeddinggemma-2, a text of 400 tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-pictures-and-sound-in-one-space"
+      }
+    },
+    "npu.eg2.8s": {
+      "value": "182",
+      "unit": "ms",
+      "label": "embeddinggemma-2, eight texts of 100 tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-pictures-and-sound-in-one-space"
+      }
+    },
+    "npu.eg2.8l": {
+      "value": "687",
+      "unit": "ms",
+      "label": "embeddinggemma-2, eight texts of 400 tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "text-pictures-and-sound-in-one-space"
+      }
+    },
+    "npu.rr.8s": {
+      "value": "349",
+      "unit": "ms",
+      "label": "qwen3-reranker-0.6b, 8 documents of 100 tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "batching"
+      }
+    },
+    "npu.rr.8l": {
+      "value": "355",
+      "unit": "ms",
+      "label": "qwen3-reranker-0.6b, 8 documents of 400 tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "batching"
+      }
+    },
+    "npu.mod.8": {
+      "value": "351",
+      "unit": "ms",
+      "label": "qwen3guard-gen-0.6b, 8 inputs",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "batching"
       }
     },
     "npu.images.512": {
-      "value": "3",
-      "unit": "seconds",
+      "value": "3,221",
+      "unit": "ms",
       "label": "A 512x512 image",
-      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
-      "measured_at": "0.18.0",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "images"
       }
     },
     "npu.images.1024": {
-      "value": "10",
-      "unit": "seconds",
+      "value": "9,681",
+      "unit": "ms",
       "label": "A 1024x1024 image",
-      "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
-      "measured_at": "0.18.0",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; one model served alone, one request at a time, the request's wall (HTTP included); the median of 20 requests on two machines.",
+      "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "images"
@@ -1031,8 +1207,8 @@
       }
     },
     "npu.images.edit.one": {
-      "value": "5",
-      "unit": "seconds",
+      "value": "5,000",
+      "unit": "ms",
       "label": "An edit, one picture",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.12",
@@ -1042,8 +1218,8 @@
       }
     },
     "npu.images.edit.two": {
-      "value": "7.5",
-      "unit": "seconds",
+      "value": "7,500",
+      "unit": "ms",
       "label": "An edit, two pictures",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.12",
@@ -1053,8 +1229,8 @@
       }
     },
     "npu.images.edit.three": {
-      "value": "10",
-      "unit": "seconds",
+      "value": "10,000",
+      "unit": "ms",
       "label": "An edit, three pictures",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.12",
@@ -1064,8 +1240,8 @@
       }
     },
     "npu.images.edit.four": {
-      "value": "12.5",
-      "unit": "seconds",
+      "value": "12,500",
+      "unit": "ms",
       "label": "An edit, four pictures",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.12",
@@ -1075,8 +1251,8 @@
       }
     },
     "npu.images.edit.1024": {
-      "value": "12.5",
-      "unit": "seconds",
+      "value": "12,500",
+      "unit": "ms",
       "label": "An edit at 1024x1024",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.12",
@@ -1097,8 +1273,8 @@
       }
     },
     "npu.tts.06.first": {
-      "value": "0.3",
-      "unit": "seconds",
+      "value": "300",
+      "unit": "ms",
       "label": "qwen3-tts-0.6b-customvoice, first audio",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.14",
@@ -1108,8 +1284,8 @@
       }
     },
     "npu.tts.17.first": {
-      "value": "0.4",
-      "unit": "seconds",
+      "value": "400",
+      "unit": "ms",
       "label": "qwen3-tts-1.7b-customvoice, first audio",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes; figures carry the page's approximation marks.",
       "measured_at": "0.18.14",
@@ -1251,8 +1427,8 @@
       }
     },
     "npu.d1.text": {
-      "value": "0.07",
-      "unit": "seconds",
+      "value": "70",
+      "unit": "ms",
       "label": "d1-2B, a question on text alone, up to 256 tokens",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own d1-2B checkpoint, served, one request at a time; figures carry the page's approximation marks.",
       "measured_at": "0.18.22",
@@ -1262,8 +1438,8 @@
       }
     },
     "npu.d1.picture": {
-      "value": "0.35",
-      "unit": "seconds",
+      "value": "350",
+      "unit": "ms",
       "label": "d1-2B, a question about a picture, its reading included",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own d1-2B checkpoint, served, one request at a time; figures carry the page's approximation marks.",
       "measured_at": "0.18.22",
@@ -1273,8 +1449,8 @@
       }
     },
     "npu.d1.video": {
-      "value": "0.4",
-      "unit": "seconds",
+      "value": "400",
+      "unit": "ms",
       "label": "d1-2B, three questions about a few seconds of video",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own d1-2B checkpoint, served, one request at a time; figures carry the page's approximation marks.",
       "measured_at": "0.18.22",
@@ -1284,14 +1460,124 @@
       }
     },
     "npu.d1.boxes": {
-      "value": "0.8",
-      "unit": "seconds",
+      "value": "800",
+      "unit": "ms",
       "label": "d1-2B, a box and an every-instance question about a 640 x 480 photo",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own d1-2B checkpoint, served, one request at a time; figures carry the page's approximation marks.",
       "measured_at": "0.18.22",
       "source": {
         "page": "NPU/",
         "anchor": "your-own-d1-2b"
+      }
+    },
+    "npu.gen.ttft.1016": {
+      "value": "333",
+      "unit": "ms",
+      "label": "qwen3.5-2b, first token at 1,016 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.tg.1016": {
+      "value": "39.2",
+      "unit": "tok/s",
+      "label": "qwen3.5-2b, decoding at 1,016 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.ttft.2040": {
+      "value": "1,074",
+      "unit": "ms",
+      "label": "qwen3.5-2b, first token at 2,040 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.tg.2040": {
+      "value": "39.2",
+      "unit": "tok/s",
+      "label": "qwen3.5-2b, decoding at 2,040 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.ttft.4088": {
+      "value": "1,099",
+      "unit": "ms",
+      "label": "qwen3.5-2b, first token at 4,088 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.tg.4088": {
+      "value": "39.2",
+      "unit": "tok/s",
+      "label": "qwen3.5-2b, decoding at 4,088 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.ttft.8184": {
+      "value": "4,342",
+      "unit": "ms",
+      "label": "qwen3.5-2b, first token at 8,184 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.tg.8184": {
+      "value": "39.1",
+      "unit": "tok/s",
+      "label": "qwen3.5-2b, decoding at 8,184 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.ttft.15992": {
+      "value": "4,449",
+      "unit": "ms",
+      "label": "qwen3.5-2b, first token at 15,992 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
+      }
+    },
+    "npu.gen.tg.15992": {
+      "value": "39.0",
+      "unit": "tok/s",
+      "label": "qwen3.5-2b, decoding at 15,992 prompt tokens",
+      "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
+      "measured_at": "0.18.22",
+      "source": {
+        "page": "NPU/",
+        "anchor": "generation"
       }
     }
   }

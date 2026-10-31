@@ -181,6 +181,14 @@ expected level (`score`), `legend`, `probabilities` keyed by level number from 0
 probability of yes. A choice or score takes 2 to 10 options here, where System One takes up to 255. A bad request
 answers 422.
 
+One question to `decider-0.8b` takes, by the prompt's length (its template included):
+
+| prompt | 69 tokens | 965 tokens | 1,989 tokens | 4,037 tokens | 8,133 tokens |
+|---|---|---|---|---|---|
+| time | 45 ms | 142 ms | 296 ms | 580 ms | 1,207 ms |
+
+The request's wall (HTTP included), served alone, the median of 48 requests on two Strix Halo machines (0.18.22).
+
 Several questions about one long text: start the server with `HALOGEN_NPU_DEC_RESUME=1`. A request with several
 questions then reads the text once. With `HALOGEN_NPU_DEC_RESUME=2`, a later request whose text only adds to an earlier
 one also reuses that work (a text that arrives with one question is kept from its second time on). The answers are the
@@ -240,13 +248,17 @@ EOF
 |---|---|---|
 | base | Qwen3.5-0.8B | Qwen3.5-2B |
 | files on disk, the picture reader included | 2.5 GB | 3.0 GB |
-| a question, short state | ~80 ms | ~110 ms |
-| at 600 tokens | ~190 ms | ~320 ms |
-| at 3,500 tokens | ~650 ms | ~1.1 s |
-| a question with a picture, 256 x 256 / 768 x 768 | ~0.2 s / ~0.5 s | ~0.35 s / ~0.9 s |
+| a question, 128-token prompt | 46 ms | 72 ms |
+| at 1,024 tokens | 145 ms | 264 ms |
+| at 2,048 tokens | 300 ms | 514 ms |
+| at 4,096 tokens | 611 ms | 1,047 ms |
+| at 8,192 tokens | 1,337 ms | 2,173 ms |
+| a question with a picture, 256 x 256 / 768 x 768 | ~200 ms / ~500 ms | ~350 ms / ~900 ms |
 
-One Strix Halo, one question a request, served alone, the request's wall (HTTP included), with one of the two loaded. Loaded
-together they share the NPU's memory, and `d3-nano`'s questions about pictures take 15 to 25% longer.
+One question a request, served alone, the request's wall (HTTP included), with one of the two loaded. A prompt's length
+counts the model's own template. The text rows are the median of 48 requests on two Strix Halo machines (0.18.22); the
+picture row is from one (0.18.11). Loaded together the two share the NPU's memory, and `d3-nano`'s questions about pictures
+take 15 to 25% longer.
 
 Their answers match the models' own runtime on the CPU: on text, the same answer on 509 and 502 of 512 questions of our decision
 benchmark; with pictures, on 63 and 64 of 64 questions of a public vision benchmark (CV-Bench). The rest were near ties. `d3-nano`
@@ -294,6 +306,9 @@ vectors = [d.embedding for d in r.data]                 # 768 floats each, unit 
   of its own on the NPU.
 - `dimensions` (32 to 768) keeps the first dimensions and normalizes them again. The model was trained for 768, 512,
   256 and 128. `encoding_format` can be `float` or `base64`.
+
+A text of 100 tokens takes 52 ms and one of 400 tokens 89 ms; eight texts of 100 tokens in one request 182 ms, of 400
+tokens 687 ms (served alone, the request's wall, the median of 20 on two Strix Halo machines, 0.18.22).
 
 ## Reranking
 
@@ -400,6 +415,15 @@ any length) runs between two of its tokens instead of waiting for the whole repl
 reply keeps about a third of the NPU and takes longer in turn. Another generation, a d1-2B question, a speech, an image or a
 transcription waits until the reply in progress is done.
 
+| prompt | 1,016 tokens | 2,040 tokens | 4,088 tokens | 8,184 tokens | 15,992 tokens |
+|---|---|---|---|---|---|
+| first token | 333 ms | 1,074 ms | 1,099 ms | 4,342 ms | 4,449 ms |
+| decoding | 39.2 tokens a second | 39.2 | 39.2 | 39.1 | 39.0 |
+
+One request alone, greedy, the prompt's length counting its chat template; the first token is the request's wall (HTTP
+included) with `max_tokens` 1, and decoding is a 129-token reply's further tokens over its further time. The prompt is read
+in steps, so 2,040 tokens take about as long as 4,088. The median of four runs on two Strix Halo machines (0.18.22).
+
 ## Images
 
 Name `flux2-klein-4b` in `HALOGEN_NPU_MODELS` and it is fetched and served. It draws an image from a prompt, on
@@ -426,7 +450,7 @@ curl -s localhost:8731/v1/images/generations -H 'Content-Type: application/json'
 The model holds about 8 GB of the host's memory while it is loaded. One image request runs at a time on the NPU,
 queued with the other NPU models' work.
 
-A 512x512 image takes about 3 seconds and a 1024x1024 image about 10. A 1024x1024 image uses about 0.7 GB of working
+A 512x512 image takes 3,221 ms and a 1024x1024 image 9,681 ms (served alone, the median of 20 on two Strix Halo machines, 0.18.22). A 1024x1024 image uses about 0.7 GB of working
 memory while it draws.
 
 ## Image edits
@@ -460,8 +484,8 @@ curl -s localhost:8731/v1/images/edits -F model=flux2-klein-4b -F "image[]=@scen
   generations. A `model` that is not one of the server's own (OpenAI's `gpt-image-1`, say) reaches the loaded image
   model.
 
-An edit takes about 5 seconds with one picture, 7.5 with two, 10 with three and 12.5 with four, and about 12.5
-seconds at 1024x1024.
+An edit takes about 5,000 ms with one picture, 7,500 with two, 10,000 with three and 12,500 with four, and about
+12,500 ms at 1024x1024.
 
 ## Speech to text
 
@@ -519,7 +543,7 @@ curl -s localhost:8731/v1/audio/speech -H 'Content-Type: application/json' \
 - `seed`: optional, the same audio again for the same request. A `speed` other than 1 is refused.
 
 The talker runs on the NPU and the audio is decoded on the CPU. On a Strix Halo the 0.6B speaks about 1.5 times faster
-than real time and the 1.7B a little faster than real time, with the first audio in about 0.3 and 0.4 seconds. One
+than real time and the 1.7B a little faster than real time, with the first audio in about 300 and 400 ms. One
 text-to-speech model is served at a time.
 
 The NPU speaks one request at a time, frame by frame. The streaming guard's checks and a short request to another NPU
@@ -629,9 +653,9 @@ EOF
 - A video is `{"type": "video", "frames": [pictures], "fps": 24}`: its frames and their rate. The server keeps two frames a
   second, as d1-2B does. A request fits 2,048 tokens, so a long or large clip's frames are scaled down to fit.
 
-A question about a picture takes about 0.35 seconds, the picture's reading included; a box and an every-instance question
-about a 640 x 480 photo about 0.8 seconds together; three questions about a few seconds of video about 0.4 seconds. A
-question on text alone takes about 0.07 seconds up to 256 tokens of state and questions.
+A question about a picture takes about 350 ms, the picture's reading included; a box and an every-instance question
+about a 640 x 480 photo about 800 ms together; three questions about a few seconds of video about 400 ms. A question on
+text alone takes about 70 ms up to 256 tokens of state and questions.
 
 Naming `d1-2b` alone is refused: there is no d1-2B checkpoint in the image, only the programs that run yours. The weights
 stay yours, under their own license (LFM Open License v1.0).
@@ -642,10 +666,11 @@ When one request carries several short inputs (embedding texts, rerank documents
 together in one pass.
 Each result is exactly what it would be alone. `HALOGEN_NPU_EMB_BATCH=0` turns this off.
 
-A batch holds up to 8 inputs of up to 512 tokens each, padded to the bucket, so it costs the same (about 0.38 s) for 2
-inputs as for 8. A single input takes about 0.07 s up to 128 tokens and 0.09 s above. The server batches a group only
-when running its inputs one by one would take longer: from 6 inputs of up to 128 tokens, from 5 of up to 512. Smaller
-groups, and the leftover of a larger request, run one pass each.
+A batch holds up to 8 inputs of up to 512 tokens each, padded to the bucket, so 8 inputs of 100 tokens cost the same as 8
+of 400: 353 and 356 ms with `qwen3-embedding-0.6b` (349 and 355 ms with the reranker, 351 ms for 8 moderation inputs). A
+single input takes 47 ms at 100 tokens and 63 ms at 400. Served alone, the request's wall, the median of 20 on two Strix
+Halo machines (0.18.22). The server batches a group from 6 inputs of up to 128 tokens, and from 5 of up to 512.
+Smaller groups, and the leftover of a larger request, run one pass each.
 
 ## Many requests at once
 

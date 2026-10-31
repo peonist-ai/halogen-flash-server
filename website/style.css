@@ -276,7 +276,7 @@ td.n .bar::after{content:"";position:absolute;right:0;top:0;bottom:0;width:var(-
 .ch-tv summary{cursor:pointer;color:var(--mute);width:max-content}
 .ch-tv .tw{margin-top:12px}
 .ch-hb{list-style:none;margin:0;padding:0}
-.ch-hb li{display:grid;grid-template-columns:minmax(0,21em) minmax(0,1fr) 4em;gap:16px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-2);font-size:.95rem}
+.ch-hb li{display:grid;grid-template-columns:minmax(0,21em) minmax(0,1fr) 5em;gap:16px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-2);font-size:.95rem}
 .ch-hb .b{height:12px;width:var(--w);min-width:2px;background:var(--brass);border-radius:0 4px 4px 0}
 .ch-hb .v{text-align:right;font-variant-numeric:tabular-nums}
 @media (max-width:600px){.ch-hb li{grid-template-columns:1fr auto;row-gap:7px}.ch-hb .b{grid-column:1/-1;grid-row:2}}
