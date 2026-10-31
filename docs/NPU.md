@@ -73,7 +73,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.21
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.22
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -397,8 +397,8 @@ tools, and answers without thinking. A request that sets no sampling fields gets
 
 While a reply is being generated, a request to another NPU model (a decision, an embedding, a rerank or a moderation, of
 any length) runs between two of its tokens instead of waiting for the whole reply. Under a heavy mix of NPU requests the
-reply keeps about a third of the NPU and takes longer in turn. Another generation, a speech, an image or a transcription
-waits until the reply in progress is done.
+reply keeps about a third of the NPU and takes longer in turn. Another generation, a d1-2B question, a speech, an image or a
+transcription waits until the reply in progress is done.
 
 ## Images
 
@@ -551,6 +551,7 @@ again. It is served under the directory's name, here `my-guard`. What it does co
 - a fine-tune of Qwen3Guard-Gen-0.6B answers `/v1/moderations`. It must keep that model's chat template: the server
   writes the prompt the way the template does, so a changed policy would not be what runs.
 - a LiquidAI LFM3-1.7B checkpoint or fine-tune answers chat completions (see [Your own LFM3-1.7B](#your-own-lfm3-17b)).
+- a LiquidAI d1-2B checkpoint answers decisions over text, pictures and video (see [Your own d1-2B](#your-own-d1-2b)).
 
 It runs on the NPU program of the model it was tuned from, so that program is fetched too under `HALOGEN_DOWNLOAD`
 (the program only, not that model's weights). Anything else is refused at start with a line that says what it found
@@ -587,6 +588,45 @@ a prompt at about 3,700 tokens a second. It shares the NPU with the other NPU mo
 to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
 
 Naming `lfm3-1.7b` alone is refused: there is no LFM3 checkpoint in the image, only the programs that run yours.
+
+## Your own d1-2B
+
+The NPU runs a LiquidAI d1-2B checkpoint you supply: one-pass decisions over text, pictures and video. Put it on the models
+volume as it was saved (`config.json`, `model.safetensors`, `tokenizer.json`, `calibration.json`) and name its path:
+
+```
+-e HALOGEN_NPU_MODELS=/models/d1-2B
+```
+
+It is served as `d1-2B` on `POST /v1/systemone`, in d1-2B's own form: a `state` (text, a JSON value, or none), named
+`questions`, and `media`, a list of pictures and videos that head the state. The server converts the checkpoint at start
+and fetches the NPU programs under `HALOGEN_DOWNLOAD` (the programs only; no d1-2B weights are downloaded or shipped).
+
+```bash
+curl -s localhost:8731/v1/systemone -H 'content-type: application/json' -d @- <<EOF
+{"model": "d1-2B", "state": null,
+ "media": ["data:image/jpeg;base64,$(base64 < cats.jpg | tr -d '\n')"],
+ "questions": {
+   "cats": {"type": "number", "instructions": "How many cats are there?", "range": [0, 10], "step": 1},
+   "remote": {"type": "box", "instructions": "Where is the remote control on the left?"},
+   "every_cat": {"type": "boxes", "instructions": "Every cat.", "max": 4}}}
+EOF
+```
+
+- Questions: `noul`, `choice` (and `multiple`), `score`, `text` / `number` / `date` read from a text state, `number` with a
+  `range` (an estimate), and on a picture `box` (one object's top, bottom, left and right as fractions of the picture) and
+  `boxes` (every instance, up to 16 or `max`). Up to 16 questions are answered in one pass; the answers have d1-2B's shapes.
+- A picture is a `data:` URL, plain base64, or `{"url": ...}` / `{"image_url": {"url": ...}}` holding one (`images` also
+  takes pictures). One larger than 1.6 megapixels is scaled down, as d1-2B scales it.
+- A video is `{"type": "video", "frames": [pictures], "fps": 24}`: its frames and their rate. The server keeps two frames a
+  second, as d1-2B does. A request fits 2,048 tokens, so a long or large clip's frames are scaled down to fit.
+
+A question about a picture takes about 0.35 seconds, the picture's reading included; a box and an every-instance question
+about a 640 x 480 photo about 0.8 seconds together; three questions about a few seconds of video about 0.4 seconds. A
+question on text alone takes about 0.07 seconds up to 256 tokens of state and questions.
+
+Naming `d1-2b` alone is refused: there is no d1-2B checkpoint in the image, only the programs that run yours. The weights
+stay yours, under their own license (LFM Open License v1.0).
 
 ## Batching
 

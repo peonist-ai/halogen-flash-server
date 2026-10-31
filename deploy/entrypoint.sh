@@ -1280,7 +1280,7 @@ npu_model_ready() {
   local id="$1" d="$2/$1" part="${3:-all}" pins paths p sz want got missing="" verify="${HALOGEN_NPU_VERIFY:-1}" known own dk
   case "$id" in ''|*/*|.*) echo "halogen npu: '$id' is not a model id" >&2; return 1 ;; esac
   pins=$(npu_pin_files "$id")
-  [ "$part" = devices ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^devices\//')
+  [ "$part" = devices ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^(devices|vis)\//')
   if [ "$verify" != 0 ] && [ -z "$pins" ] && [ "$part" != devices ] && npu_pin_ids | grep -qxF -- "$id"; then
 
     echo "halogen npu: $id is in this image's record, but its files are not recorded yet, so this image cannot check them." >&2
@@ -1548,7 +1548,9 @@ start_npu_engine() {
     enc=""; vis=""
     case "$id" in
       /*) npu_finetune_ready "$id" || exit 1
-          dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%:fast}"; tokd="${tokd%/}" ;;
+          dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%:fast}"; tokd="${tokd%/}"
+
+          [ -f "$(dirname "$dev")/vis/devices.hnpm" ] && vis="$(dirname "$dev")/vis" ;;
       *) if [ -n "$(npu_pin_files "$id")" ] && ! npu_pin_files "$id" | awk '{print $1}' | grep -qxF -- "$id.hnpw"; then
 
            echo "halogen npu: $id is the NPU's program for your own checkpoint; put the checkpoint under /models/<dir> and name that path in HALOGEN_NPU_MODELS" >&2
@@ -1566,7 +1568,8 @@ start_npu_engine() {
     if [ "$first" = 1 ]; then nargs+=("$dev" "$w" "127.0.0.1:$port"); NPU_TOK1="$tokd"; first=0
     else nargs+=(--model "$dev" "$w"); fi
     [ -n "$enc" ] && nargs+=(--model "$enc" "$enc/weights.hnpw")
-    [ -n "$vis" ] && nargs+=(--model "$vis" "$vis/weights.hnpw")
+
+    [ -n "$vis" ] && nargs+=(--model "$vis" "$([ -f "$vis/weights.hnpw" ] && echo "$vis/weights.hnpw" || echo "$w")")
     NPU_API_ARGS+=(--npu-tokenizer "$tokd")
   done
   npu_memlock "$NPU_NEED_K" || exit 1

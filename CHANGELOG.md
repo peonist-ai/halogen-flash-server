@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.18.22
+
+Your own d1-2B on the NPU: decisions over text, pictures and video, with boxes. The Flash checkpoints and the Flash
+engine are unchanged: every Flash reply is byte-identical to 0.18.21's.
+
+### Added
+
+- **Your own d1-2B on the NPU.** Put a LiquidAI d1-2B checkpoint on the models volume and name its path in
+  `HALOGEN_NPU_MODELS` (`/models/d1-2B`). It answers `POST /v1/systemone` in its own form: a state (text, a JSON
+  value, or none), up to 16 named questions in one pass (yes / no, choice, multiple choice, score, a value read from
+  the text, a number estimate with a range), and `media`, pictures and videos that head the state. On a picture it
+  also locates things: `box` answers one object's edges, `boxes` every instance. A video is its frames and their rate
+  (`{"type": "video", "frames": [...], "fps": 24}`); two frames a second are read, as d1-2B reads them. On CV-Bench
+  and MMStar its answers match d1-2B's own run on 99.6% and 98% of items (accuracy within 0.2 points). A question
+  about a picture takes about 0.35 seconds, the picture included; a box question about a photo well under a second.
+  The server converts the checkpoint at start; the NPU programs are fetched under `HALOGEN_DOWNLOAD` (programs only,
+  no weights). The weights stay yours, under their own license (LFM Open License v1.0). See docs/NPU.md.
+
 ## 0.18.21
 
 Your own LFM3-1.7B on the NPU, and a long request to an NPU model no longer waits for a whole generated reply. The
