@@ -587,6 +587,14 @@ Chat completions follow OpenAI's format, streamed or not, with tool calls; a bas
 a prompt at about 3,700 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
 to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
 
+| Prompt or context | Prefill, `LFM3-1.7B` | Prefill, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B` | Decode, `LFM3-1.7B-fast` |
+|---|---|---|---|---|
+| 1,024 tokens | 3,750 | 3,677 | 27.3 | 38.3 |
+| 32,768 tokens | 2,177 | 2,174 | 22.4 | 27.9 |
+| 130,000 tokens | 974 | 973 | 17.6 | 19.7 |
+
+Tokens a second, one request alone, greedy decoding. Prefill includes handing the prompt to the decode program.
+
 Naming `lfm3-1.7b` alone is refused: there is no LFM3 checkpoint in the image, only the programs that run yours.
 
 ## Your own d1-2B
