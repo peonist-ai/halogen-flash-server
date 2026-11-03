@@ -56,9 +56,9 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.18.22: your own d1-2B runs on the NPU, one-pass decisions over text, pictures and video,
-with boxes ([NPU](docs/NPU.md)). The Flash engine is unchanged: every Flash reply is
-byte-identical to 0.18.21's.
+0.18.23: your own LFM3-VL-2B, LFM3-Audio-2B and LFM3-Omni-2B run on the NPU: pictures, video,
+and speech in and out ([NPU](docs/NPU.md)). At temperature 0 every Flash reply is byte-identical
+to 0.18.22's, except where two fixes apply ([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
 point it at the file you already have (unsloth's `UD-IQ4_XS`, say) and it
