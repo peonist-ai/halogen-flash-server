@@ -850,7 +850,7 @@ changes no result.
 
 The NPU generates one LFM3 reply at a time. While LFM3-1.7B, LFM3-VL-2B, LFM3-Audio-2B or LFM3-Omni-2B is writing a reply,
 a request that needs a picture, a video or speech (in or out) waits until that reply is done, and the other way round; in a
-test with several of them busy at once the median wait was tens of seconds. Decisions, embeddings, reranks and moderations
+test with all of them busy at once the median wait was one to two minutes. Decisions, embeddings, reranks and moderations
 still run between two of its tokens. A d1-2B question joins the reply in progress instead of waiting for it: beside an LFM3
 reply a d1-2B question that took 14 to 28 seconds now takes about 500 to 1,200 ms, at the cost of a decision request
 queuing a little longer beside a continuous stream of d1-2B questions. Any short NPU job that hosts other short requests
