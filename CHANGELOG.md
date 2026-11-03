@@ -70,6 +70,10 @@ several requests at once. The Flash checkpoints are unchanged. At temperature 0 
 
 ### Changed
 
+- **The first request after the server starts no longer waits for one-time setup.** The server now runs one short
+  request of its own before it reports ready, so the work a fresh engine does on its first pass happens at startup
+  instead of inside your first request. Startup takes about a third of a second longer, the startup log says what
+  the warm-up took, and its short prompt counts as one entry in the prompt cache's counters. Replies are unchanged.
 - **Faster with several requests decoding at once.** Four requests at once decode 1.8 to 3.4% faster and two requests
   1.1 to 1.3% faster; one request alone is unchanged. On the ht43 weights file there is about 1% more at four
   concurrent requests. Measured served against 0.18.22 on two machines, greedy and sampled. Replies are unchanged at
@@ -80,9 +84,9 @@ several requests at once. The Flash checkpoints are unchanged. At temperature 0 
   call). Every sampled token is now drawn from exactly the requested distribution, at the same speed. A seeded sampled
   reply sent beside other requests may read differently from earlier versions; greedy output is unchanged.
 - **Sampled requests with strict tool calls no longer use the forced-token drafter.** Measured again on today's
-  build, it no longer paid for itself: turning it off makes a sampled strict tool call that carries code about 2%
-  faster, with no change on an agent turn. Replies are drawn from the same distribution as before, so a seeded
-  sampled tool call can read differently from the previous version. Greedy requests are unchanged.
+  build, it no longer paid for itself on sampled requests: turning it off makes a sampled strict tool call that carries
+  code about 2% faster, with no change on an agent turn. Replies are drawn from the same distribution as before, so a
+  seeded sampled tool call can read differently from the previous version. Greedy requests are unchanged.
 - **A d1-2B question during an LFM3 reply no longer waits for it.** It now joins the reply in progress: a wait of 14
   to 28 seconds is about 0.5 to 1.2 seconds, and Flash is not slowed. A decision that arrives beside a continuous
   stream of d1-2B questions may wait a little longer in its queue.
@@ -95,7 +99,7 @@ several requests at once. The Flash checkpoints are unchanged. At temperature 0 
 - **A correction to 0.18.20's note on sampled requests.** 0.18.20 said sampled requests decoding two or three at
   once got about 7 to 10% faster for two and 3 to 4% for three. Measured again so that each comparison draws its own
   sampled texts (the earlier measurement repeated one set of texts per version), the gain is about 4 to 7% for two
-  and about 2% for three, depending on the weights file. Greedy numbers and every other figure are unchanged.
+  and 2 to 4% for three, depending on the machine and the weights file. Greedy numbers and every other figure are unchanged.
 
 Thanks @rekillicloud for asking for the LiquidAI models (#229).
 
