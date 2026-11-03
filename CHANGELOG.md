@@ -1,5 +1,104 @@
 # Changelog
 
+## 0.18.23
+
+The LFM3 family on the NPU: your own LFM3-VL-2B (pictures and video), LFM3-Audio-2B (speech in and speech out) and
+LFM3-Omni-2B (every medium on one model), plus a fix for a wrong answer from LFM3-1.7B, and faster decoding with
+several requests at once. The Flash checkpoints are unchanged. At temperature 0 every Flash reply is byte-identical to
+0.18.22's, alone or beside other requests, except where the two fixes below apply (#232, #227).
+
+### Added
+
+- **Your own LFM3-VL-2B on the NPU: pictures and video.** Put a LiquidAI LFM3-VL-2B checkpoint (or a fine-tune of it)
+  on the models volume and name its path in `HALOGEN_NPU_MODELS`; `:fast` runs the 5-bit form beside it, as for
+  LFM3-1.7B. It answers `/v1/chat/completions`, `/v1/messages` and `/v1/responses`, streamed or not, with tool calls
+  and pictures in tool results; a video is `{"type": "video", "frames": [...], "fps": 2}`. A picture is read at up to
+  4 megapixels, and a picture sent again, or the part of a long conversation a later turn shares, is not read again.
+  A 640 x 480 picture with a short answer takes about 1.3 seconds; it decodes about 27 tokens a second at full quality
+  and 39 with `:fast`. On MMStar, RealWorldQA and OCRBench its answers score within 0.2 points of the model's own code
+  (58.47%, 72.94% and 81.9% against 58.40%, 73.07% and 81.9%). The weights stay yours, under their own license (LFM
+  Open License v1.0). See docs/NPU.md.
+- **Your own LFM3-Audio-2B on the NPU: speech in.** Send a WAV clip as an `input_audio` part on chat completions or
+  `/v1/responses`, or to `/v1/audio/transcriptions` (`json` or `text`). A 3.5-second clip is read in about 0.1 second.
+  On LibriSpeech test-clean the word error rate is 2.967% against 2.946% for the model's own code (difference +0.02,
+  95% interval -0.03 to +0.07), and on MMAR the score is 50.9% against 50.5% (+0.40, -0.40 to +1.30). A reply the
+  model opens with its own `<think>` block comes back as reasoning, with the answer after it as content.
+- **LFM3-Audio-2B speech out.** `/v1/audio/speech` speaks text as a WAV, as raw 24 kHz PCM, or as PCM streamed while
+  it is made; a chat request with `modalities: ["text", "audio"]` answers with spoken audio and its transcript in
+  `message.audio`, from text or from speech. Two voices (`female`, `male`; OpenAI's voice names map to them) and 19
+  languages (`language`). It speaks at 0.54 of real time on the 8-bit form and 0.41 with `:fast`, with the first audio after
+  about 130 milliseconds. Against the model's own code, TTS word error rate is 1.823 against 1.866 (-0.04, -0.22 to +0.12) and
+  voice chat 1.307 against 1.139 (+0.17, -0.28 to +0.64), with speech quality scores within their margins. Speech out
+  needs the checkpoint's whole folder, `audio_tokenizer/` included; a folder copied without it converts with no
+  speech out and the log says so.
+- **Your own LFM3-Omni-2B on the NPU: every medium on one model.** Pictures, video, a video with its soundtrack (the
+  video item's `audio` field), speech clips in, and text, spoken or mixed replies out, under one model id. Thinking is
+  off by default; a picture is read at up to 2 megapixels and a video holds 4 to 384 frames. It starts to answer a
+  picture in about 0.24 second, a video with its soundtrack in about 0.7 second, and a 2-minute recording in about 1
+  second. Against the model's own code, nine benchmarks differ by less than 0.7 points (MMStar -0.60, RealWorldQA
+  +0.00, OCRBench +0.40, LibriSpeech word error rate +0.042, MMAR -0.20, MVBench +0.64, Daily-Omni +0.00, TTS word
+  error rate -0.11, voice chat -0.26). Its speech runs at 0.54 of real time (0.41 with `:fast`).
+- **A request with a picture or speech waits behind an LFM3 reply in progress, and the other way round** (a known
+  limit, documented in docs/NPU.md). Decisions, embeddings, reranks and moderations still run between two of its
+  tokens.
+
+### Fixed
+
+- **A reply no longer goes on to invent the user's next message (#232).** When the model ended its own turn inside its
+  reasoning, the end-of-turn guard kept that marker as text and generation went on, and the model sometimes wrote the
+  next turn of the conversation itself: a user message nobody sent, which an agent could later quote back as the
+  user's words. The reply now ends where the model ended its turn, the invented turn is never sent, and
+  `usage.completion_tokens_details.end_of_turn_in_reasoning` says so. Templates the model quotes in its reasoning are
+  unchanged. Thanks @dgalaganov for the report and the transcripts.
+- **A tool argument that quotes the call format's closing tags is no longer cut (#227).** A string value holding
+  `</parameter>`, `</function>` and `</tool_call>` on their own lines followed by more text was cut at those tags, and
+  the rest went into the answer, so a file written through a tool came out shorter with no error. It now arrives
+  whole. A call followed by text in the same reply now finishes at the end of the reply rather than at its own closing
+  tag. Thanks @Tsury for the report and the analysis.
+- **LFM3-1.7B could answer a prompt of 2,049 to 4,096 tokens wrongly.** After a prompt longer than 4,096 tokens and
+  then some short requests, the next prompt of 2,049 to 4,096 tokens (and each one after it, until another prompt past
+  4,096 tokens ran) was read on the wrong rotary position tables, so its answer could change. Present in 0.18.21 and
+  0.18.22; found while testing LFM3-VL-2B. Every such request now answers as a fresh server would. d1-2B was not
+  affected.
+- **Your own LFM3-1.7B, d1-2B or FLUX.2-klein checkpoint was converted again at every start, even on a read-write
+  models volume.** The server now keeps the converted file beside the checkpoint and reuses it; a changed checkpoint
+  or a server update converts it again. Each later start saves about half a minute and a 4 GB write per LFM3 format.
+  Thanks to the Discord user who reported it. A converted LFM3-Audio-2B file from an earlier build is converted once
+  more on the first start (it gains speech-sampling settings).
+- **A client that left during a speech request got a 500 and a traceback.** It is now a quiet 499, as on the other
+  routes.
+
+### Changed
+
+- **Faster with several requests decoding at once.** Four requests at once decode 1.8 to 3.4% faster and two requests
+  1.1 to 1.3% faster; one request alone is unchanged. On the ht43 weights file there is about 1% more at four
+  concurrent requests. Measured served against 0.18.22 on two machines, greedy and sampled. Replies are unchanged at
+  temperature 0. The server holds about 430 MiB more device memory for this, and the context it fits accounts for it.
+- **Sampling is exact in every speculative path.** With several sampled requests decoding at once, or at the token
+  that opens a strict tool call, the server could pick a token from a distribution very slightly off the one your
+  sampling settings define (about 4 tokens in 1,000 at the default settings, more at the start of a strict tool
+  call). Every sampled token is now drawn from exactly the requested distribution, at the same speed. A seeded sampled
+  reply sent beside other requests may read differently from earlier versions; greedy output is unchanged.
+- **Sampled requests with strict tool calls no longer use the forced-token drafter.** Measured again on today's
+  build, it no longer paid for itself: turning it off makes a sampled strict tool call that carries code about 2%
+  faster, with no change on an agent turn. Replies are drawn from the same distribution as before, so a seeded
+  sampled tool call can read differently from the previous version. Greedy requests are unchanged.
+- **A d1-2B question during an LFM3 reply no longer waits for it.** It now joins the reply in progress: a wait of 14
+  to 28 seconds is about 0.5 to 1.2 seconds, and Flash is not slowed. A decision that arrives beside a continuous
+  stream of d1-2B questions may wait a little longer in its queue.
+- **A short NPU job that hosts other short requests runs on a generation's credit.** d1-2B beside a busy embedder
+  answers in 1 to 3 seconds instead of 13 to 21; the embedder runs at about 0.65 of its speed while a long NPU job is
+  running, and a short embedding can wait for it. Every answer is the same as before.
+
+### Documentation
+
+- **A correction to 0.18.20's note on sampled requests.** 0.18.20 said sampled requests decoding two or three at
+  once got about 7 to 10% faster for two and 3 to 4% for three. Measured again so that each comparison draws its own
+  sampled texts (the earlier measurement repeated one set of texts per version), the gain is about 4 to 7% for two
+  and about 2% for three, depending on the weights file. Greedy numbers and every other figure are unchanged.
+
+Thanks @rekillicloud for asking for the LiquidAI models (#229).
+
 ## 0.18.22
 
 Your own d1-2B on the NPU: decisions over text, pictures and video, with boxes. The Flash checkpoints and the Flash

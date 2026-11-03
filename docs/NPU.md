@@ -24,6 +24,9 @@ Nine kinds of model run there:
   `/v1/audio/transcriptions`.
 - **Text to speech** with `qwen3-tts-0.6b-customvoice` or `qwen3-tts-1.7b-customvoice` (Qwen3-TTS CustomVoice). Nine
   preset voices, on `/v1/audio/speech`.
+- **Your own LiquidAI LFM3 models** (see [Your own LFM3-1.7B](#your-own-lfm3-17b), [LFM3-VL-2B](#your-own-lfm3-vl-2b),
+  [LFM3-Audio-2B](#your-own-lfm3-audio-2b) and [LFM3-Omni-2B](#your-own-lfm3-omni-2b)): chat, pictures, video, speech in
+  and speech out, from checkpoints you supply.
 
 Larger sizes of the first three are named the same way (see [Larger sizes](#larger-sizes)). Your own fine-tune of any of the first four runs too. See [Your own model](#your-own-model).
 
@@ -73,7 +76,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.22
+  ghcr.io/peonist-ai/halogen-flash-server:0.18.23
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -576,6 +579,9 @@ again. It is served under the directory's name, here `my-guard`. What it does co
   writes the prompt the way the template does, so a changed policy would not be what runs.
 - a LiquidAI LFM3-1.7B checkpoint or fine-tune answers chat completions (see [Your own LFM3-1.7B](#your-own-lfm3-17b)).
 - a LiquidAI d1-2B checkpoint answers decisions over text, pictures and video (see [Your own d1-2B](#your-own-d1-2b)).
+- a LiquidAI LFM3-VL-2B checkpoint or fine-tune answers chat with pictures and video (see [Your own LFM3-VL-2B](#your-own-lfm3-vl-2b)).
+- a LiquidAI LFM3-Audio-2B checkpoint or fine-tune answers speech in and speech out (see [Your own LFM3-Audio-2B](#your-own-lfm3-audio-2b)).
+- a LiquidAI LFM3-Omni-2B checkpoint answers every medium on one model (see [Your own LFM3-Omni-2B](#your-own-lfm3-omni-2b)).
 
 It runs on the NPU program of the model it was tuned from, so that program is fetched too under `HALOGEN_DOWNLOAD`
 (the program only, not that model's weights). Anything else is refused at start with a line that says what it found
@@ -593,9 +599,12 @@ and name its path, once for each format you want:
 ```
 
 `/models/LFM3-1.7B` runs at full quality (8-bit) and is served as `LFM3-1.7B`; `/models/LFM3-1.7B:fast` runs a
-5-bit format of the same checkpoint, faster with a small quality cost, served as `LFM3-1.7B-fast`. The server
-converts the checkpoint at start (about a minute for both) and fetches the NPU programs under `HALOGEN_DOWNLOAD`
-(the programs only; no LFM3 weights are downloaded or shipped). A read-only volume works.
+5-bit format of the same checkpoint, faster with a small quality cost, served as `LFM3-1.7B-fast`. At the first start
+the server converts the checkpoint (about a minute for both) and keeps the result beside it (`halogen-npu.hnpw` and
+`halogen-npu-fast.hnpw`, each with a small `.stamp` file). Later starts check the checkpoint in a few seconds and skip
+the conversion; a changed checkpoint, or an update of the server, converts it again. The NPU programs are fetched under
+`HALOGEN_DOWNLOAD` (the programs only; no LFM3 weights are downloaded or shipped). A read-only volume works, but then
+the conversion runs at every start.
 
 ```
 curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d '{
@@ -631,8 +640,9 @@ volume as it was saved (`config.json`, `model.safetensors`, `tokenizer.json`, `c
 ```
 
 It is served as `d1-2B` on `POST /v1/systemone`, in d1-2B's own form: a `state` (text, a JSON value, or none), named
-`questions`, and `media`, a list of pictures and videos that head the state. The server converts the checkpoint at start
-and fetches the NPU programs under `HALOGEN_DOWNLOAD` (the programs only; no d1-2B weights are downloaded or shipped).
+`questions`, and `media`, a list of pictures and videos that head the state. The server converts the checkpoint at the
+first start and keeps the result beside it, as for LFM3-1.7B, and fetches the NPU programs under `HALOGEN_DOWNLOAD`
+(the programs only; no d1-2B weights are downloaded or shipped).
 
 ```bash
 curl -s localhost:8731/v1/systemone -H 'content-type: application/json' -d @- <<EOF
@@ -660,6 +670,162 @@ text alone takes about 70 ms up to 256 tokens of state and questions.
 Naming `d1-2b` alone is refused: there is no d1-2B checkpoint in the image, only the programs that run yours. The weights
 stay yours, under their own license (LFM Open License v1.0).
 
+## Your own LFM3-VL-2B
+
+The NPU runs a LiquidAI LFM3-VL-2B checkpoint you supply (LFM3-VL-2B itself or a fine-tune of it): chat with pictures and
+video, on the same terms as LFM3-1.7B. Put it on the models volume as it was saved and name its path, once for each
+format you want:
+
+```
+-e HALOGEN_NPU_MODELS=/models/LFM3-VL-2B,/models/LFM3-VL-2B:fast
+```
+
+`/models/LFM3-VL-2B` runs the text model at full quality (8-bit) and is served as `LFM3-VL-2B`; `/models/LFM3-VL-2B:fast`
+runs a 5-bit text model with the same picture encoder, served as `LFM3-VL-2B-fast`. The first start converts the checkpoint
+(about 40 seconds for both) and keeps the result beside it; later starts check it in a few seconds. The NPU programs are
+fetched under `HALOGEN_DOWNLOAD` (the programs only; no weights are downloaded or shipped).
+
+```
+curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d @- <<EOF
+{"model": "LFM3-VL-2B",
+ "messages": [{"role": "user", "content": [
+   {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,$(base64 < photo.jpg | tr -d '\n')"}},
+   {"type": "text", "text": "What is written on the sign?"}]}]}
+EOF
+```
+
+It answers on `/v1/chat/completions`, `/v1/messages` and `/v1/responses`, streamed or not: pictures as `image_url` parts,
+Anthropic `image` blocks (base64, or a `url` block holding a `data:` URL) or `input_image` items, and video as
+`{"type": "video", "frames": [...], "fps": 2}` on chat completions. Tool calls work on all three, `tool_choice` included
+(a named tool or any tool), and a tool result may hold pictures, so an agent can send a screenshot after each action. The
+server does not fetch `http(s)` image URLs: send the picture's bytes.
+
+A picture is read at up to 4 megapixels (larger ones are scaled down to that). A picture sent again in a later turn is not
+read again, and in a long conversation (past about 4,000 tokens) the part a later turn shares with an earlier one is not
+read again either, so an agent's next turn starts from where the last one left off (its `usage` reports those tokens as
+cached). On a quiet host: a 640 x 480 picture with a short answer in about 1,300 ms, a 1920 x 1080 screenshot in about
+1,400 ms of picture reading plus the prompt, a 4 MP picture in about 2,800 ms plus the prompt; it decodes about 27 tokens a second at
+full quality and about 39 with `:fast`. A picture the model has seen before (the same bytes) starts to answer in about 200
+to 400 ms at 1280 x 720 and below.
+
+If you run LFM3-VL-2B, it also answers text-only chat, so you do not need LFM3-1.7B beside it.
+
+Its quality through the server matches the model's own code: the same questions, greedy, thinking off, against the model's
+own run (the difference is the server's score minus the model's, with a 95% interval):
+
+| benchmark | the server | the model's own | difference |
+|---|---|---|---|
+| MMStar (1,500) | 58.47% | 58.40% | +0.07 [-1.00, +1.13] |
+| RealWorldQA (765) | 72.94% | 73.07% | -0.13 [-1.44, +1.18] |
+| OCRBench (1,000) | 81.9% | 81.9% | 0.00 [-0.50, +0.60] |
+
+`:fast` reads 58.53%, 72.55% and 81.2% on the same questions (+0.13, -0.52 and -0.70 from the model's own, every interval
+within 3 points). The weights stay yours, under their own license (LFM Open License v1.0).
+
+LFM3-VL-2B keeps about 3.7 GB more of the host's memory locked than LFM3-1.7B alone. On a host that is short of free memory
+while the Flash model runs, the kernel may compact memory now and then, and the Flash model can pause for up to about a
+minute while it does. [Waiting behind a reply](#beside-an-lfm3-reply) below applies to it.
+
+## Your own LFM3-Audio-2B
+
+The NPU runs a LiquidAI LFM3-Audio-2B checkpoint you supply: speech in (transcription and questions about a recording) and
+speech out (text to speech and spoken replies). Put the **whole model folder** on the models volume as it was saved, the
+`audio_tokenizer/` folder included (speech out reads it; a folder copied without it converts, but with no speech out, and the
+log says so), and name its path:
+
+```
+-e HALOGEN_NPU_MODELS=/models/LFM3-Audio-2B,/models/LFM3-Audio-2B:fast
+```
+
+Served as `LFM3-Audio-2B` (8-bit text model) and `LFM3-Audio-2B-fast` (5-bit). The first start converts the checkpoint and
+keeps the result beside it, as for LFM3-1.7B; the NPU programs are fetched under `HALOGEN_DOWNLOAD` (programs only). A
+converted file made by an earlier build is made once more at the first start. It also answers text-only chat.
+
+**Speech in.** A WAV clip as an `input_audio` part on `/v1/chat/completions` or `/v1/responses` (up to 16 clips a request),
+or a file to `/v1/audio/transcriptions` (`response_format` `json` or `text`, `language` optional):
+
+```
+curl -s localhost:8731/v1/audio/transcriptions -F model=LFM3-Audio-2B -F file=@talk.wav
+```
+
+Only WAV is read (other formats are refused with a message that says so), and `/v1/messages` has no audio form. A reply the
+model opens with its own `<think>` block comes back as reasoning, with the answer after it as content. A 3.5-second clip is
+read in about 100 ms and a 23-second one in about 140 ms; one LibriSpeech sentence (about 7 seconds, a 28-token reply)
+takes about 1,400 ms in all, most of it the reply's tokens. Against the model's own code, through the server:
+
+| benchmark | the server | the model's own | difference |
+|---|---|---|---|
+| LibriSpeech test-clean, word error rate (2,620 clips) | 2.967% | 2.946% | +0.02 [-0.03, +0.07] |
+| MMAR, accuracy (1,000 questions) | 50.9% | 50.5% | +0.40 [-0.40, +1.30] |
+
+`:fast`: 2.939% (-0.01 [-0.07, +0.05]) and 49.7% (-0.80 [-1.80, +0.20]).
+
+**Speech out.** Text to speech on `/v1/audio/speech`:
+
+```
+curl -s localhost:8731/v1/audio/speech -H 'Content-Type: application/json' \
+  -d '{"model": "LFM3-Audio-2B", "input": "Good morning.", "voice": "female", "language": "en-GB"}' -o hello.wav
+```
+
+`voice` is `female` or `male` (OpenAI's voice names map to them), `language` one of 19 locales by name or code (American
+English by default; Arabic, Danish, German, Greek, British English, Finnish, French, Hebrew, Italian, Japanese, Korean, Dutch,
+Polish, Portuguese, Spanish, Swedish, Turkish and Chinese are the others), `seed` fixes the draw. `response_format` is `wav`
+(the default) or `pcm` (24 kHz, 16-bit, mono), and `"stream": true` with `pcm` sends the audio as it is made. A reply is up
+to about 5 minutes of speech. `instructions` and a `speed` other than 1 are refused. A chat completion with
+`"modalities": ["text", "audio"]` and `"audio": {"voice": "female", "format": "wav"}` answers in speech: the audio and its
+transcript are in `message.audio` (`"format": "pcm16"` streams on a streamed request). `/v1/messages` and `/v1/responses` do
+not make speech.
+
+It speaks at about 0.54 of real time on the 8-bit form and 0.41 with `:fast` (a second of speech takes that fraction of a
+second to make), and the first audio arrives after about 130 ms (120 ms with `:fast`). Against the model's own code, scored with the same
+recognizer and quality model on both sides:
+
+| test | the server | the model's own | difference |
+|---|---|---|---|
+| text to speech, word error rate (240 sentences x 5 seeds) | 1.823 | 1.866 | -0.04 [-0.22, +0.12] |
+| text to speech, quality score | 3.847 | 3.857 | -0.010 [-0.027, +0.007] |
+| voice chat, word error rate (100 questions x 3 seeds) | 1.307 | 1.139 | +0.17 [-0.28, +0.64] |
+| voice chat, quality score | (difference only) | | +0.010 [-0.039, +0.057] |
+
+(Word error rate is of the recognizer's transcript of the speech, lower is better; the quality score is higher-is-better.)
+The weights stay yours, under their own license (LFM Open License v1.0).
+
+## Your own LFM3-Omni-2B
+
+The NPU runs a LiquidAI LFM3-Omni-2B checkpoint you supply: pictures, video, a video with its soundtrack, speech clips in,
+and text, spoken or mixed replies out, on one model id. Put the whole model folder on the models volume (`audio_tokenizer/`
+included) and name its path:
+
+```
+-e HALOGEN_NPU_MODELS=/models/LFM3-Omni-2B,/models/LFM3-Omni-2B:fast
+```
+
+Served as `LFM3-Omni-2B` and `LFM3-Omni-2B-fast`. It uses no programs of its own: the picture and speech encoders and the text
+model are the ones for LFM3-VL-2B, LFM3-Audio-2B and LFM3-1.7B, fetched under `HALOGEN_DOWNLOAD`. Everything is on chat
+completions as for the two models above (pictures as `image_url`, speech in as `input_audio`, speech out with `modalities` or
+on `/v1/audio/speech`); a video is `{"type": "video", "frames": [...], "fps": 2}`, and its soundtrack goes in the item's
+`audio` field as a WAV. A picture is read at up to 2 megapixels and a video holds 4 to 384 frames. Thinking is off by default.
+Its speech is made with Omni's own sampling settings.
+
+It starts to answer a 448 x 320 picture in about 240 ms, an 8-frame video in 600 ms, the same video with a 3.5-second
+soundtrack in 680 ms, a 3.5-second clip in 200 ms, a 2-minute recording in 1,040 ms, and a prompt with a picture, a video,
+a soundtrack and a clip together in 1,080 ms. Its speech runs at about 0.54 of real time on the 8-bit form and 0.41 with `:fast` (first audio about 130 ms). Against the
+model's own code, through the server:
+
+| benchmark | the server | the model's own | difference |
+|---|---|---|---|
+| MMStar (1,500) | 58.33% | 58.93% | -0.60 [-1.93, +0.73] |
+| RealWorldQA (765) | 65.23% | 65.23% | +0.00 [-0.92, +0.92] |
+| OCRBench (1,000) | 81.3% | 80.9% | +0.40 [-0.50, +1.30] |
+| MVBench (1,397 video questions) | 61.27% | 60.63% | +0.64 [-0.86, +2.15] |
+| Daily-Omni (1,197 videos with sound) | 62.07% | 62.07% | +0.00 [-0.84, +0.75] |
+| LibriSpeech test-clean, word error rate (2,620) | 3.152% | 3.110% | +0.042 [+0.004, +0.081] |
+| MMAR (1,000) | 53.1% | 53.3% | -0.20 [-1.10, +0.70] |
+| text to speech, word error rate | 1.784 | 1.894 | -0.109 [-0.31, +0.06] |
+| voice chat, word error rate | 0.842 | 1.106 | -0.264 [-0.92, +0.28] |
+
+The weights stay yours, under their own license (LFM Open License v1.0).
+
 ## Batching
 
 When one request carries several short inputs (embedding texts, rerank documents, or moderation inputs), they run
@@ -680,6 +846,17 @@ knowledge base sent for embedding at once, is answered more slowly, not refused.
 `HALOGEN_QUEUE_TIMEOUT` gets `503` with the code `engine_busy` and a `Retry-After` header. Raising `HALOGEN_NPU_QUEUE`
 changes no result.
 
+### Beside an LFM3 reply
+
+The NPU generates one LFM3 reply at a time. While LFM3-1.7B, LFM3-VL-2B, LFM3-Audio-2B or LFM3-Omni-2B is writing a reply,
+a request that needs a picture, a video or speech (in or out) waits until that reply is done, and the other way round; in a
+test with several of them busy at once the median wait was tens of seconds. Decisions, embeddings, reranks and moderations
+still run between two of its tokens. A d1-2B question joins the reply in progress instead of waiting for it: beside an LFM3
+reply a d1-2B question that took 14 to 28 seconds now takes about 500 to 1,200 ms, at the cost of a decision request
+queuing a little longer beside a continuous stream of d1-2B questions. Any short NPU job that hosts other short requests
+(d1-2B, for example) now runs on a generation's credit: d1-2B beside a busy embedder answers in 1 to 3 seconds instead of 13
+to 21, and the embedder runs at about 0.65 of its speed while a long NPU job runs.
+
 ## Limits
 
 - A decision is up to 8,192 tokens, its questions and the model's own template included, and so is an
@@ -693,6 +870,8 @@ changes no result.
 - A decision takes 2 to 10 options (`d3-lite` and `d3-nano`: 1 to 255).
 - A transcription takes a WAV file of up to 20 minutes or 25 MiB.
 - A speech request takes up to 4,096 characters and speaks for about two and a half minutes at most.
+- LFM3-Audio-2B and LFM3-Omni-2B read WAV clips only. A speech-out reply is at most about 5 minutes of speech; a TTS input is
+  limited in characters and a longer one is refused with a 400 that names the limit.
 - With several large NPU models loaded (a speech model, `embeddinggemma-2`, `wemm-embedding-4b`, images above
   512x512, `d3-lite` and `d3-nano` together), they take turns at the NPU's memory. Alternating them is slower, and a request that cannot fit answers 503.
 - The NPU models are served in the default mode only, not in the two-container setup (`engine` and `api`).

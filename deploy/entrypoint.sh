@@ -1280,7 +1280,11 @@ npu_model_ready() {
   local id="$1" d="$2/$1" part="${3:-all}" pins paths p sz want got missing="" verify="${HALOGEN_NPU_VERIFY:-1}" known own dk
   case "$id" in ''|*/*|.*) echo "halogen npu: '$id' is not a model id" >&2; return 1 ;; esac
   pins=$(npu_pin_files "$id")
-  [ "$part" = devices ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^(devices|vis)\//')
+  [ "$part" = devices ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^(devices|vis|aud)\//')
+
+  [ "$part" = vis ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^vis\//')
+
+  [ "$part" = aud ] && pins=$(printf '%s\n' "$pins" | awk '$1 ~ /^aud\//')
   if [ "$verify" != 0 ] && [ -z "$pins" ] && [ "$part" != devices ] && npu_pin_ids | grep -qxF -- "$id"; then
 
     echo "halogen npu: $id is in this image's record, but its files are not recorded yet, so this image cannot check them." >&2
@@ -1297,6 +1301,8 @@ npu_model_ready() {
 
   if [ -n "$pins" ] && { [ "$verify" != 0 ] || [ -n "${HALOGEN_DOWNLOAD:-}" ]; }; then
     paths=$(printf '%s\n' "$pins" | awk '{print $1}')
+  elif [ "$part" = vis ]; then paths="vis/devices.hnpm"
+  elif [ "$part" = aud ]; then paths="aud/devices.hnpm"
   elif [ "$part" = devices ]; then paths="devices/devices.hnpm"
   elif [ "$(npu_devices_of "$id")" != "$id" ]; then paths="$id.hnpw tokenizer/tokenizer.json"
   else paths="devices/devices.hnpm $id.hnpw tokenizer/tokenizer.json"; fi
@@ -1314,7 +1320,17 @@ npu_model_ready() {
   fi
 
   own=$(npu_devices_of "$id")
-  if { [ "$part" = devices ] || [ "$own" = "$id" ]; } && ! ls "$d/devices/"*.elf > /dev/null 2>&1; then
+  if [ "$part" = vis ]; then
+    if ! ls "$d/vis/"*.elf > /dev/null 2>&1; then
+      echo "halogen npu: $id: $d/vis/ holds no .elf file (the NPU's program for the model's vision tower)" >&2
+      return 1
+    fi
+  elif [ "$part" = aud ]; then
+    if ! ls "$d/aud/"*.elf > /dev/null 2>&1; then
+      echo "halogen npu: $id: $d/aud/ holds no .elf file (the NPU's program for the model's audio encoder)" >&2
+      return 1
+    fi
+  elif { [ "$part" = devices ] || [ "$own" = "$id" ]; } && ! ls "$d/devices/"*.elf > /dev/null 2>&1; then
     echo "halogen npu: $id: $d/devices/ holds no .elf file (the NPU's program for the model)" >&2
     return 1
   fi
@@ -1353,6 +1369,10 @@ PINS
   else
     echo "halogen npu: $id: HALOGEN_NPU_VERIFY=0, so the files under $d are not checked against this image's record"
   fi
+  if [ "$part" = vis ]; then
+    NPU_NEED_K=$(( ${NPU_NEED_K:-0} + $(du -sk "$d/vis" | awk '{print $1}') ))
+    return 0
+  fi
   [ "$part" = devices ] && sz=0 || sz=$(wc -c < "$d/$id.hnpw" | tr -d ' ')
   dk=0
   { [ "$part" = devices ] || [ "$own" = "$id" ]; } && dk=$(du -sk "$d/devices" | awk '{print $1}')
@@ -1364,7 +1384,7 @@ PINS
 }
 
 npu_finetune_ready() {
-  local p="${1%:fast}" fast=0 bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own
+  local p="${1%:fast}" fast=0 bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own vb ab
   [ "$p" != "$1" ] && fast=1
   p="${p%/}"
   if [ ! -d "$p" ]; then
@@ -1393,6 +1413,22 @@ npu_finetune_ready() {
   fi
   own=$(npu_devices_of "$base")
   npu_model_ready "$own" "$NPU_DIR" devices || return 1
+
+  NPU_FT_VIS=""
+  vb=$(npu_pin_get "$base" vis)
+  [ -z "$vb" ] && [ "$own" != "$base" ] && npu_pin_files "$base" | awk '{print $1}' | grep -q '^vis/' && vb="$base"
+  if [ -n "$vb" ]; then
+    npu_model_ready "$vb" "$NPU_DIR" vis || return 1
+    NPU_FT_VIS="$NPU_DIR/$vb/vis"
+  elif [ -f "$NPU_DIR/$own/vis/devices.hnpm" ]; then NPU_FT_VIS="$NPU_DIR/$own/vis"
+  fi
+
+  NPU_FT_AUD=""
+  ab=$(npu_pin_get "$base" aud)
+  if [ -n "$ab" ]; then
+    npu_model_ready "$ab" "$NPU_DIR" aud || return 1
+    NPU_FT_AUD="$NPU_DIR/$ab/aud"
+  fi
   if [ -w "$p" ]; then out="$p/halogen-npu$([ "$fast" = 1 ] && echo -fast).hnpw"
   else
     out="/tmp/halogen-npu/$name.hnpw"; mkdir -p /tmp/halogen-npu
@@ -1400,7 +1436,7 @@ npu_finetune_ready() {
   fi
   case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; seqcls) task=classification ;; generate) task="chat completions" ;; image) task=images ;; esac
   echo "halogen npu: $name ($p): a fine-tune of $base, served for $task"
-  "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale || {
+  "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale ${NPU_FT_VIS:+--vis "$NPU_FT_VIS"} ${NPU_FT_AUD:+--aud "$NPU_FT_AUD"} || {
     echo "halogen npu: converting $p for the NPU failed (above); nothing was started" >&2; return 1; }
   NPU_FT_NAME="$name"; NPU_FT_DEV="$NPU_DIR/$own/devices"; NPU_FT_W="$out"
   NPU_NEED_K=$(( ${NPU_NEED_K:-0} + $(wc -c < "$out" | tr -d ' ') / 1024 + $(du -sk "$NPU_FT_DEV" | awk '{print $1}') ))
@@ -1545,13 +1581,13 @@ start_npu_engine() {
   NPU_API_ARGS=(--npu "127.0.0.1:$port")
   nargs=(listen)
   for id in $ids; do
-    enc=""; vis=""
+    enc=""; vis=""; aud=""
     case "$id" in
       /*) npu_finetune_ready "$id" || exit 1
           dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%:fast}"; tokd="${tokd%/}"
 
-          [ -f "$(dirname "$dev")/vis/devices.hnpm" ] && vis="$(dirname "$dev")/vis" ;;
-      *) if [ -n "$(npu_pin_files "$id")" ] && ! npu_pin_files "$id" | awk '{print $1}' | grep -qxF -- "$id.hnpw"; then
+          vis="$NPU_FT_VIS"; aud="$NPU_FT_AUD" ;;
+      *) if { [ -n "$(npu_pin_files "$id")" ] || [ -n "$(npu_pin_get "$id" vis)" ]; } && ! npu_pin_files "$id" | awk '{print $1}' | grep -qxF -- "$id.hnpw"; then
 
            echo "halogen npu: $id is the NPU's program for your own checkpoint; put the checkpoint under /models/<dir> and name that path in HALOGEN_NPU_MODELS" >&2
            exit 1
@@ -1570,6 +1606,8 @@ start_npu_engine() {
     [ -n "$enc" ] && nargs+=(--model "$enc" "$enc/weights.hnpw")
 
     [ -n "$vis" ] && nargs+=(--model "$vis" "$([ -f "$vis/weights.hnpw" ] && echo "$vis/weights.hnpw" || echo "$w")")
+
+    [ -n "$aud" ] && nargs+=(--model "$aud" "$([ -f "$aud/weights.hnpw" ] && echo "$aud/weights.hnpw" || echo "$w")")
     NPU_API_ARGS+=(--npu-tokenizer "$tokd")
   done
   npu_memlock "$NPU_NEED_K" || exit 1
