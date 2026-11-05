@@ -40,6 +40,7 @@ need below. All links are raw markdown, readable without a browser.
 - [Measuring a checkpoint](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/checkpoint-tools.md): verify, inspect, ppl and niah as modes of the image
 - [Small models on the NPU](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/npu-small-models.md): the NPU sidecar models
 - [NPU host details](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/NPU.md): the AMD NPU (amdxdna) host setup, request shapes, supported models
+- [Agent guard (preview)](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/agent-guard.md): with the NPU, Halogen Spotter reads each tool result and a flagged turn can hold a side-effecting tool call. A second pair of eyes, not a security boundary.
 - [Flint preview](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/flint-preview.md): RecursiveSI's Flint on its own image tag
 
 ## Numbers
