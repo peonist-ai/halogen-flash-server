@@ -74,6 +74,7 @@ nav:
       - Measuring a checkpoint: checkpoint-tools.md
       - Small models on the NPU: npu-small-models.md
       - NPU host details: NPU.md
+      - Agent guard (preview): agent-guard.md
       - Flint preview: flint-preview.md
   - Numbers:
       - Measured: performance.md

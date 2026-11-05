@@ -5,6 +5,20 @@ set -euo pipefail
 export HSA_DISABLE_COREDUMP_ON_EXCEPTION="${HSA_DISABLE_COREDUMP_ON_EXCEPTION:-1}"
 ulimit -c 0
 
+case "$(printf '%s' "${HALOGEN_AGENT_GUARD:-}" | tr 'A-Z' 'a-z')" in
+  ""|0|off|false|no|none) ;;
+  watch|hold)
+    for _ag in halogen-spotter-0.6b decider-4b; do
+      case ",${HALOGEN_NPU_MODELS:-}," in
+        *,"$_ag",*) ;;
+        ,,) export HALOGEN_NPU_MODELS="$_ag" ;;
+        *) export HALOGEN_NPU_MODELS="${HALOGEN_NPU_MODELS},$_ag" ;;
+      esac
+    done
+    echo "halogen: HALOGEN_AGENT_GUARD=${HALOGEN_AGENT_GUARD}: halogen-spotter-0.6b (reads tool results) and decider-4b (whether a tool acts outside the conversation) are served on the NPU" >&2 ;;
+  *) echo "halogen: HALOGEN_AGENT_GUARD=${HALOGEN_AGENT_GUARD} is not a mode: use off, watch or hold" >&2; exit 1 ;;
+esac
+
 oom_adj_raise() {
   local want="${HALOGEN_OOM_SCORE_ADJ:-500}" f="${_hg_proc:-/proc}/$$/oom_score_adj" cur
   case "$want" in
@@ -1010,6 +1024,7 @@ HALOGEN_CACHE_LEAD HALOGEN_TOOL_DEFER"
 
 FE_ONLY_FLAGS="$FE_ONLY_FLAGS HALOGEN_FORK_AUTO_END_ONLY HALOGEN_FORK_AUTO_KEEPS HALOGEN_FORK_HANDLES HALOGEN_FORK_MAP"
 
+FE_ONLY_FLAGS="$FE_ONLY_FLAGS HALOGEN_AGENT_GUARD"
 ENGINE_ENV_U=()
 for _v in $FE_ONLY_FLAGS; do ENGINE_ENV_U+=(-u "$_v"); done
 unset _v
@@ -1073,7 +1088,7 @@ start_api() {
   exec python3 /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "${HALOGEN_ENGINE:-127.0.0.1:$ENG_PORT}" \
-    --host 0.0.0.0 --port "$API_PORT" \
+    --host :: --port "$API_PORT" \
     --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
     --context "$ENG_CTX" \
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}"
@@ -1656,19 +1671,37 @@ npu_exited_alone() {
 
 npu_again() {
   local wrc="$1" max="${HALOGEN_NPU_RESTARTS:-3}" step="${_hg_npu_backoff:-5}" up rc
-  up=$((SECONDS - NPU_UP))
-  [ "$up" -ge 600 ] && NPU_RESTARTS=0
-  echo "halogen npu: the NPU engine exited (rc=$wrc) after ${up} s; the Flash engine serves on" >&2
+  local paused="${NPU_PAUSED:-0}"
+  NPU_PAUSED=0
+  if [ "$paused" = 0 ]; then
+    up=$((SECONDS - NPU_UP))
+    [ "$up" -ge 600 ] && NPU_RESTARTS=0
+    echo "halogen npu: the NPU engine exited (rc=$wrc) after ${up} s; the Flash engine serves on" >&2
+  fi
   while [ "$NPU_RESTARTS" -lt "$max" ]; do
     NPU_RESTARTS=$((NPU_RESTARTS + 1))
-    echo "halogen npu: starting the NPU engine again in $((step * NPU_RESTARTS)) s (restart $NPU_RESTARTS of $max, HALOGEN_NPU_RESTARTS)" >&2
-    wd_sleep $((step * NPU_RESTARTS))
+    if [ "$paused" = 1 ]; then
+      paused=0
+    else
+      echo "halogen npu: starting the NPU engine again in $((step * NPU_RESTARTS)) s (restart $NPU_RESTARTS of $max, HALOGEN_NPU_RESTARTS)" >&2
+      wd_sleep $((step * NPU_RESTARTS))
+    fi
     [ "${HG_STOP:-0}" = 1 ] && return 1
     rc=0; npu_launch || rc=$?
     case "$rc" in
-      0) echo "halogen npu: the NPU engine is serving again"; return 0 ;;
+      0) NPU_ROOM_S=0; echo "halogen npu: the NPU engine is serving again"; return 0 ;;
       2) return 1 ;;
     esac
+    if [ "$NPU_RC" = 76 ]; then
+      NPU_RESTARTS=$((NPU_RESTARTS - 1))
+      NPU_ROOM_S=$(( ${NPU_ROOM_S:-0} > 0 ? NPU_ROOM_S * 2 : ${_hg_npu_room_s:-30} ))
+      [ "$NPU_ROOM_S" -gt 300 ] && NPU_ROOM_S=300
+      echo "halogen npu: the host is under the NPU engine's memory floor (HALOGEN_NPU_HOST_FLOOR_GIB; its line is above): trying again in ${NPU_ROOM_S} s, until there is room. Its routes answer 503 until then and the Flash engine serves on" >&2
+      ( wd_sleep "$NPU_ROOM_S" ) &
+      NPU_PID=$!
+      NPU_PAUSED=1
+      return 0
+    fi
     echo "halogen npu: the NPU engine exited before it was ready (rc=$NPU_RC; its own lines are above)" >&2
   done
   NPU_PID=""
@@ -1683,7 +1716,7 @@ start_npu_alone() {
   trap 'NPU_STOP=1; kill -TERM "$NPU_PID" $API_PID 2>/dev/null || true' TERM INT
   "${_hg_python:-python3}" /halogen/tools/serve_api.py \
     --engine none --tokenizer "$NPU_TOK1" "${NPU_API_ARGS[@]}" \
-    --host 0.0.0.0 --port "$API_PORT" --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" &
+    --host :: --port "$API_PORT" --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" &
   API_PID=$!
 
   set +e
@@ -1736,7 +1769,7 @@ all)
   "${_hg_python:-python3}" /halogen/tools/serve_api.py \
     --tokenizer "$HALOGEN_TOKENIZER" \
     --engine "127.0.0.1:$ENG_PORT" \
-    --host 0.0.0.0 --port "$API_PORT" \
+    --host :: --port "$API_PORT" \
     --max-tokens-cap "${HALOGEN_MAX_TOKENS_CAP:-65536}" \
     --context "$ENG_CTX" \
     --queue-timeout "${HALOGEN_QUEUE_TIMEOUT:-3600}" "${NPU_API_ARGS[@]}" &

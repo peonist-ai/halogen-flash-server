@@ -15,7 +15,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.23
+  ghcr.io/peonist-ai/halogen-flash-server:0.19.0
 ```
 
 Name any shard of a split; the siblings are found by name. With
@@ -43,7 +43,14 @@ types is read on every tensor**, so bartowski's `IQ4_XS` loads as it is
 and so is a K-quant on `ssm_out`. The engine reorders that tensor's
 columns in 128-wide blocks at load and those formats' scale groups are 256
 wide, so a K-quant `ssm_out` is stored as the bf16 the engine computes it
-in. `Q6_K` on `ssm_out` is still refused. **Since 0.18.18 a `Q4_0` lookup
+in. `Q6_K` on `ssm_out` is still refused.
+
+**`Q5_0` on the gate/up experts is not read, and no kernel for it is planned.** A plain `Q5_0` file, with every expert at
+`Q5_0`, stops at its first `gate_up_proj` tensor, before anything loads. `Q5_0` is read on the down experts, the lookup table,
+`ssm_out` and the `Q4_K_M` / `Q4_K_S` tensors above. For gate/up, use a file that stores it as `Q4_K`, `Q5_K` or one of the
+4-bit forms (`IQ4_NL`, `IQ4_XS`, `IQ3_S`, `Q4_0`).
+
+**Since 0.18.18 a `Q4_0` lookup
 table is read too**, exactly: ggml-org's official `Qwen3.8-Flash-Next-GGUF`
 stores its table that way, and its `IQ4_NL` build loads as it is (issue #217;
 WikiText-2 perplexity 3.821, against 3.817 for unsloth's `UD-IQ4_XS` on the
@@ -193,7 +200,7 @@ podman run --rm \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/gguf-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.23 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.19.0 \
   convert /models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf /models/flash-next-iq4xs.hgn
 ```
 

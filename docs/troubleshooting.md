@@ -221,6 +221,29 @@ cat /sys/class/drm/card*/device/fw_version/mec_fw_version
 On 0.18.1 and earlier, set `-e HALOGEN_QSA_FORCE_SEL=1`. It is safe at any
 prompt length and costs about nothing.
 
+## If the engine stops answering while another large program runs
+
+A server and a second large program, such as an image engine, share one pool of memory on this machine. When they do not both
+fit, the kernel spends minutes compacting memory, and the log says:
+
+```
+halogen: the engine has not answered PING for 315s: the kernel is compacting host memory
+```
+
+Requests stall until it clears, and streams can run for minutes with only keepalives. Nothing has hung, and the server does not
+restart while this lasts, up to `HALOGEN_ENGINE_WATCHDOG_DEFER_S` (900 s).
+
+Add up what is loaded before you start the second program: the server's startup lines, the other program's model, and your
+desktop. Swap on zram (8 GB is Fedora's default) is compressed RAM, so it adds little room and can be full before the second
+program finishes loading.
+
+- Run one large program at a time if you can.
+- For images, `flux2-klein-4b` runs on the NPU inside this server: see [NPU.md](NPU.md).
+- If both must share the machine, `HALOGEN_WEIGHTS_LOCK=1` with `vm.compact_unevictable_allowed=0` keeps the weights out of
+  compaction. See [host-setup.md](host-setup.md) for the steps and the costs: when memory truly runs out, the out-of-memory
+  killer picks this server first.
+- A client on the same host can read `/proc/pressure/memory` before it starts a heavy job.
+
 ## If a request waits with no output
 
 **Every slot is busy, and the request is queued until one frees.** The client sees a `200` and

@@ -1,7 +1,11 @@
 {
-  "version": "0.18.23",
-  "release_date": "2026-11-03",
+  "version": "0.19.0",
+  "release_date": "2026-11-05",
   "patch_notes": [
+    {
+      "version": "0.19.0",
+      "text": "Whole-file rewrites about a third faster with identical output, the API port on IPv6 too (#231), and an opt-in preview: an agent guard that reads tool results on the NPU and holds a side-effecting call in a flagged turn. Fixes for LFM3 long prompts and NPU recovery (#235) and for d3 keys it ignored (#234)."
+    },
     {
       "version": "0.18.23",
       "text": "Your own LiquidAI LFM3-VL-2B, LFM3-Audio-2B (speech in and out) and LFM3-Omni-2B run on the NPU, each within a point of the model's own scores. Faster when several requests decode at once, sampling exact in every speculative path, and fixes for a reply that invented the user's next turn (#232), a cut tool argument (#227) and a wrong LFM3-1.7B answer after a long prompt."
@@ -9,10 +13,6 @@
     {
       "version": "0.18.22",
       "text": "Your own d1-2B runs on the NPU: one-pass decisions over text, pictures and video, with boxes. The Flash checkpoints and the Flash engine are unchanged."
-    },
-    {
-      "version": "0.18.21",
-      "text": "Your own LFM3-1.7B runs on the NPU, and a long request to an NPU model no longer waits for a whole generated reply. The Flash checkpoints and the Flash engine are unchanged."
     }
   ],
   "figures": {

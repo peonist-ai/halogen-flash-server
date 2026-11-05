@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.19.0
+
+An opt-in agent guard on the NPU, as a preview, whole-file rewrites about a third faster, the API port on IPv6, and NPU fixes.
+The Flash checkpoints are unchanged. At temperature 0 every Flash reply is byte-identical to 0.18.23's.
+
+### Added
+
+- **An opt-in agent guard, as a preview: `HALOGEN_AGENT_GUARD=watch|hold`.** With the NPU, a small model, Halogen Spotter, reads each new tool result while Flash reads it. `hold` keeps a side-effecting tool call out of a turn with a flagged result until you say so, and says what it held and why. A second pair of eyes for an agent, not a security boundary: office-style tasks were measured, coding agents and attackers who know the model were not. Off by default, and off runs none of it. See `docs/agent-guard.md`.
+
+### Changed
+
+- **Rewrites of a whole file are about a third faster, with identical output.** A coding agent that reads a file and writes it back gets about 30% more tokens per second (40% on a 2,000-token file), about 20% on Edit calls, 12-15% on search-and-replace blocks, and a few percent on ordinary agent turns; prose is unchanged. Prompt lookup now follows the file it is copying, reads a line-numbered or JSON-escaped tool result as its original text, and leaves every other round to the draft head. Every token is still the one the model would have picked. Nothing to configure.
+
+### Fixed
+
+- **The API port listens on IPv4 and IPv6.** With Podman's `-p`, an IPv6 connection was reset, because the server inside the container listened on IPv4 alone. Where the host refuses IPv6, it listens on IPv4 as before. Nothing to configure. Thanks @mgoltzsche (#231).
+- **`d3-lite` and `d3-nano` on `/v1/systemone` no longer ignore a key they do not read.** A question's text goes in `instructions` and the text it is about in `state`. Both have defaults, so a request with `question` was accepted and answered from the template and the options alone, with the same answer for every input. Any other key, on a question or on the request, is now a 422 naming where the text belongs. A client that sends an extra key beside the right ones gets the same 422 and needs that key removed. Thanks @tkajdro (#234).
+- **LFM3 on the NPU takes a prompt as long as its context.** A plain prompt past about 220,000 to 233,000 tokens failed at once with a 500 saying the NPU engine closed the connection, and every other NPU request in flight failed with it. Thanks @tkajdro (#235).
+- **The NPU engine comes back after a fault even with the host at its memory floor.** A restart refused by `HALOGEN_NPU_HOST_FLOOR_GIB` used up the restart count in 30 seconds and left the NPU's routes down until the container restarted. It now spends no restart and tries again every 30 seconds to 5 minutes until there is room (#235).
+- **A generation on the NPU answers the documented errors.** A refusal for host memory is a 503 `host_memory`, a full queue or a device fault a 503 `engine_busy` with `Retry-After`, and NPU memory a 503 `npu_memory`. They were all a 500 `server_error` (#235).
+
+### Documentation
+
+- `gguf.md` says that `Q5_0` is not read on the gate/up experts, so a plain `Q5_0` file is refused at its first gate/up tensor. Thanks @Tsury (#233).
+- `troubleshooting.md` has a section on the stall when a second large program shares the machine, including swap on zram. Thanks @rrdahan2001 (#237).
+
 ## 0.18.23
 
 The LFM3 family on the NPU: your own LFM3-VL-2B (pictures and video), LFM3-Audio-2B (speech in and speech out) and

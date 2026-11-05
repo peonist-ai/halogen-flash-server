@@ -56,9 +56,9 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.18.23: your own LFM3-VL-2B, LFM3-Audio-2B and LFM3-Omni-2B run on the NPU: pictures, video,
-and speech in and out ([NPU](docs/NPU.md)). At temperature 0 every Flash reply is byte-identical
-to 0.18.22's, except where two fixes apply ([CHANGELOG](CHANGELOG.md)).
+0.19.0: whole-file rewrites run about a third faster, the API port now listens on IPv6 too, and
+there is an opt-in preview, an [agent guard](docs/agent-guard.md) on the NPU. At temperature 0 every
+Flash reply is byte-identical to 0.18.23's ([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
 point it at the file you already have (unsloth's `UD-IQ4_XS`, say) and it
@@ -105,7 +105,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.23
+  ghcr.io/peonist-ai/halogen-flash-server:0.19.0
 ```
 
 The weights come from

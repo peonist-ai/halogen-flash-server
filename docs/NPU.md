@@ -76,7 +76,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.18.23
+  ghcr.io/peonist-ai/halogen-flash-server:0.19.0
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -125,6 +125,7 @@ Each model's files are in its own Hugging Face repository, fetched by name when 
 | `qwen3-reranker-0.6b` | [peonist-ai/halogen-npu-qwen3-reranker-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-reranker-0.6b) |
 | `qwen3-reranker-4b` | [peonist-ai/halogen-npu-qwen3-reranker-4b](https://huggingface.co/peonist-ai/halogen-npu-qwen3-reranker-4b) |
 | `qwen3guard-gen-0.6b` | [peonist-ai/halogen-npu-qwen3guard-gen-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3guard-gen-0.6b) |
+| `halogen-spotter-0.6b` | [peonist-ai/halogen-spotter-0.6b](https://huggingface.co/peonist-ai/halogen-spotter-0.6b): reads tool results for [the agent guard](agent-guard.md), a preview |
 | `qwen3guard-stream-0.6b` | [peonist-ai/halogen-npu-qwen3guard-stream-0.6b](https://huggingface.co/peonist-ai/halogen-npu-qwen3guard-stream-0.6b) |
 | `qwen3.5-2b` | [peonist-ai/halogen-npu-qwen3.5-2b](https://huggingface.co/peonist-ai/halogen-npu-qwen3.5-2b) |
 | `flux2-klein-4b` | [peonist-ai/halogen-npu-flux2-klein-4b](https://huggingface.co/peonist-ai/halogen-npu-flux2-klein-4b) |
@@ -216,6 +217,8 @@ curl -s localhost:8731/v1/systemone -H 'content-type: application/json' -d '{
               "criteria": ["calm", "annoyed", "furious"]}}}'
 ```
 
+- `instructions` is the question, and `state` is the text it is about. Both are optional in this contract, so without them the
+  answer reads only the options: send them. Any other key, on a question or on the request, is refused with a 422 (since 0.18.24).
 - A `choice` takes 1 to 255 options (each a key, with an optional description); a `noul` is a yes or no; a `score` an ordered list
   of 2 or more levels. The answers have the same shape as the other decision models' System One answers.
 - The `state` can be a string, or an object or array (sent as JSON). It can be empty.
@@ -615,7 +618,8 @@ curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -
 ```
 
 Chat completions follow OpenAI's format, streamed or not, with tool calls; a base checkpoint takes raw text on
-`/v1/completions`. A prompt may be as long as the model's 262,144-token context. On a short prompt it decodes about
+`/v1/completions`. A prompt may be as long as the model's 262,144-token context (since 0.18.24; before it, about 220,000), and
+near that length it reads for about 8 minutes and takes about 20 GiB of host memory at its peak. On a short prompt it decodes about
 27 tokens a second at full quality and 38 with `:fast` (about 22 and 28 at 32k tokens, 18 and 20 at 130k), and reads
 a prompt at about 3,700 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
 to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
@@ -893,7 +897,8 @@ to 21, and the embedder runs at about 0.65 of its speed while a long NPU job run
 (`aie2_tdr_work: Device isn't making progress` in `dmesg`, and `command state 8` in the request's error). On the same
 host, the kernel's own driver with Ubuntu 26.04's XRT ran the same load clean. Use that, or AMD's 2.25. After such a
 fault the server starts the NPU engine again by itself, up to `HALOGEN_NPU_RESTARTS` times (3), while the Flash model
-keeps serving.
+keeps serving. If the host is under `HALOGEN_NPU_HOST_FLOOR_GIB` at that moment, that does not count as a try: the server
+tries again every 30 seconds to 5 minutes until there is room.
 
 **Where your XRT lives.** The container needs three XRT libraries from the host: `libxrt_coreutil.so.2`,
 `libxrt_core.so.2` and the NPU plugin `libxrt_driver_xdna.so.2`. AMD's packages put XRT in `/opt/xilinx/xrt`, and the
