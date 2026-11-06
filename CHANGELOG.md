@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.19.1
+
+The image now carries XRT, so the NPU needs only the host's driver and firmware, and a malformed tool schema can no longer use up the generation slots.
+The Flash checkpoints are unchanged. At temperature 0 every Flash reply is byte-identical to 0.19.0's.
+
+### Added
+
+- `/v1/completions` takes `ignore_eos`: a fixed-length run for benchmarks. The reply is `max_tokens` long and end-of-text tokens are ordinary tokens. Off unless a request asks for it; the chat, Messages and Responses routes keep the model's stops whatever they send. On text that does not end, a greedy run with it gives plain greedy's replies at about its decode speed, so a benchmark no longer needs a sampled workaround with a logit bias. Use text that does not end: past a reply's real end the model writes a repeating loop that decodes unusually fast and is not a speed for real text.
+
+### Changed
+
+- **The image now carries XRT, so the NPU needs only the host's driver and firmware.** It ships XRT 2.25.37 with its NPU plugin, built from AMD's source, about 7 MB. Drop `-v /opt/xilinx/xrt:/opt/xilinx/xrt:ro` and the per-file mounts from your command. Keep them if you prefer: a host's XRT mounted there replaces the image's, and the start line says which one is running. Mount all three libraries or none, because a mix is refused by name. Thanks @nahsi (#238).
+- **If your XRT was Ubuntu 26.04's 2.21, decider-0.8b takes about 0.5 to 0.9 ms longer a decision on the image's XRT 2.25** (1 to 2%). Answers are bitwise the same on every NPU model. Every other model we timed reads within our measurement. AMD's XRT 2.25 already had this cost.
+- **With every generation model loaded at once, a short NPU request can now wait for the reply in progress.** The server now accounts for what XRT 2.25 holds in the NPU's memory, so the driver no longer refuses a request under that load. In our heaviest test, 3 of about 850 requests waited for a generation to finish, 70 to 100 seconds.
+- `/v1/completions` answers faster on a prompt that extends a recent one: it no longer tokenizes the whole prompt again, and tokenizing no longer holds up other requests. A long-context first token arrives ~100 ms sooner at 64k tokens. Replies are unchanged.
+
+### Fixed
+
+- A tool schema that is not an object (`parameters` or `input_schema` as a string, a number, a boolean or a filled array) now gets a 400 naming the tool on all three APIs. It used to return a 500 and keep a generation slot until a restart, so a few such requests could stop every language request. Thanks to @denis-susan for the report. Closes #243.
+- Any error after a request takes a slot and before generation starts now frees that slot.
+- The startup log no longer prints a FastAPI `on_event` deprecation warning. Nothing about startup changed except that line.
+
+### Documentation
+
+- The NPU page's host section now treats a host's XRT as an option. A distribution's XRT 2.25 or newer on Debian or Ubuntu mounts at `/opt/xilinx/xrt/lib/` and `/opt/xilinx/lib/x86_64-linux-gnu/`.
+- The agent harness page's hermes-agent row: a level set with `--reasoning`, `/reasoning` or `agent.reasoning_effort` does reach a custom base URL. Thanks @kell-t (#241).
+
 ## 0.19.0
 
 An opt-in agent guard on the NPU, as a preview, whole-file rewrites about a third faster, the API port on IPv6, and NPU fixes.

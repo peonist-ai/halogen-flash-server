@@ -40,6 +40,13 @@ true` on a streamed request adds `prompt_progress` frames while the prompt
 is read ([Prompt progress](codex.md#prompt-progress)). It has no chat
 template: what you send is what the model sees, markers included.
 
+`"ignore_eos": true` asks for a fixed-length run, for benchmarks: the reply is
+`max_tokens` long and the model's end-of-text tokens are treated like any
+other token. Off unless a request sets it, and on this route only. Compare
+engines with it on text that does not end, such as code: past a reply's real
+end the model writes a repeating loop that decodes unusually fast and is not a
+speed for real text.
+
 ### `POST /v1/responses`
 
 The OpenAI Responses API: input items, `function_call` /

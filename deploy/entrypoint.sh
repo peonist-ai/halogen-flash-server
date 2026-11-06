@@ -1457,8 +1457,19 @@ npu_finetune_ready() {
   NPU_NEED_K=$(( ${NPU_NEED_K:-0} + $(wc -c < "$out" | tr -d ' ') / 1024 + $(du -sk "$NPU_FT_DEV" | awk '{print $1}') ))
 }
 
+npu_xrt_own() {
+  local r="${_hg_root:-}" n=0 f want got
+  [ -f "$r/opt/halogen/npu/xrt.sha256" ] || { echo 0; return 0; }
+  for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
+    want=$(awk -v f="$f" '$2 == f {print $1}' "$r/opt/halogen/npu/xrt.sha256")
+    got=$(${_hg_sha256:-sha256sum} "$r/opt/xilinx/xrt/lib/$f" 2>/dev/null | awk '{print $1}')
+    [ -n "$want" ] && [ "$want" = "$got" ] && n=$((n + 1))
+  done
+  echo "$n"
+}
+
 npu_preflight() {
-  local r="${_hg_root:-}" gpu="${1:-0}" node x xv drv out rc=0
+  local r="${_hg_root:-}" gpu="${1:-0}" node x xv drv out rc=0 own ownv
   node="$r/dev/accel/accel0"; x="$r/opt/xilinx/xrt/lib"
   if [ ! -e "$node" ]; then
     echo "halogen npu: this container has no NPU device (/dev/accel/accel0)." >&2
@@ -1479,6 +1490,12 @@ npu_preflight() {
   fi
 
   local f t="" bad=""
+  own=$(npu_xrt_own); ownv=$(cat "$r/opt/halogen/npu/xrt.version" 2>/dev/null || true)
+  NPU_XRT_OWN=0; [ "$own" = 3 ] && NPU_XRT_OWN=1
+  if [ "$own" = 1 ] || [ "$own" = 2 ]; then
+    echo "halogen npu: /opt/xilinx/xrt/lib mixes a host's XRT libraries with this image's XRT $ownv. Mount all three of them, or none: with no mount the image uses its own." >&2
+    return 1
+  fi
   for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
     if [ -L "$x/$f" ] && [ ! -e "$x/$f" ]; then bad="$f"; t=$(readlink "$x/$f"); break; fi
   done
@@ -1496,23 +1513,26 @@ npu_preflight() {
     return 1
   fi
   if [ ! -e "$x/libxrt_coreutil.so.2" ]; then
-    echo "halogen npu: no XRT in this container (/opt/xilinx/xrt/lib/libxrt_coreutil.so.2)." >&2
-    echo "  Mount the host's: -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro (the host needs AMD's XRT with its NPU plugin installed there; the container uses the host's so it matches the host's driver)." >&2
+    echo "halogen npu: no XRT in this container (/opt/xilinx/xrt/lib/libxrt_coreutil.so.2): what is mounted at that path holds none." >&2
+    echo "  Remove the mount and the image uses its own XRT. Or mount a host's: -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro, where AMD's XRT with its NPU plugin is installed there." >&2
     echo "  A distribution's XRT lives in the system library directory instead (Ubuntu: /usr/lib/x86_64-linux-gnu; Arch and CachyOS: /usr/lib): mount libxrt_coreutil.so.2, libxrt_core.so.2 and libxrt_driver_xdna.so.2 each twice, at /opt/xilinx/xrt/lib/ and at that same path, since they load each other from there." >&2
     return 1
   fi
   if [ ! -e "$x/libxrt_driver_xdna.so.2" ]; then
-    echo "halogen npu: the host's XRT has no NPU plugin (/opt/xilinx/xrt/lib/libxrt_driver_xdna.so.2). Install the one AMD's NPU driver ships (or your distribution's: Ubuntu libxrt-npu2, Arch and CachyOS xrt-plugin-amdxdna), on the host." >&2
+    echo "halogen npu: the host's XRT mounted here has no NPU plugin (/opt/xilinx/xrt/lib/libxrt_driver_xdna.so.2). Remove the mount and the image uses its own XRT. Or install the plugin AMD's NPU driver ships (or your distribution's: Ubuntu libxrt-npu2, Arch and CachyOS xrt-plugin-amdxdna), on the host." >&2
     return 1
   fi
   xv=$(basename "$(readlink -f "$x/libxrt_coreutil.so.2" 2>/dev/null || echo "$x/libxrt_coreutil.so.2")")
   xv="${xv#libxrt_coreutil.so.}"
-  case "$xv" in *.*) xv="XRT $xv" ;; *) xv="XRT (its version is not in the mounted file's name)" ;; esac
+  case "$xv" in *.*) xv="XRT $xv (the host's)" ;; *) xv="the host's XRT (its version is not in the mounted file's name)" ;; esac
+  [ "$NPU_XRT_OWN" = 1 ] && xv="XRT $ownv (this image's)"
+  NPU_XRT_V="$xv"
   drv=$(cat "$r/sys/module/amdxdna/version" 2>/dev/null || true)
   [ -n "$drv" ] || drv="(the kernel's own)"
+  NPU_XRT_DRV="$drv"
   out=$("${_hg_npu_bin:-/usr/local/bin/halogen-npu}" 2>&1) || rc=$?
   if [ "$rc" != 1 ] || ! printf '%s\n' "$out" | grep -q '^usage: halogen-npu'; then
-    echo "halogen npu: the NPU engine does not load against the host's $xv (exit $rc):" >&2
+    echo "halogen npu: the NPU engine does not load against $xv (exit $rc):" >&2
     printf '%s\n' "$out" | head -3 | sed 's/^/    /' >&2
     echo "  The host's XRT is older than this image needs, or was built for a newer C++ runtime than the image carries (glibc 2.41, GLIBCXX_3.4.33). Tested: AMD's XRT 2.25 and Ubuntu 26.04's XRT 2.21." >&2
     return 1
@@ -1636,6 +1656,9 @@ start_npu_engine() {
   rc=0; npu_launch || rc=$?
   case "$rc" in
     1) echo "halogen npu: the NPU engine exited before it was ready (rc=$NPU_RC; its own lines are above)" >&2
+       if [ "${NPU_XRT_OWN:-0}" = 1 ]; then
+         echo "  It ran on $NPU_XRT_V against the host's kernel $(uname -r), driver amdxdna $NPU_XRT_DRV. If that driver is what refused it, use the host's XRT: -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro, or for a distribution's packages the mounts in the NPU page's host section." >&2
+       fi
        exit 1 ;;
     2) exit 0 ;;
   esac

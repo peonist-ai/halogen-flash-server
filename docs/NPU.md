@@ -32,7 +32,7 @@ Larger sizes of the first three are named the same way (see [Larger sizes](#larg
 
 ## What the host needs
 
-- The NPU driver, XRT with its NPU plugin, the NPU firmware, and the IOMMU on. See [the host](#host).
+- The NPU driver, the NPU firmware, and the IOMMU on. See [the host](#host). The image carries XRT.
 - **The GPU's fabric clock held at its top speed.** On Strix Halo, GPU work and NPU work at the same time can hang the
   machine and corrupt the NPU's results while that clock changes speed. Held, they run together cleanly on our
   machines, but some owners still get hard hangs with it held. AMD tracks that fault in
@@ -66,22 +66,21 @@ Check the NPU with `ls -l /dev/accel/accel0`.
 
 ## Start it
 
-The Quickstart's command, with the NPU added (the device, the host's XRT, and the models):
+The Quickstart's command, with the NPU added (the device and the models):
 
 ```bash
 podman run --rm -p 8731:8731 \
   --device /dev/kfd --device /dev/dri --device /dev/accel/accel0 --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
-  -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.19.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.19.1
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
 server checks each one's size and checksum. A model you leave out of the list is not fetched. The five names above are
-the folder names, and the guard and the reranker share the embedder's device files. If your XRT came from your distribution, mount it as [the host section](#host) shows. Leave
+the folder names, and the guard and the reranker share the embedder's device files. Leave
 `HALOGEN_NPU_MODELS` out and the server is exactly what it was without it.
 
 With compose, use `docker-compose.npu.yml`, which runs this same single container. The two-container `docker-compose.yml`
@@ -885,10 +884,8 @@ to 21, and the embedder runs at about 0.65 of its speed while a long NPU job run
 
 - **The NPU driver, `amdxdna`.** Recent kernels carry it. Otherwise, install AMD's xdna-driver package. We test the
   kernel's own driver on Ubuntu 26.04 (kernel 7.0), and AMD's driver 2.25 on kernel 6.17.
-- **XRT 2.20 or newer with its NPU plugin**, from AMD's packages or from your distribution. The container uses the host's
-  XRT, so it matches the host's driver. We test AMD's XRT 2.25 and Ubuntu 26.04's XRT 2.21 (`libxrt2`, `libxrt-npu2`).
-  XRT 2.19 and older cannot read the server's NPU programs. The NPU engine then stops at start and names your XRT's
-  version. Some distributions still package 2.19.
+- **XRT is in the image.** It carries XRT 2.25.37 with its NPU plugin, built from AMD's source, so you do not need to
+  install or mount XRT. We run it on both of the drivers above. To use your host's instead, see [below](#host-xrt).
 - **The NPU firmware.** The driver package or `linux-firmware` installs it.
 - **The IOMMU on.** The NPU driver needs it. `amd_iommu=off`, which the README measures for GPU prefill, turns the NPU
   off. `iommu=pt` keeps it.
@@ -900,13 +897,16 @@ fault the server starts the NPU engine again by itself, up to `HALOGEN_NPU_RESTA
 keeps serving. If the host is under `HALOGEN_NPU_HOST_FLOOR_GIB` at that moment, that does not count as a try: the server
 tries again every 30 seconds to 5 minutes until there is room.
 
-**Where your XRT lives.** The container needs three XRT libraries from the host: `libxrt_coreutil.so.2`,
-`libxrt_core.so.2` and the NPU plugin `libxrt_driver_xdna.so.2`. AMD's packages put XRT in `/opt/xilinx/xrt`, and the
-command above mounts that directory. A distribution's packages put it in the system library directory
+<a id="host-xrt"></a>
+**Using your host's XRT.** You rarely need this: mount it when the server says your NPU driver refused the image's XRT.
+It needs XRT 2.20 or newer with its NPU plugin. XRT 2.19 and older cannot read the server's NPU programs, and the NPU
+engine then stops at start and names your XRT's version. Mounted, it replaces the image's three libraries,
+`libxrt_coreutil.so.2`, `libxrt_core.so.2` and the NPU plugin `libxrt_driver_xdna.so.2`. Mount all three or none. AMD's
+packages put XRT in `/opt/xilinx/xrt`, so add `-v /opt/xilinx/xrt:/opt/xilinx/xrt:ro`. A distribution's packages put it
+in the system library directory
 (`/usr/lib/x86_64-linux-gnu` on Ubuntu, `/usr/lib` on Arch and CachyOS, whose packages are `xrt` and
 `xrt-plugin-amdxdna`). Those libraries look for each other at that path, so mount each one twice: once where the image
-looks for XRT, and once at its own path. Use these mounts in place of the `-v /opt/xilinx/xrt:/opt/xilinx/xrt:ro`
-line, with `L=/usr/lib` on Arch and CachyOS:
+looks for XRT, and once at its own path, with `L=/usr/lib` on Arch and CachyOS:
 
 ```
 L=/usr/lib/x86_64-linux-gnu; X=""
@@ -915,6 +915,10 @@ for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
 done
 # then: podman run ... $X ...
 ```
+
+XRT 2.25 and newer find their parts relative to where they are loaded from, so on Debian and Ubuntu mount the three files at
+`/opt/xilinx/xrt/lib/` and at `/opt/xilinx/lib/x86_64-linux-gnu/` instead. If the path is wrong, the server names the one
+it looked for.
 
 Do not mount an `/opt/xilinx/xrt` that holds only links into the system library directory. Inside the container those
 links point at nothing. The server names such a link at start and prints the mounts to use.
@@ -925,6 +929,6 @@ the host, usually `render`). A tool that drives rootless podman through its API 
 can pass `--annotation run.oci.keep_original_groups=1` instead. With docker and `--user`, add `--group-add` with the
 device's group as a number (`stat -c %g /dev/accel/accel0`).
 
-**The C++ runtime.** The host's XRT libraries run inside the image, so they must not need a newer C library or C++
+**The C++ runtime.** A host's XRT libraries run inside the image, so they must not need a newer C library or C++
 runtime than the image carries (the image is Debian 13: glibc 2.41, `GLIBCXX_3.4.33`). Ubuntu 26.04's XRT and AMD's
 XRT 2.25 both load. If yours does not, the server says so at start and names the library.
