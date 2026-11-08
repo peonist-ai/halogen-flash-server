@@ -27,6 +27,8 @@ Nine kinds of model run there:
 - **Your own LiquidAI LFM3 models** (see [Your own LFM3-1.7B](#your-own-lfm3-17b), [LFM3-VL-2B](#your-own-lfm3-vl-2b),
   [LFM3-Audio-2B](#your-own-lfm3-audio-2b) and [LFM3-Omni-2B](#your-own-lfm3-omni-2b)): chat, pictures, video, speech in
   and speech out, from checkpoints you supply.
+- **Document parsing with your own OvisOCR3** (see [Your own OvisOCR3](#your-own-ovisocr3)): a page to Markdown with
+  HTML tables and LaTeX formulas, in one call, from a checkpoint you supply.
 
 Larger sizes of the first three are named the same way (see [Larger sizes](#larger-sizes)). Your own fine-tune of any of the first four runs too. See [Your own model](#your-own-model).
 
@@ -75,7 +77,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.19.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.0
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -584,6 +586,7 @@ again. It is served under the directory's name, here `my-guard`. What it does co
 - a LiquidAI LFM3-VL-2B checkpoint or fine-tune answers chat with pictures and video (see [Your own LFM3-VL-2B](#your-own-lfm3-vl-2b)).
 - a LiquidAI LFM3-Audio-2B checkpoint or fine-tune answers speech in and speech out (see [Your own LFM3-Audio-2B](#your-own-lfm3-audio-2b)).
 - a LiquidAI LFM3-Omni-2B checkpoint answers every medium on one model (see [Your own LFM3-Omni-2B](#your-own-lfm3-omni-2b)).
+- an OvisOCR3 checkpoint parses document pages into Markdown (see [Your own OvisOCR3](#your-own-ovisocr3)).
 
 It runs on the NPU program of the model it was tuned from, so that program is fetched too under `HALOGEN_DOWNLOAD`
 (the program only, not that model's weights). Anything else is refused at start with a line that says what it found
@@ -828,6 +831,58 @@ model's own code, through the server:
 | voice chat, word error rate | 0.842 | 1.106 | -0.264 [-0.92, +0.28] |
 
 The weights stay yours, under their own license (LFM Open License v1.0).
+
+## Your own OvisOCR3
+
+The NPU runs an OvisOCR3 checkpoint you supply (`ATH-MaaS/OvisOCR3`): document parsing in one call a page, no
+separate layout model. It returns the page as Markdown, tables as HTML and formulas as LaTeX, with each element's
+category and box when the prompt asks for them. Put the checkpoint on the models volume as it was saved and name its path:
+
+```
+-e HALOGEN_NPU_MODELS=/models/OvisOCR3
+```
+
+It is served as `OvisOCR3` on `/v1/chat/completions`, `/v1/messages` and `/v1/responses`, streamed or not. The first
+start converts the checkpoint (about 30 seconds) and keeps the result beside it; the NPU programs are fetched under
+`HALOGEN_DOWNLOAD` (the programs only; no weights are downloaded or shipped).
+
+```
+curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d @- <<EOF
+{"model": "OvisOCR3",
+ "messages": [{"role": "user", "content": [
+   {"type": "image_url", "image_url": {"url": "data:image/png;base64,$(base64 < page.png | tr -d '\n')"}},
+   {"type": "text", "text": "Convert this page to Markdown."}]}]}
+EOF
+```
+
+- One or two pictures a request (`image_url` parts), up to 178,956,970 pixels each, scaled into the model's own range
+  (448 x 448 to 2880 x 2880 pixels' worth) as its processor scales them. Text and pictures only: video and audio parts
+  are refused with a message naming what is taken.
+- Use the prompts on the model's card for each task (full-page parsing, tables, formulas, key information, captions).
+  Thinking is off unless the request asks for it; the reply is greedy, as the card runs it.
+- With no `max_tokens` a reply may run to 16,384 tokens, the card's limit (or `HALOGEN_MAX_TOKENS_DEFAULT` when you set
+  one). A dense page can need 9,000 or more.
+
+An A4 page starts to answer in about 3.4 seconds and a typical page takes about 20 seconds; the reply runs at about
+43 tokens a second. Beside other NPU models, a page's picture reading and prompt run without other requests slipped in
+between them, so a short request that arrives then waits a few seconds; it runs between the page's reply tokens as usual.
+With several generation models loaded beside it, the NPU driver can refuse one of its allocations about once a run; the
+server makes room and retries, and no request fails. Two runs of the same page can differ at a near tie (a character, or
+one box coordinate by one), on about one page in a hundred on some hosts. When OvisOCR3 and several other generation
+models start work at once beside Flash, Flash's first request after that can wait about 40 seconds while the host reads
+Flash's weights back into memory; later requests run at their usual speed. `HALOGEN_WEIGHTS_LOCK=1` keeps the weights
+resident (see [Host setup](host-setup.md)).
+Against the model's own code, through the server:
+
+| benchmark | the server | the model's own | difference |
+|---|---|---|---|
+| OmniDocBench v1.6, 320 pages, text (1 - edit distance) | 81.99 | 82.10 | -0.11 [-0.71, +0.43] |
+| OmniDocBench v1.6, the 90 pages with tables, TEDS | 92.35 | 91.87 | +0.48 [-0.23, +1.74] |
+| OCRBench (1,000) | 85.7% | 85.3% | +0.40 [0.00, +0.90] |
+
+The two OmniDocBench scores are page-level scores computed the same way for both sides, not the official pipeline's
+numbers. Naming `ovisocr3` alone is refused: there is no OvisOCR3 checkpoint in the image, only the programs that run
+yours. The weights stay yours, under their own license (Apache 2.0).
 
 ## Batching
 

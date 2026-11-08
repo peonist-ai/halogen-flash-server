@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.20.0
+
+Document parsing on the NPU with your own OvisOCR3, the image on ROCm 10.1, faster prompt reading, and a fix for strict tool calls under concurrency.
+The Flash checkpoints are unchanged. This is a numeric release: at temperature 0 Flash's replies can differ from 0.19.1's in the last bits, and the quality gates read the same as on 0.19.1.
+
+### Added
+
+- **Document parsing on the NPU with your own OvisOCR3 checkpoint.** Name its folder in `HALOGEN_NPU_MODELS` (`/models/OvisOCR3`) and it answers on `/v1/chat/completions`, `/v1/messages` and `/v1/responses`: a page in, Markdown out, with tables as HTML and formulas as LaTeX, one or two pictures a request. Against the model's own code its page text and table scores stay within a point, and OCRBench reads 85.7 against 85.3. A typical page takes about 20 seconds, with the first text after about 3.4 seconds on an A4 page; Flash keeps the GPU. The image ships the NPU programs only; the weights stay yours. See the NPU page. Known: beside several NPU generation models the NPU driver can refuse one allocation about once a run (the server retries, no request fails), and two runs of the same page can differ at a near tie, on about one page in a hundred on some hosts; and when OvisOCR3 and several other NPU generation models start work at once, Flash's next request can wait about 40 seconds while its weights come back into memory (`HALOGEN_WEIGHTS_LOCK=1` keeps them resident). Thanks @xuyongroger for the request (#245).
+
+### Changed
+
+- **The image now runs ROCm 10.1.** On a stock host a reply draws less power while it generates (about 9 to 15% less package energy in our measurements, from the runtime no longer keeping a CPU core busy while it waits) at the same speed. Outputs can differ from 0.19.1 in the last bits, as with any change of compiler and GEMM library; the GEMM tuning was redone for the new library.
+- **Faster prompt reading on Qwen3.8-Flash-Next:** about 3.5% (v2) and 5.7% (ht43) at 2,048 tokens, 2.5% and 5.6% at 8,192 and 2.0% and 3.5% at 32,768, from a change in how the engine lays out three activation and weight buffers and a new router kernel. The router's scores are computed in a different order, so outputs can differ from 0.19.1 in the last bits. Generation with drafting reads as on 0.19.1; without drafting, ht43 reads about 0.7% slower on one of our two machines.
+- A lone request starts reading its lookup rows as soon as it arrives, so a prompt whose rows are not in the file cache waits a few milliseconds less. Replies are unchanged.
+
+### Fixed
+
+- A crash with strict tool calls under concurrency. Parallel requests sharing a strict tool set could read mask memory that another request's growth had just freed, ending the engine with a GPU memory fault. A long strict request could also lose its compiled schema once eight other distinct schemas or tool sets were admitted. Replies are otherwise unchanged.
+- On `/v1/completions`, a prompt that extends an earlier one could be tokenized differently from the same text sent fresh when a character split into several byte tokens sat at the reuse point (a long run of emoji, for example): part of that character was dropped. The reused tokens now match a fresh tokenization.
+
 ## 0.19.1
 
 The image now carries XRT, so the NPU needs only the host's driver and firmware, and a malformed tool schema can no longer use up the generation slots.

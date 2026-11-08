@@ -6,6 +6,16 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.20.0 against 0.19.1
+
+The 0.20.0 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.20 table below; 0.19.1 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order. Prompt reading is faster at every depth on both checkpoints: at 2,048 tokens, cache off, 1,608 vs 1,664 tok/s on v2 (+3.5%) and 1,557 vs 1,646 on ht43 (+5.7%). Generation with drafting reads as on 0.19.1; without drafting, ht43 reads 0.7% slower on its machine (39.57 vs 39.28 tok/s) and v2 the same. The image moves to ROCm 10.1 with its GEMM tuning redone, so at temperature 0 the replies are not byte-identical to 0.19.1's:
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 67.05 / 66.97 tok/s | 67.92 / 68.00 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,874 / 1,817 vs 1,920 / 1,855 | 1,830 / 1,857 vs 1,933 / 1,922 |
+| prefill cache on (cold), 8,192 / 32,768 | 1,782 / 1,844 vs 1,825 / 1,885 | 1,807 / 1,857 vs 1,876 / 1,940 |
+
 ## 0.18.20 against 0.18.19
 
 The 0.18.20 image at its defaults (prompt cache on unless a row says otherwise, thinking off), each row an A/B pair on one machine in one session, the same machines as the 0.18.19 table below; 0.18.19 is the left figure of each pair, and each figure is the mean of four runs taken in alternating order. A single request decodes and reads prompts as fast as on 0.18.19. On ht43 the 8,192-token cache-off run fell into two speed bands again (one 0.18.20 run in the slower band, a state of that machine, not of the release); that figure is the mean of the faster band. Served, two requests decoding at once are about 20% faster in total than on 0.18.19 and three about 9% (greedy; sampled, two about 7% and three up to 3%), a request alone is unchanged, and every reply at temperature 0 is identical to 0.18.19's:
@@ -403,8 +413,8 @@ produced byte-identical output on every case**, on both checkpoints.
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.19.1 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.19.1 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.20.0 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.20.0 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per
