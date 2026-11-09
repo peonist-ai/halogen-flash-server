@@ -1,7 +1,11 @@
 {
-  "version": "0.20.0",
-  "release_date": "2026-11-08",
+  "version": "0.20.1",
+  "release_date": "2026-11-09",
   "patch_notes": [
+    {
+      "version": "0.20.1",
+      "text": "Follow-up turns start faster: the end of each reply is cached, so a client that sends it back resumes there. When the model ends its turn inside its reasoning, the server closes the reasoning and the model answers. The routine KV pool line no longer logs as an error."
+    },
     {
       "version": "0.20.0",
       "text": "Document parsing on the NPU with your own OvisOCR3 (#245). The image runs ROCm 10.1, prompt reading is 2 to 6% faster, and a crash with strict tool calls under concurrency is fixed. A numeric release: Flash's replies can differ from 0.19.1's in the last bits."
@@ -9,10 +13,6 @@
     {
       "version": "0.19.1",
       "text": "The image now carries XRT, so the NPU needs only the host's driver and firmware (#238). A malformed tool schema gets a 400 and no longer keeps a generation slot (#243). `/v1/completions` no longer tokenizes a whole prompt again when it extends a recent one, and takes `ignore_eos` for fixed-length benchmark runs."
-    },
-    {
-      "version": "0.19.0",
-      "text": "Whole-file rewrites about a third faster with identical output, the API port on IPv6 too (#231), and an opt-in preview: an agent guard that reads tool results on the NPU and holds a side-effecting call in a flagged turn. Fixes for LFM3 long prompts and NPU recovery (#235) and for d3 keys it ignored (#234)."
     }
   ],
   "figures": {

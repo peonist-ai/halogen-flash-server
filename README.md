@@ -56,9 +56,9 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.20.0: document parsing on the NPU with your own OvisOCR3, the image on ROCm 10.1, faster prefill,
-and a fix for strict tool calls under concurrency. A numeric release: Flash's outputs can differ from
-0.19.1's in the last bits, and the quality gates are unchanged ([CHANGELOG](CHANGELOG.md)).
+0.20.1: faster follow-up turns (the end of each reply is cached), an answer when the model ends its
+turn inside its reasoning, and a quieter log. The checkpoints, runtime and tuning are 0.20.0's
+([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
 point it at the file you already have (unsloth's `UD-IQ4_XS`, say) and it
@@ -105,7 +105,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.0
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.1
 ```
 
 The weights come from

@@ -25,7 +25,7 @@ podman run --rm \
   --device /dev/kfd --device /dev/dri --group-add keep-groups \
   --ipc=host --ulimit memlock=-1:-1 \
   -v ~/halogen-models:/models:ro \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.0 \
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.1 \
   MODE [FILE] [flags]
 ```
 

@@ -101,7 +101,7 @@ kv_budget_note() {
 
   kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v pp="$KV_PP" -v rr="$KV_ROWS" 'BEGIN{printf "%.1f", (pool=="0"?s*c*rr:p*pp+s*120586240)/1073741824}')
 
-  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-}" -v s="$ENG_SLOTS" -v br="${HALOGEN_CACHE_BRANCHES:-2}" -v s3="${HALOGEN_CACHE_SNAP3:-1}" -v rr="$KV_ROWS" -v fu="${HALOGEN_CACHE_FULL:-1}" 'BEGIN{if (n=="") n = s * (1 + br*((s3=="0")?1:2) + ((fu=="0")?0:1)); printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*rr/1073741824)}')
+  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-}" -v s="$ENG_SLOTS" -v br="${HALOGEN_CACHE_BRANCHES:-2}" -v s3="${HALOGEN_CACHE_SNAP3:-1}" -v rr="$KV_ROWS" -v fu="${HALOGEN_CACHE_FULL:-1}" -v rp="${HALOGEN_CACHE_REPLY:-1}" -v pm="${HALOGEN_PROMPT_CACHE:-2}" 'BEGIN{if (n=="") n = s * (1 + br*((s3=="0")?1:2) + ((fu=="0")?0:1) + ((rp=="0" || pm=="1")?0:1)); printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*rr/1073741824)}')
 
   local mi="${_hg_proc:-/proc}/meminfo" cma_gib=0 free_gib=""
   avail_gib=$(awk '/^MemAvailable/{a=$2} /^CmaFree/{c=$2} END{if (a != "") printf "%.1f", (a-c)/1048576}' "$mi" 2>/dev/null || echo "?")

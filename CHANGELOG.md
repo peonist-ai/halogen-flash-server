@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.20.1
+
+Faster follow-up turns, an answer when the model ends its turn inside its reasoning, and a quieter log.
+The Flash checkpoints, the runtime and the GEMM tuning are 0.20.0's. A first turn at temperature 0 reads as on 0.20.0. A follow-up that resumes from the cached end of the previous reply, and a turn whose reasoning the server now closes, can differ from 0.20.0's (below).
+
+### Changed
+
+- **Faster follow-up turns: the end of each reply is cached.** When a client sends a reply back exactly as it was generated (thinking off, or the reasoning returned with the history), the next turn resumes from the end of that reply instead of reading it again. In our tests (thinking off, two machines) the time to the first token of a follow-up fell from 0.60 s to 0.19 s on a code-edit session, from 0.36 s to 0.21 s on a long-document chat and from 0.82 s to 0.70 s on a short agent turn; the saving grows with the length of the previous reply. It is an ordinary prompt-cache entry, one per conversation, kept in RAM only (about 112 MiB each, one more entry per slot: the start line reads 3.1 GiB of prompt cache at 4 slots, was 2.7) and forgotten like any other entry when memory is needed; it never holds memory a running request needs. Clients that drop or rewrite the previous reply see no change. A follow-up resumed this way reads the same tokens through different arithmetic, so later turns can differ from 0.20.0's in the last bits, as with any prompt-cache hit.
+- **Retired: the automatic reply-end keep (`HALOGEN_FORK_MAP=auto`).** The cached reply end above does what it did, by default and without pinning memory. A configuration that still sets it starts normally, prints one line saying it is ignored, and gets the new behaviour. `HALOGEN_FORK_AUTO_KEEPS` and `HALOGEN_FORK_AUTO_END_ONLY` are no longer read. Named keeps (`X-Halogen-Keep` / `X-Halogen-From`) and `HALOGEN_FORK_MAP=claude-code` are unchanged.
+- The `kv pool: ... cannot grow ... the turn runs in the N positions it has left` line is now an ordinary log line (stdout) instead of an error (stderr), so `journalctl` no longer shows it in red on every follow-up turn of a long session. It is routine: a turn that reaches that room grows its region and gets its whole `max_tokens`. When a turn really is cut short because nothing could make room, the server logs one warning on stderr, `kv pool: request N was shortened by the room its region had left, ...`, naming what was cut (the reply at `max_tokens`, the thinking budget, or both).
+
+### Fixed
+
+- Turns that ended with reasoning and no answer. When the model ended its own turn inside its reasoning (an `<|im_end|>` written before it closed the think block), the reply stopped there, sometimes with a stray `<|im_end|>` at the end of the reasoning. The server now closes the reasoning at that point and the model writes its answer; `usage.completion_tokens_details.reasoning_closed_by` reads `end_of_turn_in_reasoning` when this happens. Other replies are unchanged. With a response schema or strict tools the earlier behaviour stays. Thanks to the Discord user who sent the session.
+
 ## 0.20.0
 
 Document parsing on the NPU with your own OvisOCR3, the image on ROCm 10.1, faster prompt reading, and a fix for strict tool calls under concurrency.
