@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.20.2
+
+Faster generation with several requests at once, a sooner first token on long conversations, and faster NPU decisions.
+The Flash checkpoints are 0.20.1's, and at temperature 0 Flash's replies read as on 0.20.1.
+
+### Changed
+
+- Slightly faster when several requests generate at once, up to about 1%. Replies are unchanged.
+- Faster time to first token on long conversations, up to about 4%.
+- NPU decisions on long prompts start a little sooner.
+- `d3-lite` answers 14 to 18% faster on the NPU and uses less energy. Its scores can differ from 0.20.1's in the last digits, with
+  the same accuracy in our checks.
+
 ## 0.20.1
 
 Faster follow-up turns, an answer when the model ends its turn inside its reasoning, and a quieter log.

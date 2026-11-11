@@ -56,8 +56,8 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.20.1: faster follow-up turns (the end of each reply is cached), an answer when the model ends its
-turn inside its reasoning, and a quieter log. The checkpoints, runtime and tuning are 0.20.0's
+0.20.2: faster generation with several requests at once, a sooner first token on long
+conversations, and faster NPU decisions. The Flash checkpoints are 0.20.1's
 ([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
@@ -105,7 +105,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.1
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.2
 ```
 
 The weights come from
