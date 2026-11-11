@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.20.3
+
+Faster `d3-nano` decisions on the NPU. Everything else is unchanged from 0.20.2.
+
+### Changed
+
+- `d3-nano` answers 7 to 9% faster on the NPU and uses less energy. Its scores can differ from 0.20.2's in the last digits, with
+  the same accuracy in our checks.
+
 ## 0.20.2
 
 Faster generation with several requests at once, a sooner first token on long conversations, and faster NPU decisions.
