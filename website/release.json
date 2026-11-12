@@ -1,7 +1,11 @@
 {
-  "version": "0.20.3",
-  "release_date": "2026-11-11",
+  "version": "0.20.4",
+  "release_date": "2026-11-12",
   "patch_notes": [
+    {
+      "version": "0.20.4",
+      "text": "Short follow-up turns start sooner, 15 to 50% on their prompt, more on long conversations. Servers with more than 8 slots generate faster with many requests at once. A request with tool_choice \"none\" now gets a prose answer even when the conversation already holds tool calls."
+    },
     {
       "version": "0.20.3",
       "text": "NPU decisions with d3-nano are 7 to 9% faster. Everything else is unchanged from 0.20.2."
@@ -9,10 +13,6 @@
     {
       "version": "0.20.2",
       "text": "Generation is a little faster with several requests at once, the first token comes sooner on long conversations, and NPU decisions are faster, d3-lite's by 14 to 18%. The Flash checkpoints are 0.20.1's."
-    },
-    {
-      "version": "0.20.1",
-      "text": "Follow-up turns start faster: the end of each reply is cached, so a client that sends it back resumes there. When the model ends its turn inside its reasoning, the server closes the reasoning and the model answers. The routine KV pool line no longer logs as an error."
     }
   ],
   "figures": {

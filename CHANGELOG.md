@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.20.4
+
+Short follow-up turns start sooner, more throughput with more than 8 requests at once, and `tool_choice: "none"` holds in a
+conversation that already has tool calls. The Flash checkpoints, the runtime and the GEMM tuning are 0.20.3's.
+
+### Changed
+
+- Short follow-up turns start sooner: a message of a few words to a few sentences added to a cached conversation is read 15 to
+  50% faster, more on long conversations. At temperature 0 such a turn can occasionally read differently from 0.20.3 where two
+  words were nearly tied; quality is unchanged in our checks.
+- More throughput past 8 concurrent requests (servers started with `HALOGEN_KV_SLOTS` above 8): with 16 requests generating at
+  once the combined rate is up by about 10 to 20%. Replies at temperature 0, and sampled replies with a client seed, are
+  unchanged. Servers at the default 4 slots are unaffected.
+
+### Fixed
+
+- A tool call the client had turned off no longer arrives as text (#253, reported by @bugsyb). With `tool_choice: "none"` in a
+  conversation that already holds tool calls, the model could still write one, and it reached the client as raw `<tool_call>`
+  markup in the reply. Open WebUI 0.13 sends exactly that request to end a tool loop (after a failed or repeated call, or at its
+  iteration limit), so a chat with thinking off sometimes ended on XML. The server now answers such a request in prose, on the
+  chat, Responses and Messages endpoints. Requests without `tool_choice: "none"`, or whose conversation holds no call, are
+  unchanged.
+
 ## 0.20.3
 
 Faster `d3-nano` decisions on the NPU. Everything else is unchanged from 0.20.2.
