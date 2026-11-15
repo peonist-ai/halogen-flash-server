@@ -185,6 +185,10 @@ def render_text(text, data, name, used, errs):
                 errs.append(f"{where}: bar needs a numeric value and a scale, got value "
                             f"{f['value']} scale {scale!r}")
                 return ""
+            if v > sc:
+                errs.append(f"{where}: bar {arg} is {f['value']}, past its scale {scale}: "
+                            f"raise the scale or the bar overflows its chart")
+                return ""
             s = str((v / sc * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)) + "%"
         return html.escape(s, quote=False)
 
