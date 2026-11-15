@@ -9,11 +9,11 @@ Full list in [`docs/FLAGS.md`](FLAGS.md). The ones that matter:
 | `HALOGEN_BIND` | `127.0.0.1` | Engine bind address. Loopback when engine and API share a container; `0.0.0.0` only for the split topology, where it stays unpublished. |
 | `HALOGEN_CTX` | `262144` | The most one request may use, the model's full native context. It bounds a **request**, not an allocation. |
 | `HALOGEN_KV_POOL_POSITIONS` | `2 x HALOGEN_CTX` | **The memory knob.** Positions resident across all conversations, about 29.5 KiB each. [See below](#context-and-memory-one-kv-pool-several-conversations). |
-| `HALOGEN_KV_SLOTS` | `4` | Conversations generating at once. A slot costs about 115 MB of its own state; **it is not the memory knob**; the pool is. |
+| `HALOGEN_KV_SLOTS` | `4` | Conversations generating at once. A slot costs about 115 MB of its own state (about half that since 0.20.5); **it is not the memory knob**; the pool is. |
 | `HALOGEN_PROMPT_CACHE` | `2` | Session prefix reuse. On by default. `1` for byte-identical repeat answers, `0` for off. [See below](#choosing-a-cache-mode). |
 | `HALOGEN_MATMUL_TUNING_FILE` | **baked into the image** | A tuned GEMM plan, on by default, at no measured quality cost. The published prefill numbers include it. |
-| `HALOGEN_CK_OVERLAY` | **the quality sidecar** | You get quality by default. `…overlay-speed.hgn` trades the calibration for about 2% decode, `none` runs the bare checkpoint. [See above](precision.md#precision-what-you-get-and-how-to-trade-it). |
-| `HALOGEN_MODEL_ID` | `halogen-qwen3.8-flash-next` | The id at `/v1/models` and in every response. |
+| `HALOGEN_CK_OVERLAY` | unset | Only for the older `w4b` checkpoint: which precision sidecar to read. The default checkpoint carries its own precision and takes none. [See above](precision.md#precision-what-you-get-and-how-to-trade-it). |
+| `HALOGEN_MODEL_ID` | `halogen-qwen3.8-flash-next` | The id at `/v1/models` and in every response. A request that names another of halogen's own models that is not loaded here gets a 404 `model_not_found`; other names are still answered. |
 | `HALOGEN_DOWNLOAD` | unset | Fetch weights on first start. Off by default, which is what keeps the container free of all outbound connections. |
 
 ## Choosing a cache mode
@@ -88,7 +88,7 @@ resident**, and generates for **four at once**. `HALOGEN_CTX` is the most a
 single request may use; `HALOGEN_KV_POOL_POSITIONS` is how many attention
 positions are resident across all conversations. The slots share that pool
 rather than each owning a copy, so a slot adds only about 115 MB of its own
-state and the pool is what has to fit on the device. Attention state costs
+state (about half that since 0.20.5) and the pool is what has to fit on the device. Attention state costs
 about 28 KiB per position including its scratch. Device memory below is the
 default checkpoint and four slots on a 128 GB machine:
 
@@ -182,8 +182,8 @@ back. Prompt lookup drafts only for a conversation generating alone.
 
 **Slots are a latency policy, not a memory decision.** Raising
 `HALOGEN_KV_SLOTS` past four trades what each client sees for admitting more
-clients at once instead of queueing them; past eight the total stops
-growing. Four is the default because it keeps per-stream speed where the
+clients at once instead of queueing them; up to sixteen streams the total still
+grows (since 0.20.4). Four is the default because it keeps per-stream speed where the
 numbers in this document were measured. Slots cap admission: a client past
 the count queues rather than diluting the batch, so with five workers on
 four slots each admitted stream still decodes at the four-stream rate and
@@ -301,12 +301,13 @@ Longer prompts are prefilled in pieces. **Do not raise
 it to the native context:** that allocation does not fit, and the server will
 not start.
 
-**Cache entries.** The prompt cache keeps twenty-four entries
-(`HALOGEN_CACHE_ENTRIES`), six per conversation: one at the end of its system
+**Cache entries.** The prompt cache keeps twenty-eight entries
+(`HALOGEN_CACHE_ENTRIES`), seven per conversation: one at the end of its system
 prompt, three at points in its history (the ends of earlier requests, and the
-start of the last message), and one at the end of its last request, which
+start of the last message), one at the end of its last request, which
 serves an exact repeat of that request without reading anything again
-(`HALOGEN_CACHE_FULL=0` turns that one off). A conversation holds a fixed
+(`HALOGEN_CACHE_FULL=0` turns that one off), and one at the end of its last
+reply, from which the next turn resumes without reading the reply again. A conversation holds a fixed
 number of entries: a new turn's history entry replaces an older one rather
 than adding to the list, so a long tool-calling session cannot push other
 sessions out (the count shows as `superseded` on `/cache`). It keeps the
@@ -318,7 +319,7 @@ prompt and ask different things resume from it as well.
 
 | lever | when |
 |---|---|
-| raise `HALOGEN_CACHE_ENTRIES` by one conversation's worth (about 115 MiB of host RAM per entry, and the KV rows an entry covers stay reserved while it exists) for each extra deep conversation | more than four deep conversations at once; a value too small to hold one conversation's worth per slot says so at startup |
+| raise `HALOGEN_CACHE_ENTRIES` by one conversation's worth (about 115 MiB of host RAM per entry, about half that since 0.20.5, and the KV rows an entry covers stay reserved while it exists) for each extra deep conversation | more than four deep conversations at once; a value too small to hold one conversation's worth per slot says so at startup |
 | raise `HALOGEN_CACHE_BRANCHES` (two by default: a conversation plus one side turn) | a **fan-out**: one parent forked into several children living in the same region; at two, the parent's resume point is the one the children's stores replace |
 
 The server prints the memory budget at startup and warns before the
@@ -369,6 +370,8 @@ directory, so a different build or setting never restores another's state,
 and the bound above applies to the current subtree only. An upgrade leaves
 the previous build's subtree behind, readable by nothing but that build; the
 startup log counts them (`N other configuration(s) hold X GiB there`).
+Upgrading to 0.20.5 starts a new subtree (the saved state format changed): the
+first conversations after the upgrade are read again.
 `HALOGEN_CACHE_PRUNE_OLD=1` removes them at startup and names each one with
 its size; the default keeps them so a rollback finds its cache warm.
 Stopping the server flushes the last turn before it exits, so give it a

@@ -32,6 +32,7 @@ thinking controls ([Token budgets](token-budgets.md)). The response is the
 standard shape: `choices[].message` (with `tool_calls` and `reasoning_content`
 where they apply), `usage` including reasoning-token detail, and `timings`.
 A non-streaming request whose client hangs up is cancelled and logged as 499.
+With `tool_choice: "none"` the reply is prose even when the conversation already holds tool calls.
 
 ### `POST /v1/completions`
 
@@ -79,8 +80,9 @@ The Anthropic Messages API: `system` blocks, `content` blocks, `tools` and
 ## NPU sidecar routes
 
 When the NPU container runs, small models answer beside the Flash model:
-`POST /v1/embeddings`, `/v1/rerank`, `/v1/moderations`, `/v1/systemone`
-(decisions), `/v1/images/generations`, `/v1/audio/transcriptions`,
+`POST /v1/embeddings`, `/v1/rerank`, `/v1/moderations`, `/classify`,
+`/v1/systemone` (decisions), `/v1/images/generations`, `/v1/images/edits`,
+`/v1/images/variations`, `/v1/audio/transcriptions`,
 `/v1/audio/speech`, and
 `/v1/chat/completions` for the small generative models; `GET /health` and
 `/v1/models` report them. Each route only accepts the model kinds built

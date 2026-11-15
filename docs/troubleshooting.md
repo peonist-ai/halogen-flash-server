@@ -19,7 +19,7 @@
 
 **The KV pool did not fit on this machine. The knob is the pool, not the
 slots**: `HALOGEN_KV_SLOTS` is the first thing most people try, and it will
-not fix this: the slots share one pool and each costs only about 115 MB, so
+not fix this: the slots share one pool and each costs about 115 MB (about half that since 0.20.5), so
 one slot allocates as much as four.
 
 ```
@@ -244,6 +244,12 @@ program finishes loading.
   killer picks this server first.
 - A client on the same host can read `/proc/pressure/memory` before it starts a heavy job.
 
+## If an NPU request never finishes
+
+An NPU job that runs longer than `HALOGEN_NPU_KILL_S` seconds (default 1800, `0` turns it off) takes the NPU engine down. It
+starts again by itself and the GPU model keeps serving. Requests waiting for the NPU get a 503 meanwhile. The NPU health shows
+`engine_stalled` while a job is overdue.
+
 ## If a request waits with no output
 
 **Every slot is busy, and the request is queued until one frees.** The client sees a `200` and
@@ -259,6 +265,9 @@ serve_api: the request that waited started after 1505 s
 (`halogen:queue_wait_*`, `halogen:queue_gave_up_total`). To bound the wait, set
 `HALOGEN_QUEUE_TIMEOUT`. For more requests at once, raise `HALOGEN_KV_SLOTS`: the slots share
 one KV pool, so a slot costs little memory.
+
+On 0.20.4 and earlier, a request that named one kept state in both `X-Halogen-From` and `X-Halogen-Keep` and could not start
+from it also waited here, up to `HALOGEN_FORK_TTL_S`; 0.20.5 releases that state first.
 
 ## If the host has a second AMD GPU
 

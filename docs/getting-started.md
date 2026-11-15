@@ -44,12 +44,8 @@ have moved under it. Pin in anything durable, use `:latest` to try the
 newest.
 
 Note the models volume is read-**write** here, with no `:ro`, because it is
-being downloaded into. Nothing is fetched on later starts, with one
-exception: a start with `HALOGEN_DOWNLOAD` set and the volume writable
-re-fetches w4b's 2.4 GiB quality sidecar when the one on disk predates the
-image (0.6.0 changed that file; a checkpoint is never re-fetched). With
-`HALOGEN_DOWNLOAD` unset the container opens no outbound connections at all,
-and says at startup if the sidecar is the older one.
+being downloaded into. Nothing is fetched on later starts. With
+`HALOGEN_DOWNLOAD` unset the container opens no outbound connections at all.
 
 **Upgrading from 0.14 or earlier.** Your volume holds 0.14's checkpoint,
 `qwen38-flash-next-w4b.hgn` and its sidecar. With `HALOGEN_CHECKPOINT`

@@ -10,6 +10,8 @@ Each answers one question about a file:
 | `ppl` | how does it compare to the shipped checkpoint (perplexity, and KL against a reference dump)? |
 | `niah` | does it still find things at depth? |
 
+`convert` (GGUF to checkpoint) is covered in [Bring your own GGUF](gguf.md#convert-a-gguf-once).
+
 They take the same mounts as the server and no port, they load nothing you
 do not already have, and every number they print is on the same scale as
 the numbers in this documentation, because it is the same engine computing
@@ -89,6 +91,9 @@ podman run … halogen ppl /models/qwen38-flash-next-w4b.hgn \
   --corpus /models/wikitext-2-raw-test.txt --ref-out /models/shipped-wikitext2.ref
 /models/qwen38-flash-next-w4b.hgn: PPL 3.8522 (mean NLL 1.34864 over 297052 tokens, chunk 1024 = the prefill kernels)
 ```
+
+These examples were taken on 0.13's w4b checkpoint; on the default checkpoint
+(v2) substitute `qwen38-flash-next-v2.hgn`, and expect different numbers.
 
 The second is your file against it. This is unsloth's UD-IQ4_XS GGUF, as
 downloaded, through this image (0.13.0, the reference machine):

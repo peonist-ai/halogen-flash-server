@@ -27,6 +27,8 @@ what that leaves for anything else.
 - [Sessions: keep, fork and join](sessions.md)
 - [Sampling](sampling.md) · [Images](images.md) ·
   [Token budgets](token-budgets.md) · [Using it as a classifier](classifier.md)
+- [Agent guard (preview)](agent-guard.md): with the NPU, a small model reads
+  each tool result and can hold a side-effecting tool call
 
 **Configuring it:**
 

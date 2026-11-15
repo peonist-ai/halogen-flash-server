@@ -9,16 +9,18 @@ images up to 1024x1024 (`flux2-klein-4b`, on `/v1/images/generations`),
 speech to text (`qwen3-asr-0.6b` or `qwen3-asr-1.7b`, on
 `/v1/audio/transcriptions`) and text to speech (`qwen3-tts-0.6b-customvoice`
 or `qwen3-tts-1.7b-customvoice`, on `/v1/audio/speech`), or your own
-fine-tune of one of the first four.
+fine-tune of a decision, embedding, reranking or moderation model, or a LiquidAI LFM3, d1-2B or OvisOCR3 checkpoint.
+Decisions over text and pictures (`d3-lite`, `d3-nano`), a streaming guard and larger 4B sizes run there too. See the
+[NPU page](NPU.md) for the full list.
+
 Add the NPU to the Quickstart's command:
 
 ```
-  --device /dev/accel/accel0 -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro \
+  --device /dev/accel/accel0 \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b \
 ```
 
-A request picks a model by its `model`. The host needs the NPU driver and
-XRT, and the GPU's fabric clock held at its top speed. GPU work and NPU work
+A request picks a model by its `model`. The host needs the NPU driver, the NPU firmware and the IOMMU on; the image carries XRT. It also needs the GPU's fabric clock held at its top speed. GPU work and NPU work
 at the same time can otherwise hang a Strix Halo machine. Run as root with
 `-v /sys:/host/sys` and the server holds the clock itself while it runs.
 Rootless, the unit in [`deploy/host/`](https://github.com/peonist-ai/halogen-flash-server/tree/main/deploy/host) holds it at every boot.

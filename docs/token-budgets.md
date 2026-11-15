@@ -21,7 +21,7 @@ means you have the whole answer, `"length"` means you ran out of budget.
 
 | you want | send | what it does |
 |---|---|---|
-| a total budget | `max_completion_tokens` | also accepted: `max_output_tokens`, `max_tokens`: one field, three names, same meaning. Send one, or several that agree; two different values is a 400, never a guess. Default **8192**; cap **65536** (`HALOGEN_MAX_TOKENS_CAP`). Above the cap you get a 400 rather than a silent truncation: ask for what you need and the server tells you if it is too much. `-1` asks for the most the server allows (the cap, or the room left in the context); `0` and other negative values are a 400. |
+| a total budget | `max_completion_tokens` | also accepted: `max_output_tokens`, `max_tokens`: one field, three names, same meaning. Send one, or several that agree; two different values is a 400, never a guess. Default **8192** on chat and Responses (128 on `/v1/completions`); cap **65536** (`HALOGEN_MAX_TOKENS_CAP`). Above the cap you get a 400 rather than a silent truncation: ask for what you need and the server tells you if it is too much. `-1` asks for the most the server allows (the cap, or the room left in the context); `0` and other negative values are a 400. |
 | less thinking | `"reasoning_effort": "low"` | accepted: `minimal` `low` `medium` `high` `xhigh` `max`; the model's own default is `xhigh`. Hard reasoning problems can genuinely exceed 8192 tokens: pass a larger budget, or think less. |
 | no thinking | `"reasoning_effort": "none"` | the same as `chat_template_kwargs: {"enable_thinking": false}`, and `reasoning: {"effort": "none"}` on `/v1/responses`. |
 | a bound on the think block | `"max_thinking_tokens": N` | if the model has not closed the block after N generated tokens, the server closes it (see *When the server closes the block*). Server default: `HALOGEN_MAX_THINKING_TOKENS`; the request wins. The total budget still covers thinking and answer. |
@@ -89,7 +89,7 @@ mechanism off); `/health` reports it as `thinking_answer_room`.
 ## When the server closes the block, it says so
 
 When the server closes the think block, at your `max_thinking_tokens`, at
-the answer room or at the end-of-turn guard below, it writes Qwen's
+the answer room, at the end-of-turn guard below or when the model ends its turn inside its reasoning, it writes Qwen's
 closing sentence and then `<|im_end|>`; the answer follows in the same stream,
 on the same state, with no second request. `HALOGEN_THINKING_BUDGET_MESSAGE`,
 like llama-server's `--reasoning-budget-message`, replaces that sentence
@@ -105,7 +105,7 @@ A reply whose block the server closed carries, in
 | field | meaning |
 |---|---|
 | `reasoning_closed_at` | the token the block was closed at |
-| `reasoning_closed_by` | `"answer_room"`, `"max_thinking_tokens"`, or `"end_of_turn_guard"` |
+| `reasoning_closed_by` | `"answer_room"`, `"max_thinking_tokens"`, `"end_of_turn_guard"`, or `"end_of_turn_in_reasoning"` (the model ended its turn inside its reasoning; the server closes the block and the model writes its answer) |
 
 A reply whose block the model closed itself has neither (`reasoning_closed_*`
 ride beside `reasoning_tokens`). The per-request
@@ -179,6 +179,7 @@ entrypoint's fallback to it needs no mount at all.
 | 0.13.4 | the end-of-turn guard |
 | 0.14.2 | the kept-marker limit (16 in the thinking block) |
 | 0.15.1 | `HALOGEN_THINKING_BUDGET_MESSAGE`; the `max` effort; thinking-off requests count no reasoning tokens |
+| 0.20.1 | the model's own end of turn inside its reasoning is closed and answered (`end_of_turn_in_reasoning`) |
 
 Before 0.11.0 a budget that ran out mid-thought removed the answer entirely;
 the answer room is why that shape no longer happens unless you turn it off.

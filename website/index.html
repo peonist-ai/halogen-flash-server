@@ -81,7 +81,7 @@ podman run --rm -p 8731:8731 \
 <div class="rw"><dt>BIOS</dt><dd><p>The UMA frame buffer (dedicated graphics memory) at its smallest explicit value, not Auto.</p></dd></div>
 <div class="rw"><dt>Containers</dt><dd><p>Podman with <code>--group-add keep-groups</code>. On Docker, use <code>--group-add video --group-add render</code> instead.</p></dd></div>
 <div class="rw"><dt>Disk</dt><dd><p>The first start fetches the weights, about {{fig:req.weights}}.</p></dd></div>
-<div class="rw"><dt>NPU models (optional)</dt><dd><p>The NPU driver, XRT with its NPU plugin, the NPU firmware, and the IOMMU on. The GPU's fabric clock held at its top speed, or the server refuses to start and prints the commands for your machine.</p></dd></div>
+<div class="rw"><dt>NPU models (optional)</dt><dd><p>The NPU driver, the NPU firmware, and the IOMMU on. The image carries XRT. The GPU's fabric clock held at its top speed, or the server refuses to start and prints the commands for your machine.</p></dd></div>
 </dl>
 <p class="src">Sources: <a href="docs/troubleshooting/#the-host-settings-these-numbers-were-measured-on">host settings</a>, <a href="docs/host-setup/">a machine of its own</a>, <a href="docs/NPU/">NPU host details</a>, <a href="docs/getting-started/">Quickstart</a>, <a href="docs/limits/">limits</a>.</p>
 </div></div></section>

@@ -62,6 +62,10 @@ your configuration; the third depends on one setting.
   every prompt length; [Choosing a cache mode](configuration.md#choosing-a-cache-mode) has the
   numbers on what that trade actually costs.
 
+These properties hold within a release. Between releases a reply at temperature 0
+can read slightly differently where two words were nearly tied (the changelog says
+so for 0.20.0 and 0.20.5); `HALOGEN_DN_STATE=fp32` restores 0.20.4's arithmetic exactly.
+
 **What is not measured.** We have never run the model at BF16. It does not
 fit in 124 GB, which is the whole reason this engine exists, so every quality
 number is against either a dequantized-weight reference or our own arms, never

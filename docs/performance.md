@@ -360,7 +360,7 @@ prompts is 36.8 tok/s, so a coding-agent turn decodes at about 1.5x serial.
 Every one of those runs produced the serial run's tokens exactly. Prompt
 lookup runs while the request is the only one generating; with several
 conversations generating at once the scheduler batches them instead (the
-concurrency table below is unchanged by it).
+"requests at once" rows in [0.18.11 against 0.18.10](#01811-against-01810) are unchanged by it).
 
 Decode barely moves with depth. Serial gives up about 7% going from 1,500 to
 32,768 tokens of context, a 22x increase. The 32,768 served figure is

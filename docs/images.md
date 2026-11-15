@@ -15,6 +15,8 @@ says what pool you got (see *Check what pool you actually got* below). `/health`
 whether images are accepted and, when they are not, why; an image sent to a
 server without a tower is a 400 naming the flag.
 
+A request may carry as many images as fit in the context; there is no fixed count. A JSON schema and strict tools apply to a request with images as to any other, and `/health` reports it under `structured_output.images`.
+
 `/v1/chat/completions` and `/v1/responses` take an image content part in the
 usual OpenAI shape, carrying a `data:` URL or bare base64. Since 0.15.1
 `/v1/messages` takes an Anthropic `image` block with a `base64` source.

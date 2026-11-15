@@ -4,7 +4,7 @@
   "patch_notes": [
     {
       "version": "0.20.5",
-      "text": "Faster decoding with several requests at once, and saved conversations take less memory. Hindi, Thai and other Indic-script prompts are tokenized the way the model was trained. LFM3 on the NPU reads long prompts about twice as fast and generates faster. Fixes for structured output, the answer guard, Claude Code's mid-session tool changes and model names."
+      "text": "Faster decoding with several requests at once, and saved conversations take less memory. Hindi, Thai and other Indic-script prompts are tokenized the way the model was trained. LFM3 on the NPU reads long prompts about twice as fast and generates faster. Fixes for structured output, the answer guard, Claude Code's mid-session tool changes and model names. A prompt cache saved to disk by an earlier version is rebuilt on first use. At temperature 0 a reply can read slightly differently from 0.20.4 where two words were nearly tied."
     },
     {
       "version": "0.20.4",

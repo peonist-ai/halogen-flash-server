@@ -87,7 +87,7 @@ debugging the server.
 | **[Give it a machine of its own](docs/host-setup.md)** | what the server holds; [recipes if you must share it](docs/host-setup.md#if-you-must-share-it) |
 | **[API reference](docs/api.md)** | every endpoint, conventions, status codes |
 | Clients | [Codex (Responses API)](docs/codex.md) · [Claude Code (Messages API)](docs/claude-code.md) · [agent harnesses](docs/agent-harness.md) · [sessions: keep, fork, join](docs/sessions.md) |
-| Requests | [sampling](docs/sampling.md) · [images](docs/images.md) · [token budgets](docs/token-budgets.md) · [as a classifier](docs/classifier.md) |
+| Requests | [sampling](docs/sampling.md) · [images](docs/images.md) · [token budgets](docs/token-budgets.md) · [as a classifier](docs/classifier.md) · [agent guard (preview)](docs/agent-guard.md) |
 | **[Configuration](docs/configuration.md)** | [cache modes](docs/configuration.md#choosing-a-cache-mode), [the KV pool](docs/configuration.md#context-and-memory-one-kv-pool-several-conversations), [disk cache](docs/configuration.md#prompt-cache-on-disk-resume-a-conversation-after-a-restart), [1M context](docs/configuration.md#1m-context-opt-in-and-a-different-configuration), [attention budget](docs/configuration.md#attention-budget-opt-in-and-a-different-configuration), [API key](docs/configuration.md#api-key-require-one-on-the-api-port-opt-in), [request records](docs/configuration.md#request-records-a-log-of-what-your-clients-send-opt-in) |
 | Checkpoints | [precision](docs/precision.md) · [bring your own GGUF](docs/gguf.md) · [measuring a checkpoint](docs/checkpoint-tools.md) · [QUANT.md](docs/QUANT.md) |
 | Numbers | **[measured](docs/performance.md)** · [quality: what is measured, and what is not](docs/quality.md) |
@@ -132,6 +132,8 @@ podman run --rm -p 8731:8731 \
   -v ~/halogen-models:/models \
   ghcr.io/peonist-ai/halogen-flash-server:0.18.14-flint-preview
 ```
+
+The preview image is built from 0.18.14 and does not carry later fixes.
 
 It is a preview: prefill slows past roughly 80-90k tokens of context, and
 speculative decoding is opt-in (`HALOGEN_FLINT_SPEC=1`) and greedy-only.

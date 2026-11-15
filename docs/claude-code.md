@@ -11,7 +11,7 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
 claude
 ```
 
-The server checks neither the key nor the model name, and replies name the
+With no `HALOGEN_API_KEY` set the server accepts any key, and it answers any model name Claude Code sends; replies name the
 model that served them. Claude Code asks for its model's full output limit on
 every request, more than this server's cap (`max_tokens_cap` in `/health`,
 65,536 by default). Since 0.18.1 `/v1/messages` runs such a request with the
@@ -37,6 +37,10 @@ starts with the last one, and the prompt cache resumes it.
 a later request that shares the conversation up to the mark resumes from
 it. `usage.cache_read_input_tokens` says how much of the prompt came from
 the cache, and `input_tokens` counts the rest.
+
+**Tools that change mid-session.** Claude Code announces a tool added or removed during a session as a system message carrying the
+tool's definition. The server accepts it: an added tool is available from that point of the conversation, a call to it comes back
+as an ordinary tool call, and the start of the prompt is unchanged, so the prompt cache keeps hitting.
 
 **Not served.** Anthropic's server-side tools, such as web search and code
 execution, are dropped with a log line, and your own tools are used. A PDF

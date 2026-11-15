@@ -28,7 +28,7 @@ volume already holds.
 **0.14's checkpoint still loads.** `qwen38-flash-next-w4b.hgn` and its
 quality sidecar (the two files below) run as before, named with
 `HALOGEN_CHECKPOINT`. On a volume that holds only them, they are what an
-unset `HALOGEN_CHECKPOINT` serves (see "Upgrading" above).
+unset `HALOGEN_CHECKPOINT` serves (see [Upgrading from 0.14 or earlier](getting-started.md)).
 
 **With w4b:** the checkpoint ships as two files, and the engine picks the
 second one up on its own when it sits beside the first:

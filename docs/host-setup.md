@@ -84,7 +84,7 @@ the stall described above. Options, in the order worth trying:
 2. **Lower `HALOGEN_KV_POOL_POSITIONS`.** Fewer conversations stay resident
    at once; each one's speed and its answers are unchanged.
 3. **`HALOGEN_WEIGHTS_LOCK=1`**, for a host that is already short (below).
-4. **`HALOGEN_FLASH_PIN_TRUNK=0`**, w4b only, a last resort (below).
+4. **`HALOGEN_FLASH_PIN_TRUNK=0`**, only for the deprecated w4b checkpoint (v2 and ht43 refuse it), a last resort (below).
 
 Compacting memory afterwards does not help, because the memory this server
 holds cannot be moved. If you need to reclaim it, stop the server.

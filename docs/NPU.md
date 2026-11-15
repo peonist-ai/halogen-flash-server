@@ -2,7 +2,7 @@
 
 The server can run small models on the Ryzen AI NPU beside the Flash model, behind the same port. Name them in
 `HALOGEN_NPU_MODELS`, and a request picks one by its `model`. Every other request goes to the Flash model, as before.
-Nine kinds of model run there:
+These kinds of model run there:
 
 - **Decisions** with `decider-0.8b` (a Qwen3.5-0.8B classifier). Give a text and a question with 2 to 10 options, and
   get a probability for every option from one pass.
@@ -96,13 +96,15 @@ while the NPU works, since the two share the memory bus and the chip's power bud
 
 ## Larger sizes
 
-Three more models run on the NPU. They are not in the default list: name them in `HALOGEN_NPU_MODELS`, and they are
+More models run on the NPU. They are not in the default list: name them in `HALOGEN_NPU_MODELS`, and they are
 fetched and served like the others.
 
 - `decider-4b` (a Qwen3.5-4B classifier) answers decisions as `decider-0.8b` does, with a better answer on harder questions.
   It takes a little longer to decide.
 - `qwen3-embedding-4b` (Qwen3-Embedding-4B) for embeddings, and `qwen3-reranker-4b` (Qwen3-Reranker-4B) for reranking.
   The reranker shares the embedder's device files.
+- `wemm-embedding-4b` (WeMM-Embedding-4B) embeds text and pictures into one space on `/v1/embeddings`. It runs on
+  `decider-4b`'s programs, so the two share one download. Pictures larger than 768 pixels on a side are scaled down.
 
 Each holds about 5 GB in memory beside the Flash model. A fine-tune of either Qwen3 model, from a path under
 `/models`, loads the same way as at the smaller size.
@@ -219,7 +221,7 @@ curl -s localhost:8731/v1/systemone -H 'content-type: application/json' -d '{
 ```
 
 - `instructions` is the question, and `state` is the text it is about. Both are optional in this contract, so without them the
-  answer reads only the options: send them. Any other key, on a question or on the request, is refused with a 422 (since 0.18.24).
+  answer reads only the options: send them. Any other key, on a question or on the request, is refused with a 422 (since 0.19.0).
 - A `choice` takes 1 to 255 options (each a key, with an optional description); a `noul` is a yes or no; a `score` an ordered list
   of 2 or more levels. The answers have the same shape as the other decision models' System One answers.
 - The `state` can be a string, or an object or array (sent as JSON). It can be empty.
@@ -621,7 +623,7 @@ curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -
 ```
 
 Chat completions follow OpenAI's format, streamed or not, with tool calls; a base checkpoint takes raw text on
-`/v1/completions`. A prompt may be as long as the model's 262,144-token context (since 0.18.24; before it, about 220,000), and
+`/v1/completions`. A prompt may be as long as the model's 262,144-token context (since 0.19.0; before it, about 220,000), and
 near that length it reads for about 2 minutes and takes about 20 GiB of host memory at its peak. On a short prompt it decodes about
 30 tokens a second at full quality and 42 with `:fast` (about 24 and 35 at 32k tokens, 19 and 24 at 130k), and reads
 a prompt at about 6,800 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
@@ -924,8 +926,8 @@ to 21, and the embedder runs at about 0.65 of its speed while a long NPU job run
 - An `embeddinggemma-2` audio clip is up to 30 seconds. An image edit takes one to four pictures and comes out at
   512x512, or at 1024x1024 with one picture.
 - The streaming guard watches the first 2,048 tokens of the user's last message and the reply.
-- A generation prompt is up to 16,384 tokens (its template counts). The prompt and its answer share 18,432 positions,
-  so an answer stops there at the latest.
+- `qwen3.5-2b` takes a prompt of up to 16,384 tokens (its template counts), and the prompt and its answer share 18,432
+  positions, so an answer stops there at the latest. The LFM3 models take the model's 262,144-token context.
 - A decision takes 2 to 10 options (`d3-lite` and `d3-nano`: 1 to 255).
 - A transcription takes a WAV file of up to 20 minutes or 25 MiB.
 - A speech request takes up to 4,096 characters and speaks for about two and a half minutes at most.
@@ -940,7 +942,7 @@ to 21, and the embedder runs at about 0.65 of its speed while a long NPU job run
 
 - **The NPU driver, `amdxdna`.** Recent kernels carry it. Otherwise, install AMD's xdna-driver package. We test the
   kernel's own driver on Ubuntu 26.04 (kernel 7.0), and AMD's driver 2.25 on kernel 6.17.
-- **XRT is in the image.** It carries XRT 2.25.37 with its NPU plugin, built from AMD's source, so you do not need to
+- **XRT is in the image.** It carries XRT 2.27 with its NPU plugin, built from AMD's source, so you do not need to
   install or mount XRT. We run it on both of the drivers above. To use your host's instead, see [below](#host-xrt).
 - **The NPU firmware.** The driver package or `linux-firmware` installs it.
 - **The IOMMU on.** The NPU driver needs it. `amd_iommu=off`, which the README measures for GPU prefill, turns the NPU
@@ -950,7 +952,8 @@ to 21, and the embedder runs at about 0.65 of its speed while a long NPU job run
 (`aie2_tdr_work: Device isn't making progress` in `dmesg`, and `command state 8` in the request's error). On the same
 host, the kernel's own driver with Ubuntu 26.04's XRT ran the same load clean. Use that, or AMD's 2.25. After such a
 fault the server starts the NPU engine again by itself, up to `HALOGEN_NPU_RESTARTS` times (3), while the Flash model
-keeps serving. If the host is under `HALOGEN_NPU_HOST_FLOOR_GIB` at that moment, that does not count as a try: the server
+keeps serving. A single NPU job that runs longer than `HALOGEN_NPU_KILL_S` seconds (1800 by default, `0` turns it off) is
+treated the same way: the NPU engine is stopped and started again, and requests waiting for the NPU get a 503. If the host is under `HALOGEN_NPU_HOST_FLOOR_GIB` at that moment, that does not count as a try: the server
 tries again every 30 seconds to 5 minutes until there is room.
 
 <a id="host-xrt"></a>

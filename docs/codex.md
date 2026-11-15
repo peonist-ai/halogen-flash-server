@@ -71,7 +71,7 @@ the decode loop reads a pointer. Since 0.18.1 a request with a schema may
 also sample (temperature above 0): every token is drawn from the tokens the
 schema allows, and a `seed` repeats the reply on the terms of *Sampling*
 (alone, and both runs cold or both read from the prompt cache). A schema
-with an image, or with `logprobs`, is a 400. `HALOGEN_GRAMMAR=0` turns the
+with `logprobs` is a 400. A schema on a request with images holds the reply to the schema as on any other request. `HALOGEN_GRAMMAR=0` turns the
 feature off.
 
 What the mask does with each keyword:
@@ -99,7 +99,7 @@ held to a schema. A string argument cannot contain the line `</parameter>` (the
 call format's own closing tag). `pattern` and `format` are accepted and not
 enforced in a tool's schema. A strict tool whose schema uses a keyword refused
 above, allows extra parameters at the top, or has more than 32 parameters, and
-every strict tool on a request with images, `logprobs` or more than 128 tools,
+every strict tool on a request with `logprobs` or more than 128 tools,
 is called as it would be without `strict`. The request's log line names it and
 `/metrics` counts it (`halogen:strict_tools_unenforced_total`). `/health` lists
 the rules under `structured_output.strict_tools`. `HALOGEN_STRICT_TOOLS=0`
@@ -121,7 +121,7 @@ accepts `strict` without enforcing it.
 > as the greedy one does. This applies to schemas
 > whose root is an object; `HALOGEN_SCHEMA_ESCAPE=off` binds the schema
 > from the first token again. Whitespace between tokens is allowed, so a
-> pretty-printed reply is fine, but at most two whitespace-only tokens in a
+> pretty-printed reply is fine, but at most three whitespace-only tokens in a
 > row (a forbidden preference otherwise falls to a newline, and then
 > another). Only the end-of-turn token is legal once the value is complete,
 > so the reply is exactly the JSON.
@@ -223,3 +223,5 @@ event into its own typed models.
 | 0.17.5 | the cache metrics; prompt progress |
 | 0.18.0 | the two cache-composition counters |
 | 0.18.1 | the `previous_response_id` refusal |
+| 0.18.21 | schema and strict tools on requests with images |
+| 0.20.5 | `anyOf` up to 32 alternatives |
