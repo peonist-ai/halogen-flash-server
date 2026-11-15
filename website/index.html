@@ -29,7 +29,7 @@ podman run --rm -p 8731:8731 \
 <section class="stats" aria-labelledby="nums"><div class="wrap">
 <h2 id="nums" class="kicker" style="font-size:.8rem;font-family:var(--display);letter-spacing:.2em">Measured</h2>
 <div class="row">
-<div class="tip"><i></i><i></i><i></i><i></i><span class="l">An agent turn, start to last byte</span><span class="n">{{val:stat.turn}}<small> {{unit:stat.turn}}</small></span><span class="c">Context of 30,000 to 96,000 tokens. Median of 115 turns, about 200 tokens of answer each.</span></div>
+<div class="tip"><i></i><i></i><i></i><i></i><span class="l">An agent turn, first token</span><span class="n">{{val:agent.ft.v2}}<small> {{unit:agent.ft.v2}}</small></span><span class="c">Context of 30,000 to 96,000 tokens. Median over three coding-agent sessions.</span></div>
 <div class="tip"><i></i><i></i><i></i><i></i><span class="l">Prefill, 8,192-token prompt</span><span class="n">{{val:stat.prefill}}<small> {{unit:stat.prefill}}</small></span><span class="c">The image's own <code>sweep</code>, synthetic prompt, prompt cache off.</span></div>
 <div class="tip"><i></i><i></i><i></i><i></i><span class="l">Decode, repetitive output</span><span class="n">up to {{val:stat.decode.max}}<small> {{unit:stat.decode.max}}</small></span><span class="c">{{val:stat.decode.code}} writing code, {{val:stat.decode.prose}} prose. Decode depends on how predictable the text is.</span></div>
 </div>

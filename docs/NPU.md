@@ -192,9 +192,9 @@ One question to `decider-0.8b` takes, by the prompt's length (its template inclu
 
 | prompt | 69 tokens | 965 tokens | 1,989 tokens | 4,037 tokens | 8,133 tokens |
 |---|---|---|---|---|---|
-| time | 45 ms | 142 ms | 296 ms | 580 ms | 1,207 ms |
+| time | 44 ms | 141 ms | 276 ms | 565 ms | 1,181 ms |
 
-The request's wall (HTTP included), served alone, the median of 48 requests on two Strix Halo machines (0.18.22).
+The request's wall (HTTP included), served alone, the median of 48 requests on two Strix Halo machines (0.20.5).
 
 Several questions about one long text: start the server with `HALOGEN_NPU_DEC_RESUME=1`. A request with several
 questions then reads the text once. With `HALOGEN_NPU_DEC_RESUME=2`, a later request whose text only adds to an earlier
@@ -257,17 +257,17 @@ EOF
 |---|---|---|
 | base | Qwen3.5-0.8B | Qwen3.5-2B |
 | files on disk, the picture reader included | 2.5 GB | 3.0 GB |
-| a question, 128-token prompt | 46 ms | 72 ms |
-| at 1,024 tokens | 145 ms | 264 ms |
-| at 2,048 tokens | 300 ms | 514 ms |
-| at 4,096 tokens | 611 ms | 1,047 ms |
-| at 8,192 tokens | 1,337 ms | 2,173 ms |
-| a question with a picture, 256 x 256 / 768 x 768 | ~200 ms / ~500 ms | ~350 ms / ~900 ms |
+| a question, 128-token prompt | 35 ms | 63 ms |
+| at 1,024 tokens | 117 ms | 213 ms |
+| at 2,048 tokens | 228 ms | 426 ms |
+| at 4,096 tokens | 474 ms | 869 ms |
+| at 8,192 tokens | 1,051 ms | 1,862 ms |
+| a question with a picture, 256 x 256 / 768 x 768 | ~95 ms / ~330 ms | ~200 ms / ~670 ms |
 
 One question a request, served alone, the request's wall (HTTP included), with one of the two loaded. A prompt's length
-counts the model's own template. The text rows are the median of 48 requests on two Strix Halo machines (0.18.22); the
-picture row is from one (0.18.11). Loaded together the two share the NPU's memory, and `d3-nano`'s questions about pictures
-take 15 to 25% longer.
+counts the model's own template. The text rows are the median of 48 requests on two Strix Halo machines (0.20.5); the
+picture row is the median on two machines too (0.20.5). Loaded together the two share the NPU's memory, and on some machines `d3-nano`'s questions about pictures
+take up to 25% longer.
 
 Their answers match the models' own runtime on the CPU: on text, the same answer on 509 and 502 of 512 questions of our decision
 benchmark; with pictures, on 63 and 64 of 64 questions of a public vision benchmark (CV-Bench). The rest were near ties. `d3-nano`
@@ -672,8 +672,8 @@ EOF
 - A video is `{"type": "video", "frames": [pictures], "fps": 24}`: its frames and their rate. The server keeps two frames a
   second, as d1-2B does. A request fits 2,048 tokens, so a long or large clip's frames are scaled down to fit.
 
-A question about a picture takes about 350 ms, the picture's reading included; a box and an every-instance question
-about a 640 x 480 photo about 800 ms together; three questions about a few seconds of video about 400 ms. A question on
+A question about a picture takes about 300 ms, the picture's reading included; a box and an every-instance question
+about a 640 x 480 photo about 690 ms together; three questions about a few seconds of video about 400 ms. A question on
 text alone takes about 70 ms up to 256 tokens of state and questions.
 
 Naming `d1-2b` alone is refused: there is no d1-2B checkpoint in the image, only the programs that run yours. The weights

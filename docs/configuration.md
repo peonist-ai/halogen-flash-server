@@ -150,22 +150,22 @@ or more. `HALOGEN_KV_POOL_POSITIONS=262144` leaves more of the table cached;
 `786432` buys a third resident conversation where the machine has the
 headroom.
 
-**Speed by concurrency.** Measured on the published 0.18.0 image over the
-OpenAI-compatible API, in the conditions of [0.18.0, both
-checkpoints](performance.md#0180-both-checkpoints), with `HALOGEN_KV_SLOTS=8`
+**Speed by concurrency.** Measured on the published 0.20.5 image over the
+OpenAI-compatible API, in the conditions of [0.20.5, both
+checkpoints](performance.md#0205-both-checkpoints), with `HALOGEN_KV_SLOTS=8`
 so that all eight streams are admitted at once. Each stream has its own
 short prompt and generates 384 tokens with thinking off; greedy streams
 write code, sampled streams (temperature 0.7) write English prose. The
 total counts every stream's tokens over the window in which all of them are
-generating; the per-stream figure is the slowest stream's. Two runs each,
-shown as a range where they differ.
+generating; the per-stream figure is the slowest stream's. Each figure is the
+mean of four runs on two machines.
 
 | streams generating | v2 total, code (greedy) | v2 per stream | v2 total, prose (sampled) | ht43 total, code / prose |
 |---|---|---|---|---|
-| 1 | 70 to 72 tok/s | 70 to 72 | 55 to 58 tok/s | 69 / 51 to 54 |
-| 2 | 81 tok/s | 40 | 71 to 75 tok/s | 77 to 79 / 71 to 73 |
-| 4 | 84 to 85 tok/s | 21 | 82 tok/s | 83 / 81 |
-| 8 | 107 to 108 tok/s | 13 | 105 to 106 tok/s | 106 / 104 |
+| 1 | 84 tok/s | 84 | 59 tok/s | 84 / 58 |
+| 2 | 105 tok/s | 51 | 82 tok/s | 96 / 81 |
+| 4 | 113 tok/s | 28 | 99 tok/s | 110 / 98 |
+| 8 | 117 tok/s | 14 | 114 tok/s | 118 / 114 |
 
 Every stream emits byte-identical tokens to the same request run alone,
 which is gated on every release (see the identity properties under
