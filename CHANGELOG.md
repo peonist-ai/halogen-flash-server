@@ -24,11 +24,10 @@ checkpoints and the GEMM tuning are 0.20.4's.
   (was 2.6 s), about 6.3 s after a 32,000-token one (was 13.7 s), and a prompt near the full context reads in about 2
   minutes (was about 8). A reply can read slightly differently from 0.20.4's; quality is unchanged in our checks.
 - LFM3 generates about 8% faster on the NPU after a short prompt, and up to 25% faster (`:fast`) after a long one.
-- `LFM3-1.7B` (full quality) now follows the original model more closely: in our checks its next-token agreement with the
-  original rose from about 97% to about 99%, at the same speed.
+- `LFM3-1.7B` (full quality) now agrees with the original model more often, at the same speed.
 - Speech-to-text and a few other NPU models answer about 1% faster. Their answers are unchanged.
-- The LFM3 device files are new; they download on first start. A converted LFM3 weight file from an earlier version is
-  converted again once, automatically.
+- The LFM3 device files are new; they are fetched again on the first start with `HALOGEN_DOWNLOAD`. A converted LFM3
+  weight file from an earlier version is converted again once, automatically.
 - `HALOGEN_AGENT_GUARD=watch` no longer loads the hold mode's decision model, saving about 5 GiB (#250).
 
 ### Fixed
