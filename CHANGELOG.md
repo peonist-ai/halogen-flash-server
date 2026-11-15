@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.20.5
+
+Faster decoding with several requests at once, Hindi, Thai and other Indic-script prompts read the way the model was
+trained, LFM3 on the NPU reads long prompts about twice as fast and generates faster, and fixes for structured output,
+the answer guard, Claude Code's mid-session tool changes, unknown model names and kept conversations. The Flash
+checkpoints and the GEMM tuning are 0.20.4's.
+
+### Changed
+
+- Faster decoding when several requests run at once, and saved conversations take less memory, so the prompt cache
+  keeps more of them. At temperature 0 a reply can occasionally read differently from 0.20.4 where two words were
+  nearly tied; quality is unchanged in our checks. If you see a change in answer quality on very long contexts, set
+  `HALOGEN_DN_STATE=fp32` to restore the previous behaviour exactly, and please open an issue.
+- A prompt cache saved to disk by an earlier version is not reused after this upgrade; it is rebuilt on first use.
+- Hindi, Thai and other Indic-script prompts are now tokenized the way the model was trained: those prompts take fewer
+  tokens and are read more accurately. Text without combining marks (English, code, most other languages) is tokenized
+  exactly as before. `HALOGEN_TOKENIZER_NATIVE=0` restores the previous tokenization.
+- LFM3 on the NPU shows its first text sooner: about 0.2 s after a 1,024-token prompt (was about 0.4 s), and streamed
+  text is no longer held back except where it could be the start of a tool call or a stop string.
+- The NPU runtime libraries in the image are updated to XRT 2.27.
+- LFM3 reads long prompts about twice as fast on the NPU: its first text comes about 1.7 s after an 8,000-token prompt
+  (was 2.6 s), about 6.3 s after a 32,000-token one (was 13.7 s), and a prompt near the full context reads in about 2
+  minutes (was about 8). A reply can read slightly differently from 0.20.4's; quality is unchanged in our checks.
+- LFM3 generates about 8% faster on the NPU after a short prompt, and up to 25% faster (`:fast`) after a long one.
+- The LFM3 device files are new; they download on first start. A converted LFM3 weight file from an earlier version is
+  converted again once, automatically.
+- `HALOGEN_AGENT_GUARD=watch` no longer loads the hold mode's decision model, saving about 5 GiB (#250).
+
+### Fixed
+
+- A reply can end on a `#### 18`-style answer line again (#259, reported by @Johnny-dai-git). The answer guard held a
+  turn open on any heading-shaped last line, which cost GSM8K-style answers; it now never holds a reply on a bare answer
+  line, and holds a heading only very deep into a long reply.
+- Positive numbers in a pretty-printed JSON array no longer come back negative under structured output (#258,
+  reported by @eric717273).
+- A model name that is one of halogen's own models but is not loaded now gets a 404 `model_not_found` instead of being
+  answered by another model (#257, reported by @tkajdro). Names from other products that clients send by default are
+  still answered by the loaded model.
+- **Claude Code no longer gets a 400 when its tool list changes mid-session** (#261, reported by @sergeant82d). When an
+  MCP connector connected late, or a tool was added or removed during a session, Claude Code sent the change as a
+  system message with `tool_addition` / `tool_removal` blocks and the Messages endpoint refused the whole request. An
+  added tool is now declared from the block: the model sees its definition at that point of the conversation, a call
+  to it comes back as a tool call, and the start of the prompt stays the same, so the prompt cache still hits.
+- **Structured output takes an `anyOf` of up to 32 tool-shaped branches** (#263, reported by @slamdunk111). A
+  `response_format: json_schema` whose `anyOf` lists one object per tool was refused with a 400 once it had more than
+  8 branches, and a branch without `additionalProperties` counted as five. Each branch now counts once and up to 32 are
+  accepted, with every branch's arguments still enforced. A schema past the limit still gets the 400, with the count.
+- A request that names the same kept state in `X-Halogen-From` and `X-Halogen-Keep` but cannot start from it no longer
+  waits up to `HALOGEN_FORK_TTL_S` on that state (#265, reported by @Gobutsu). The old state is released before the
+  request runs, and its cached prefix stays usable.
+- A job that never finished on the NPU (`engine_stalled` in the NPU health until the container was restarted) now takes
+  the NPU engine down after `HALOGEN_NPU_KILL_S` seconds (default 1800, 0 turns it off) and it starts again by itself
+  while the GPU keeps serving; requests waiting for the NPU get a 503.
+- Two diagnostic lines (`dn swap:`, `decode prefetch: N launches`) no longer print in the default server log; they
+  print under `HALOGEN_SERVE_TRACE=1`.
+
 ## 0.20.4
 
 Short follow-up turns start sooner, more throughput with more than 8 requests at once, and `tool_choice: "none"` holds in a

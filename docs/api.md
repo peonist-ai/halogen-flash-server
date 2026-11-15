@@ -94,7 +94,7 @@ route. [Small models on the NPU](npu-small-models.md) and the
 |---|---|
 | 400 | a budget above the cap; two budget fields with different values; a schema keyword the mask refuses (the message names it); `logprobs` shapes not implemented; a `previous_response_id` with no history; an image with no vision tower; a prompt at exactly the context |
 | 401 | a key is required and this request did not carry one |
-| 404 | an unknown route or handle |
+| 404 | an unknown route or handle; a `model` that names one of halogen's models not loaded on this server (`model_not_found`, naming the loaded ones) |
 | 499 | a non-streaming request whose client hung up; the work was cancelled, not lost |
 | 500 | the server's own failure; the message says what, and `/health` still answers |
 

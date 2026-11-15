@@ -5,17 +5,24 @@ set -euo pipefail
 export HSA_DISABLE_COREDUMP_ON_EXCEPTION="${HSA_DISABLE_COREDUMP_ON_EXCEPTION:-1}"
 ulimit -c 0
 
-case "$(printf '%s' "${HALOGEN_AGENT_GUARD:-}" | tr 'A-Z' 'a-z')" in
+_ag_mode="$(printf '%s' "${HALOGEN_AGENT_GUARD:-}" | tr 'A-Z' 'a-z')"
+case "$_ag_mode" in
   ""|0|off|false|no|none) ;;
   watch|hold)
-    for _ag in halogen-spotter-0.6b decider-4b; do
+    _ag_set="halogen-spotter-0.6b"
+    [ "$_ag_mode" = hold ] && _ag_set="halogen-spotter-0.6b decider-4b"
+    for _ag in $_ag_set; do
       case ",${HALOGEN_NPU_MODELS:-}," in
         *,"$_ag",*) ;;
         ,,) export HALOGEN_NPU_MODELS="$_ag" ;;
         *) export HALOGEN_NPU_MODELS="${HALOGEN_NPU_MODELS},$_ag" ;;
       esac
     done
-    echo "halogen: HALOGEN_AGENT_GUARD=${HALOGEN_AGENT_GUARD}: halogen-spotter-0.6b (reads tool results) and decider-4b (whether a tool acts outside the conversation) are served on the NPU" >&2 ;;
+    if [ "$_ag_mode" = hold ]; then
+      echo "halogen: HALOGEN_AGENT_GUARD=${HALOGEN_AGENT_GUARD}: halogen-spotter-0.6b (reads tool results) and decider-4b (whether a tool acts outside the conversation) are served on the NPU" >&2
+    else
+      echo "halogen: HALOGEN_AGENT_GUARD=${HALOGEN_AGENT_GUARD}: halogen-spotter-0.6b (reads tool results) is served on the NPU" >&2
+    fi ;;
   *) echo "halogen: HALOGEN_AGENT_GUARD=${HALOGEN_AGENT_GUARD} is not a mode: use off, watch or hold" >&2; exit 1 ;;
 esac
 
@@ -907,6 +914,7 @@ all_takedown() {
   [ -n "$WATCHDOG_PID" ] && kill -9 "$WATCHDOG_PID" 2>/dev/null || true
 
   [ -n "$WATCHDOG_PID" ] && wait "$WATCHDOG_PID" 2>/dev/null || true
+  [ -n "${NPU_STALL_PID:-}" ] && { kill "$NPU_STALL_PID" 2>/dev/null; wait "$NPU_STALL_PID" 2>/dev/null; } || true
   stop_engine "$ENGINE_PID" || rc=$?
   wait "$API_PID" 2>/dev/null || true
   [ -n "$NPU_PID" ] && { wait "$NPU_PID" 2>/dev/null || nrc=$?; }
@@ -1020,11 +1028,12 @@ HALOGEN_REASONING_EFFORT HALOGEN_RECORD_DAYS HALOGEN_RECORD_DIR HALOGEN_RECORD_G
 HALOGEN_RECORD_TEXT HALOGEN_REPETITION_PENALTY HALOGEN_RETRY_GRACE_S HALOGEN_SSE_KEEPALIVE_S \
 HALOGEN_TEMPERATURE HALOGEN_TEMPLATE_CHECK HALOGEN_TEMPLATE_UNCHECKED HALOGEN_THINKING_ANSWER_ROOM \
 HALOGEN_CHAT_TEMPLATE HALOGEN_STRICT_TOOLS HALOGEN_TOKENIZE_REUSE HALOGEN_TOP_K HALOGEN_TOP_P \
-HALOGEN_CACHE_LEAD HALOGEN_TOOL_DEFER HALOGEN_RENDER_ONCE HALOGEN_TOKENIZE_SPLIT HALOGEN_TOOL_NONE_MASK"
+HALOGEN_CACHE_LEAD HALOGEN_TOOL_DEFER HALOGEN_RENDER_ONCE HALOGEN_TOKENIZE_SPLIT HALOGEN_TOOL_NONE_MASK HALOGEN_TOKENIZER_NATIVE"
 
-FE_ONLY_FLAGS="$FE_ONLY_FLAGS HALOGEN_FORK_AUTO_END_ONLY HALOGEN_FORK_AUTO_KEEPS HALOGEN_FORK_HANDLES HALOGEN_FORK_MAP"
+FE_ONLY_FLAGS="$FE_ONLY_FLAGS HALOGEN_FORK_AUTO_END_ONLY HALOGEN_FORK_AUTO_KEEPS HALOGEN_FORK_HANDLES HALOGEN_FORK_MAP HALOGEN_FORK_UNMATCHED_RELEASE"
 
 FE_ONLY_FLAGS="$FE_ONLY_FLAGS HALOGEN_AGENT_GUARD"
+FE_ONLY_FLAGS="$FE_ONLY_FLAGS HALOGEN_MODEL_NAME_CHECK"
 ENGINE_ENV_U=()
 for _v in $FE_ONLY_FLAGS; do ENGINE_ENV_U+=(-u "$_v"); done
 unset _v
@@ -1649,6 +1658,9 @@ start_npu_engine() {
   case "${HALOGEN_NPU_RESTARTS:-3}" in
     ''|*[!0-9]*) echo "halogen npu: HALOGEN_NPU_RESTARTS=${HALOGEN_NPU_RESTARTS} is not a count" >&2; exit 1 ;;
   esac
+  case "${HALOGEN_NPU_KILL_S:-1800}" in
+    ''|*[!0-9]*) echo "halogen npu: HALOGEN_NPU_KILL_S=${HALOGEN_NPU_KILL_S} is not a number of seconds (0 = off)" >&2; exit 1 ;;
+  esac
   NPU_OUT="${_hg_npu_out:-/tmp/halogen-npu.out}"
   NPU_BIN="$bin"; NPU_ARGS=("${nargs[@]}"); NPU_RESTARTS=0
   NPU_STOP=0
@@ -1662,6 +1674,8 @@ start_npu_engine() {
        exit 1 ;;
     2) exit 0 ;;
   esac
+  npu_stall_watchdog "$port" &
+  NPU_STALL_PID=$!
 }
 
 npu_launch() {
@@ -1670,6 +1684,7 @@ npu_launch() {
   "$NPU_BIN" "${NPU_ARGS[@]}" > >(tee -a "$NPU_OUT") &
   NPU_PID=$!
   NPU_UP=$SECONDS
+  echo "$NPU_PID" > "${_hg_npu_pidfile:-/tmp/halogen-npu.pid}" 2>/dev/null || true
 
   until grep -q '^READY' "$NPU_OUT" 2>/dev/null; do
     if ! kill -0 "$NPU_PID" 2>/dev/null; then
@@ -1690,6 +1705,56 @@ npu_exited_alone() {
   [ "${HG_STOP:-0}" != 1 ] && [ -n "$NPU_PID" ] && ! kill -0 "$NPU_PID" 2>/dev/null &&
     kill -0 "$ENGINE_PID" 2>/dev/null && kill -0 "$API_PID" 2>/dev/null &&
     { [ -z "$WATCHDOG_PID" ] || kill -0 "$WATCHDOG_PID" 2>/dev/null; }
+}
+
+npu_running_ms() {
+  local line
+  line=$( { exec 9<>"/dev/tcp/127.0.0.1/$1" || exit 0; printf 'INFO 0\n' >&9; read -r -t 5 line <&9; printf '%s' "$line"; } 2>/dev/null )
+  case "$line" in *'"running_ms":'*) ;; *) return 0 ;; esac
+  line="${line#*\"running_ms\":}"
+  line="${line%%[!0-9]*}"
+  echo "$line"
+}
+npu_stall_watchdog() {
+  local port="$1" limit="${HALOGEN_NPU_KILL_S:-1800}" step="${_hg_npu_poll:-10}" parent=$$
+  local pf="${_hg_npu_pidfile:-/tmp/halogen-npu.pid}" pid="" ms s killed="" dlast=0 now t
+  if [ "$limit" -le 0 ]; then
+    echo "halogen npu: stall watchdog OFF (HALOGEN_NPU_KILL_S=$limit)"
+    return 0
+  fi
+  echo "halogen npu: stall watchdog on: one job holding the NPU for ${limit} s takes the NPU engine down and starts it again (HALOGEN_NPU_KILL_S)"
+  while kill -0 "$parent" 2>/dev/null; do
+    wd_sleep "$step"
+    pid=""; { read -r pid < "$pf"; } 2>/dev/null || true
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    wd_alive "$pid" || continue
+    [ "$pid" = "$killed" ] && continue
+    ms=$(npu_running_ms "$port")
+    case "$ms" in ''|*[!0-9]*) continue ;; esac
+    s=$((ms / 1000))
+    [ "$s" -ge "$limit" ] || continue
+    if [ "$(wd_state "$pid")" = D ]; then
+      now=$SECONDS
+      if [ $((now - dlast)) -ge 60 ] || [ "$dlast" = 0 ]; then
+        dlast=$now
+        echo "halogen npu: one job has held the NPU for ${s} s (HALOGEN_NPU_KILL_S=${limit}) and a thread of the NPU engine is in uninterruptible sleep (state D, inside the kernel). Not taken down: SIGKILL does not reach it and killing the engine there is what leaves the driver holding its memory (issue #79). Deferred; checked again in ${step} s." >&2
+      fi
+      continue
+    fi
+    echo "halogen npu: one job has held the NPU for ${s} s (HALOGEN_NPU_KILL_S=${limit}); the device is not coming back. Stopping the NPU engine; it is started again (HALOGEN_NPU_RESTARTS) and the Flash engine serves on. Requests waiting for the NPU are answered 503." >&2
+    kill -TERM "$pid" 2>/dev/null || true
+    t=0
+    while wd_alive "$pid" && [ "$t" -lt "${_hg_npu_term_s:-10}" ]; do wd_sleep 1; t=$((t + 1)); done
+    if wd_alive "$pid"; then
+      if [ "$(wd_state "$pid")" = D ]; then
+        echo "halogen npu: the NPU engine did not exit on SIGTERM and a thread of it is now in uninterruptible sleep (state D); SIGKILL deferred (issue #79)." >&2
+      else
+        echo "halogen npu: the NPU engine did not exit on SIGTERM within ${t} s; sending SIGKILL" >&2
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+    fi
+    killed="$pid"
+  done
 }
 
 npu_again() {
@@ -1728,6 +1793,7 @@ npu_again() {
     echo "halogen npu: the NPU engine exited before it was ready (rc=$NPU_RC; its own lines are above)" >&2
   done
   NPU_PID=""
+  : > "${_hg_npu_pidfile:-/tmp/halogen-npu.pid}" 2>/dev/null || true
   echo "halogen npu: the NPU engine stays down after $max restarts (HALOGEN_NPU_RESTARTS): its routes answer 503 until the container restarts; the Flash engine serves on. The device's side is in the host's kernel log (sudo dmesg | grep -i amdxdna)." >&2
   return 0
 }
@@ -1748,6 +1814,7 @@ start_npu_alone() {
   elif ! kill -0 "$NPU_PID" 2>/dev/null; then who="NPU engine"
   else who="front end"; fi
   kill -TERM "$NPU_PID" "$API_PID" 2>/dev/null || true
+  [ -n "${NPU_STALL_PID:-}" ] && { kill "$NPU_STALL_PID" 2>/dev/null; wait "$NPU_STALL_PID" 2>/dev/null; } || true
   wait "$NPU_PID" 2>/dev/null || nrc=$?
   wait "$API_PID" 2>/dev/null || arc=$?
   if [ "$NPU_STOP" = 1 ]; then

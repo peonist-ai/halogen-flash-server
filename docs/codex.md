@@ -78,7 +78,7 @@ What the mask does with each keyword:
 
 | status | keywords |
 |---|---|
-| enforced | `type` (object, array, string, number, integer, boolean, null, and unions like `["string", "null"]`), `properties` (keys emitted in schema order), `required` (an optional key may be skipped), `additionalProperties` (`false`, `true`, or a schema: extra keys only after the listed ones), `items`, `minItems`, `maxItems`, `minLength`, `maxLength`, `enum`, `const`, `anyOf` (`oneOf` is treated as `anyOf`), `$ref` and `$defs` including recursive ones |
+| enforced | `type` (object, array, string, number, integer, boolean, null, and unions like `["string", "null"]`), `properties` (keys emitted in schema order), `required` (an optional key may be skipped), `additionalProperties` (`false`, `true`, or a schema: extra keys only after the listed ones), `items`, `minItems`, `maxItems`, `minLength`, `maxLength`, `enum`, `const`, `anyOf` (`oneOf` is treated as `anyOf`; up to 32 alternatives that can be read at once, such as one object per tool in a "call one of N tools" schema; past that, a 400 with the count), `$ref` and `$defs` including recursive ones |
 | accepted, not enforced | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, and the annotation keywords |
 | refused with a 400 naming the keyword | `pattern`, `format`, `allOf`, `not`, `if`/`then`/`else`, `patternProperties`, `dependentRequired`, `dependentSchemas`, `uniqueItems`, `contains`, `propertyNames`, `unevaluated*`, `minProperties`, `maxProperties`, `prefixItems` |
 

@@ -77,7 +77,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.4
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.5
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -166,8 +166,8 @@ every message becomes part of the text to judge, and a system message can carry 
 
 `POST /v1/systemone` takes TypeSafe's System One request, so a client written for it can point at `decider-0.8b`.
 Send a `state` (a string, or an object or array that is sent as JSON) and `questions`, each with a `type`,
-`instructions` and `criteria`. There is no API key. `model` can be `decider-0.8b` or any other name, and it runs the
-decision model loaded.
+`instructions` and `criteria`. There is no API key. `model` can be `decider-0.8b` or any other name that is not another
+of halogen's models, and it runs the decision model loaded.
 
 ```bash
 curl -s localhost:8731/v1/systemone -H 'content-type: application/json' -d '{
@@ -507,8 +507,9 @@ curl -s localhost:8731/v1/audio/transcriptions -F model=qwen3-asr-1.7b -F file=@
   for now.
 - Recordings of up to 20 minutes or 25 MiB, whichever comes first, in one request. A longer one is refused with both
   limits named.
-- `model`: any name reaches the loaded speech model, so a client that sends `whisper-1` works unchanged. One speech
-  model is served at a time. Name `qwen3-asr-0.6b` or `qwen3-asr-1.7b` in `HALOGEN_NPU_MODELS`, not both.
+- `model`: any name that is not another of halogen's models reaches the loaded speech model, so a client that sends
+  `whisper-1` works unchanged. One speech model is served at a time. Name `qwen3-asr-0.6b` or `qwen3-asr-1.7b` in
+  `HALOGEN_NPU_MODELS`, not both.
 - `language`: optional, a name (`Italian`) or a two-letter code (`it`). Without it the model names the language
   itself.
 - `prompt`: optional context for the model, such as names or terms the recording uses.
@@ -621,16 +622,16 @@ curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -
 
 Chat completions follow OpenAI's format, streamed or not, with tool calls; a base checkpoint takes raw text on
 `/v1/completions`. A prompt may be as long as the model's 262,144-token context (since 0.18.24; before it, about 220,000), and
-near that length it reads for about 8 minutes and takes about 20 GiB of host memory at its peak. On a short prompt it decodes about
-27 tokens a second at full quality and 38 with `:fast` (about 22 and 28 at 32k tokens, 18 and 20 at 130k), and reads
-a prompt at about 3,700 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
+near that length it reads for about 2 minutes and takes about 20 GiB of host memory at its peak. On a short prompt it decodes about
+30 tokens a second at full quality and 42 with `:fast` (about 24 and 35 at 32k tokens, 19 and 24 at 130k), and reads
+a prompt at about 6,400 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
 to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
 
 | Prompt or context | Prefill, `LFM3-1.7B` | Prefill, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B` | Decode, `LFM3-1.7B-fast` |
 |---|---|---|---|---|
-| 1,024 tokens | 3,750 | 3,677 | 27.3 | 38.3 |
-| 32,768 tokens | 2,177 | 2,174 | 22.4 | 27.9 |
-| 130,000 tokens | 974 | 973 | 17.6 | 19.7 |
+| 1,024 tokens | 6,460 | 6,480 | 29.6 | 41.8 |
+| 32,768 tokens | 5,305 | 5,331 | 24.0 | 35.1 |
+| 130,000 tokens | 3,097 | 3,096 | 18.7 | 23.8 |
 
 Tokens a second, one request alone, greedy decoding. Prefill includes handing the prompt to the decode program.
 

@@ -18,7 +18,7 @@ You need [the NPU set up](NPU.md). Add one variable to the NPU start command:
 | `watch` | Each new tool result is read and the verdicts are reported. No reply changes. |
 | `hold` | As `watch`, and in a turn with a flagged result, a tool call that acts outside the conversation is held unless your own messages asked for it. |
 
-The server adds `halogen-spotter-0.6b` (it reads the results) and `decider-4b` (it answers whether a tool acts outside the conversation) to `HALOGEN_NPU_MODELS`, fetches them with `HALOGEN_DOWNLOAD`, and refuses to start if the NPU is missing. Together they hold up to about 6.4 GB of host memory beside the Flash model as they are used (about 5 GB after minutes of steady work here): the startup line says so.
+The server adds `halogen-spotter-0.6b` (it reads the results) to `HALOGEN_NPU_MODELS`, and with `hold` also `decider-4b` (it answers whether a tool acts outside the conversation), fetches them with `HALOGEN_DOWNLOAD`, and refuses to start if the NPU is missing. `watch` holds under 1 GB of host memory beside the Flash model; `hold`'s two models hold up to about 6.4 GB as they are used (about 5 GB after minutes of steady work here): the startup line says so. Before 0.20.5, `watch` loaded `decider-4b` too.
 
 ## What you see
 
