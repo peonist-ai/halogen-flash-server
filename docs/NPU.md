@@ -629,9 +629,9 @@ to another model runs between two of its tokens). The weights stay yours, under 
 
 | Prompt or context | Prefill, `LFM3-1.7B` | Prefill, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B` | Decode, `LFM3-1.7B-fast` |
 |---|---|---|---|---|
-| 1,024 tokens | 6,850 | 6,800 | 29.6 | 41.8 |
-| 32,768 tokens | 5,305 | 5,331 | 24.0 | 35.1 |
-| 130,000 tokens | 3,097 | 3,096 | 18.7 | 23.8 |
+| 1,024 tokens | 6,850 | 6,800 | 29.6 | 41.9 |
+| 32,768 tokens | 5,342 | 5,326 | 24.1 | 35.0 |
+| 130,000 tokens | 3,092 | 3,099 | 18.7 | 23.8 |
 
 Tokens a second, one request alone, greedy decoding. Prefill includes handing the prompt to the decode program.
 

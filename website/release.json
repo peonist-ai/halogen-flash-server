@@ -1317,7 +1317,7 @@
       }
     },
     "npu.lfm3.pp.32k.q": {
-      "value": "5,305",
+      "value": "5,342",
       "unit": "tok/s",
       "label": "Prefill at 32,768 tokens, LFM3-1.7B (8-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
@@ -1328,7 +1328,7 @@
       }
     },
     "npu.lfm3.pp.32k.fast": {
-      "value": "5,331",
+      "value": "5,326",
       "unit": "tok/s",
       "label": "Prefill at 32,768 tokens, LFM3-1.7B-fast (5-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
@@ -1339,7 +1339,7 @@
       }
     },
     "npu.lfm3.pp.130k.q": {
-      "value": "3,097",
+      "value": "3,092",
       "unit": "tok/s",
       "label": "Prefill at 130,000 tokens, LFM3-1.7B (8-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
@@ -1350,7 +1350,7 @@
       }
     },
     "npu.lfm3.pp.130k.fast": {
-      "value": "3,096",
+      "value": "3,099",
       "unit": "tok/s",
       "label": "Prefill at 130,000 tokens, LFM3-1.7B-fast (5-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
@@ -1372,7 +1372,7 @@
       }
     },
     "npu.lfm3.tg.1k.fast": {
-      "value": "41.8",
+      "value": "41.9",
       "unit": "tok/s",
       "label": "Decode at 1,024 tokens, LFM3-1.7B-fast (5-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
@@ -1383,7 +1383,7 @@
       }
     },
     "npu.lfm3.tg.32k.q": {
-      "value": "24.0",
+      "value": "24.1",
       "unit": "tok/s",
       "label": "Decode at 32,768 tokens, LFM3-1.7B (8-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
@@ -1394,7 +1394,7 @@
       }
     },
     "npu.lfm3.tg.32k.fast": {
-      "value": "35.1",
+      "value": "35.0",
       "unit": "tok/s",
       "label": "Decode at 32,768 tokens, LFM3-1.7B-fast (5-bit)",
       "conditions": "One Strix Halo with the NPU host set up as the NPU page describes. Your own LFM3-1.7B checkpoint, one request alone, greedy decoding; prefill includes handing the prompt to the decode program.",
