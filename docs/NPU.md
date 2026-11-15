@@ -624,12 +624,12 @@ Chat completions follow OpenAI's format, streamed or not, with tool calls; a bas
 `/v1/completions`. A prompt may be as long as the model's 262,144-token context (since 0.18.24; before it, about 220,000), and
 near that length it reads for about 2 minutes and takes about 20 GiB of host memory at its peak. On a short prompt it decodes about
 30 tokens a second at full quality and 42 with `:fast` (about 24 and 35 at 32k tokens, 19 and 24 at 130k), and reads
-a prompt at about 6,400 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
+a prompt at about 6,800 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
 to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
 
 | Prompt or context | Prefill, `LFM3-1.7B` | Prefill, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B` | Decode, `LFM3-1.7B-fast` |
 |---|---|---|---|---|
-| 1,024 tokens | 6,460 | 6,480 | 29.6 | 41.8 |
+| 1,024 tokens | 6,850 | 6,800 | 29.6 | 41.8 |
 | 32,768 tokens | 5,305 | 5,331 | 24.0 | 35.1 |
 | 130,000 tokens | 3,097 | 3,096 | 18.7 | 23.8 |
 
