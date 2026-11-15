@@ -1471,110 +1471,110 @@
       }
     },
     "npu.gen.ttft.1016": {
-      "value": "333",
+      "value": "340",
       "unit": "ms",
       "label": "qwen3.5-2b, first token at 1,016 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.tg.1016": {
-      "value": "39.2",
+      "value": "39.9",
       "unit": "tok/s",
       "label": "qwen3.5-2b, decoding at 1,016 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.ttft.2040": {
-      "value": "1,074",
+      "value": "1,082",
       "unit": "ms",
       "label": "qwen3.5-2b, first token at 2,040 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.tg.2040": {
-      "value": "39.2",
+      "value": "39.8",
       "unit": "tok/s",
       "label": "qwen3.5-2b, decoding at 2,040 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.ttft.4088": {
-      "value": "1,099",
+      "value": "1,112",
       "unit": "ms",
       "label": "qwen3.5-2b, first token at 4,088 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.tg.4088": {
-      "value": "39.2",
+      "value": "39.8",
       "unit": "tok/s",
       "label": "qwen3.5-2b, decoding at 4,088 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.ttft.8184": {
-      "value": "4,342",
+      "value": "4,349",
       "unit": "ms",
       "label": "qwen3.5-2b, first token at 8,184 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.tg.8184": {
-      "value": "39.1",
+      "value": "39.7",
       "unit": "tok/s",
       "label": "qwen3.5-2b, decoding at 8,184 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.ttft.15992": {
-      "value": "4,449",
+      "value": "4,454",
       "unit": "ms",
       "label": "qwen3.5-2b, first token at 15,992 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"
       }
     },
     "npu.gen.tg.15992": {
-      "value": "39.0",
+      "value": "39.6",
       "unit": "tok/s",
       "label": "qwen3.5-2b, decoding at 15,992 prompt tokens",
       "conditions": "Strix Halo machines with the NPU host set up as the NPU page describes; qwen3.5-2b served alone, one request at a time, greedy; first token = the request's wall (HTTP included) with max_tokens 1; decoding = a 129-token reply's further tokens over its further time; the median of four runs on two machines; a prompt's length counts its chat template.",
-      "measured_at": "0.18.22",
+      "measured_at": "0.20.5",
       "source": {
         "page": "NPU/",
         "anchor": "generation"

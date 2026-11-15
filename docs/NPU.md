@@ -424,12 +424,12 @@ transcription waits until the reply in progress is done.
 
 | prompt | 1,016 tokens | 2,040 tokens | 4,088 tokens | 8,184 tokens | 15,992 tokens |
 |---|---|---|---|---|---|
-| first token | 333 ms | 1,074 ms | 1,099 ms | 4,342 ms | 4,449 ms |
-| decoding | 39.2 tokens a second | 39.2 | 39.2 | 39.1 | 39.0 |
+| first token | 340 ms | 1,082 ms | 1,112 ms | 4,349 ms | 4,454 ms |
+| decoding | 39.9 tokens a second | 39.8 | 39.8 | 39.7 | 39.6 |
 
 One request alone, greedy, the prompt's length counting its chat template; the first token is the request's wall (HTTP
 included) with `max_tokens` 1, and decoding is a 129-token reply's further tokens over its further time. The prompt is read
-in steps, so 2,040 tokens take about as long as 4,088. The median of four runs on two Strix Halo machines (0.18.22).
+in steps, so 2,040 tokens take about as long as 4,088. The median of four runs on two Strix Halo machines (0.20.5).
 
 ## Images
 
@@ -710,10 +710,10 @@ server does not fetch `http(s)` image URLs: send the picture's bytes.
 A picture is read at up to 4 megapixels (larger ones are scaled down to that). A picture sent again in a later turn is not
 read again, and in a long conversation (past about 4,000 tokens) the part a later turn shares with an earlier one is not
 read again either, so an agent's next turn starts from where the last one left off (its `usage` reports those tokens as
-cached). On a quiet host: a 640 x 480 picture with a short answer in about 1,300 ms, a 1920 x 1080 screenshot in about
-1,400 ms of picture reading plus the prompt, a 4 MP picture in about 2,800 ms plus the prompt; it decodes about 27 tokens a second at
-full quality and about 39 with `:fast`. A picture the model has seen before (the same bytes) starts to answer in about 200
-to 400 ms at 1280 x 720 and below.
+cached). On a quiet host: a 640 x 480 picture with a short answer in about 830 ms, a 1920 x 1080 screenshot in about
+1,400 ms of picture reading plus the prompt, a 4 MP picture in about 2,800 ms plus the prompt; it decodes about 30 tokens a second at
+full quality and about 43 with `:fast`. A picture the model has seen before (the same bytes) starts to answer in about 100
+to 220 ms at 1280 x 720 and below.
 
 If you run LFM3-VL-2B, it also answers text-only chat, so you do not need LFM3-1.7B beside it.
 
@@ -758,7 +758,7 @@ curl -s localhost:8731/v1/audio/transcriptions -F model=LFM3-Audio-2B -F file=@t
 Only WAV is read (other formats are refused with a message that says so), and `/v1/messages` has no audio form. A reply the
 model opens with its own `<think>` block comes back as reasoning, with the answer after it as content. A 3.5-second clip is
 read in about 100 ms and a 23-second one in about 140 ms; one LibriSpeech sentence (about 7 seconds, a 28-token reply)
-takes about 1,400 ms in all, most of it the reply's tokens. Against the model's own code, through the server:
+takes about 1,200 ms in all, most of it the reply's tokens. Against the model's own code, through the server:
 
 | benchmark | the server | the model's own | difference |
 |---|---|---|---|
@@ -783,8 +783,8 @@ to about 5 minutes of speech. `instructions` and a `speed` other than 1 are refu
 transcript are in `message.audio` (`"format": "pcm16"` streams on a streamed request). `/v1/messages` and `/v1/responses` do
 not make speech.
 
-It speaks at about 0.54 of real time on the 8-bit form and 0.41 with `:fast` (a second of speech takes that fraction of a
-second to make), and the first audio arrives after about 130 ms (120 ms with `:fast`). Against the model's own code, scored with the same
+It speaks at about 0.50 of real time on the 8-bit form and 0.38 with `:fast` (a second of speech takes that fraction of a
+second to make), and the first audio arrives after about 90 ms (80 ms with `:fast`). Against the model's own code, scored with the same
 recognizer and quality model on both sides:
 
 | test | the server | the model's own | difference |
@@ -814,9 +814,9 @@ on `/v1/audio/speech`); a video is `{"type": "video", "frames": [...], "fps": 2}
 `audio` field as a WAV. A picture is read at up to 2 megapixels and a video holds 4 to 384 frames. Thinking is off by default.
 Its speech is made with Omni's own sampling settings.
 
-It starts to answer a 448 x 320 picture in about 240 ms, an 8-frame video in 600 ms, the same video with a 3.5-second
-soundtrack in 680 ms, a 3.5-second clip in 200 ms, a 2-minute recording in 1,040 ms, and a prompt with a picture, a video,
-a soundtrack and a clip together in 1,080 ms. Its speech runs at about 0.54 of real time on the 8-bit form and 0.41 with `:fast` (first audio about 130 ms). Against the
+It starts to answer a 448 x 320 picture in about 210 ms, an 8-frame video in 550 ms, the same video with a 3.5-second
+soundtrack in 640 ms, a 3.5-second clip in 170 ms, a 2-minute recording in 970 ms, and a prompt with a picture, a video,
+a soundtrack and a clip together in 960 ms. Its speech runs at about 0.51 of real time on the 8-bit form and 0.38 with `:fast` (first audio about 90 ms). Against the
 model's own code, through the server:
 
 | benchmark | the server | the model's own | difference |
@@ -865,7 +865,7 @@ EOF
   one). A dense page can need 9,000 or more.
 
 An A4 page starts to answer in about 3.4 seconds and a typical page takes about 20 seconds; the reply runs at about
-43 tokens a second. Beside other NPU models, a page's picture reading and prompt run without other requests slipped in
+44 tokens a second. Beside other NPU models, a page's picture reading and prompt run without other requests slipped in
 between them, so a short request that arrives then waits a few seconds; it runs between the page's reply tokens as usual.
 With several generation models loaded beside it, the NPU driver can refuse one of its allocations about once a run; the
 server makes room and retries, and no request fails. Two runs of the same page can differ at a near tie (a character, or
