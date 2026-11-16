@@ -585,10 +585,59 @@ check_ngram_table() {
   exit 1
 }
 
+conc_mode_file_refuse() {
+  echo "halogen: HALOGEN_CONC_MODE=1 needs a checkpoint in this server's current format (the default, qwen38-flash-next-v2.hgn, is one), and this start serves $1." >&2
+  echo "  With that file the concurrency mode would serve no more requests together than the default mode does." >&2
+  echo "  Unset HALOGEN_CONC_MODE, or point HALOGEN_CHECKPOINT at a current file. Not starting." >&2
+  exit 2
+}
+conc_mode_check() {
+  case "${HALOGEN_CONC_MODE:-}" in
+    ""|0) return 0 ;;
+    1) ;;
+    *) echo "halogen: HALOGEN_CONC_MODE=${HALOGEN_CONC_MODE} is not a setting: use 1 for the concurrency mode, or leave it unset" >&2
+       exit 1 ;;
+  esac
+  local bad=""
+  if [ -n "${HALOGEN_HT_TG_DEC:-}" ] && [ "${HALOGEN_HT_TG_DEC}" != 1 ]; then bad="$bad HALOGEN_HT_TG_DEC=${HALOGEN_HT_TG_DEC}"; fi
+  if [ -n "${HALOGEN_TICK_TG:-}" ] && [ "${HALOGEN_TICK_TG}" != 1 ]; then bad="$bad HALOGEN_TICK_TG=${HALOGEN_TICK_TG}"; fi
+  if [ -n "$bad" ]; then
+    echo "halogen: HALOGEN_CONC_MODE=1 cannot be combined with${bad}." >&2
+    echo "  The concurrency mode decides that itself and the engine would ignore the value given." >&2
+    echo "  Unset it, or unset HALOGEN_CONC_MODE to keep it. Not starting." >&2
+    exit 2
+  fi
+  case "${HALOGEN_MTP:-1}" in 0*)
+    echo "halogen: HALOGEN_CONC_MODE=1 cannot be combined with HALOGEN_MTP=${HALOGEN_MTP}." >&2
+    echo "  The concurrency mode is requests drafting together, and HALOGEN_MTP=${HALOGEN_MTP} turns drafting off: the server would" >&2
+    echo "  draft nothing, run one request alone slower than the default mode does, and gain only from 9 requests at once." >&2
+    echo "  Unset HALOGEN_MTP, or unset HALOGEN_CONC_MODE. Not starting." >&2
+    exit 2 ;;
+  esac
+  case "${HALOGEN_CHECKPOINT:-}" in
+    *.gguf|*/qwen38-flash-next-w4b.hgn) conc_mode_file_refuse "$HALOGEN_CHECKPOINT" ;;
+  esac
+  return 0
+}
+conc_mode_note() {
+  case "${HALOGEN_CONC_MODE:-}" in 1) ;; *) return 0 ;; esac
+  if is_gguf 2>/dev/null; then conc_mode_file_refuse "$HALOGEN_CHECKPOINT"; fi
+  if ckpt_facts && [ "$CK_OWN_PREC" != "1" ]; then conc_mode_file_refuse "$HALOGEN_CHECKPOINT"; fi
+  local slots="this start has ${ENG_SLOTS} slots"
+  case "$ENG_SLOTS" in
+    ""|*[!0-9]*) ;;
+    *) if [ "$ENG_SLOTS" -lt 8 ] || [ "$ENG_SLOTS" -gt 16 ]; then slots="this start has ${ENG_SLOTS} slot(s) and the mode is meant for 8 to 16 (HALOGEN_KV_SLOTS)"; fi ;;
+  esac
+  echo "halogen: concurrency mode ON (HALOGEN_CONC_MODE=1): up to 8 requests at a time are served with drafting (the default mode: up to 4), 9 to 16 together without it; ${slots}." \
+       "A reply can differ from the default mode's reply to the same request, and one request alone runs slower than in the default mode."
+  return 0
+}
+
 need_ckpt() {
   host_preflight || {
     echo "halogen: this container cannot run the server as started; nothing was downloaded or loaded." >&2
     exit 1; }
+  conc_mode_check
   maybe_download
   tuning_plan_copy
   [ -f "$HALOGEN_CHECKPOINT" ] || {
@@ -601,6 +650,7 @@ need_ckpt() {
   legacy_note
   check_ngram_table
   check_vision
+  conc_mode_note
   kv_budget_note
   gtt_note
 }

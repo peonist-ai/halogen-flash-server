@@ -56,7 +56,7 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.20.6: faster generation from a new draft head (most of all in agent and tool-calling sessions), images read about four times faster, slightly faster prompt reading on ht43, a third LFM3-1.7B format on the NPU, and fixes for shared long prompts and busy multi-agent sessions. The checkpoints are 0.20.5's
+0.20.6: faster generation from a new draft head (most of all in agent and tool-calling sessions), images read about four times faster, slightly faster prompt reading on ht43, a third LFM3-1.7B format on the NPU, an opt-in concurrency mode for servers that run many requests at once, and fixes for shared long prompts and busy multi-agent sessions. The checkpoints are 0.20.5's
 ([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:

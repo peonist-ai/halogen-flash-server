@@ -3,7 +3,7 @@
 ## 0.20.6
 
 Faster generation from a new draft head, images read about four times faster, slightly faster prompt reading on ht43,
-a third LFM3-1.7B format on the NPU, and fixes for shared long prompts and for busy multi-agent sessions. The Flash
+a third LFM3-1.7B format on the NPU, an opt-in concurrency mode for servers that run many requests at once, and fixes for shared long prompts and for busy multi-agent sessions. The Flash
 checkpoints are 0.20.5's.
 
 ### Changed
@@ -25,6 +25,13 @@ checkpoints are 0.20.5's.
   `LiquidAI/LFM3-1.7B-GGUF`) in your LFM3-1.7B directory and add `/models/LFM3-1.7B:qad` to `HALOGEN_NPU_MODELS`; it is
   served as `LFM3-1.7B-qad`. It decodes about 48 tokens a second after a 1,024-token prompt (42 with `:fast`, 30 at
   8-bit) and about 41 after 32,768 tokens (35 and 24), and reads a prompt as fast as the other two.
+- A concurrency mode for servers that run many requests at once (opt-in). Start the container with
+  `HALOGEN_CONC_MODE=1` (and `HALOGEN_KV_SLOTS=16` for more than four requests at a time). Up to eight requests draft
+  together instead of four, and nine to sixteen requests share one pass: total throughput at four to sixteen
+  concurrent requests is about 9 to 20% higher than the default mode. A single request is about 7 to 9% slower in
+  this mode, so leave it off for one conversation at a time. A temperature-0 reply in the mode does not change with
+  the number of concurrent requests or their arrival order; it can differ in wording from the default mode's, with
+  the same measured quality. The startup log says `concurrency mode on` when it is active.
 
 ### Fixed
 

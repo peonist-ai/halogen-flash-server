@@ -4,7 +4,7 @@
   "patch_notes": [
     {
       "version": "0.20.6",
-      "text": "Faster generation from a new draft head, most of all in agent and tool-calling sessions (a 1.4 GiB file fetched beside the checkpoint). Images are read about four times faster. Prompts are read slightly faster on ht43. LFM3-1.7B on the NPU gains a third format for Liquid's own 4-bit file. Fixes for requests that share a long prompt ending just past a 32,768-token boundary, and for busy multi-agent sessions where a turn could rarely continue from another conversation's context."
+      "text": "Faster generation from a new draft head, most of all in agent and tool-calling sessions (a 1.4 GiB file fetched beside the checkpoint). Images are read about four times faster. Prompts are read slightly faster on ht43. LFM3-1.7B on the NPU gains a third format for Liquid's own 4-bit file. An opt-in concurrency mode (HALOGEN_CONC_MODE=1) serves many requests at once with more total throughput. Fixes for requests that share a long prompt ending just past a 32,768-token boundary, and for busy multi-agent sessions where a turn could rarely continue from another conversation's context."
     },
     {
       "version": "0.20.5",

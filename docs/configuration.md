@@ -193,6 +193,20 @@ two, and 14.9 t/s per stream on eight slots against 18.7 on four; for
 reply-heavy, cache-hostile clients the default is the right setting even
 when more slots would fit.
 
+**The concurrency mode (0.20.6, opt-in).** A server that runs many requests at
+once can start in a mode tuned for that: `-e HALOGEN_CONC_MODE=1`, usually with
+`-e HALOGEN_KV_SLOTS=16`. Up to eight requests then draft together instead of
+four, and nine to sixteen requests share one pass. In our measurements total
+throughput at four to sixteen concurrent requests was about 9 to 20% higher than
+the default mode's, and a single request about 7 to 9% slower, so leave it off
+for one conversation at a time. In the mode a temperature-0 reply is the same
+whatever else the server is doing (the number of requests or their arrival
+order); it can differ in wording from the default mode's reply, with the same
+measured quality. The mode is chosen when the server starts and holds for the
+life of the process; the startup log says `concurrency mode on`. The server
+refuses to start with it beside a GGUF or the older w4b checkpoint, or with
+drafting turned off (`HALOGEN_MTP=0`), and says why.
+
 **Chunked admission.** A prompt that arrives while other conversations are
 generating is read in pieces with a generation step for the others between
 pieces. The piece is the prefill call size (`HALOGEN_MAX_TOK`, 32,768
