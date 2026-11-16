@@ -753,17 +753,6 @@
         "anchor": "0206-both-checkpoints"
       }
     },
-    "stat.decode.max": {
-      "value": "135",
-      "unit": "tok/s",
-      "label": "Decode, repetitive output, highest of five prompts",
-      "conditions": "The published 0.20.6 image at its defaults (prompt cache on unless a row says otherwise, greedy, thinking off), one checkpoint a machine, AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained package power. One request at a time, prompt cache off; repetitive prompts are the best case.",
-      "measured_at": "0.20.6",
-      "source": {
-        "page": "performance/",
-        "anchor": "0206-both-checkpoints"
-      }
-    },
     "stat.decode.code": {
       "value": "93",
       "unit": "tok/s",

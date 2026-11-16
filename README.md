@@ -13,27 +13,25 @@ general-purpose runtime, no portability layer, no fallback path. That is why it
 can do things a general engine cannot, and why it runs on exactly one piece of
 silicon.
 
-| 0.20.5, the default configuration | halogen-flash |
+| 0.20.6, the default configuration | halogen-flash |
 |---|---|
-| decode | **up to 135 tok/s** on repetitive output · **90** writing code · **64** prose |
-| prefill: 8,192 / 32,768 / 131,072-token prompt | **1,976 / 1,884 / 1,806 tok/s** |
-| an agent turn, 30,000 to 96,000 tokens of context | **2.2 s** (first token in **1.2 s**) |
+| decode | **93 tok/s** writing code · **67** prose |
+| prefill: 8,192 / 32,768 / 131,072-token prompt | **1,961 / 1,870 / 1,793 tok/s** |
+| an agent turn, 30,000 to 96,000 tokens of context | **2.6 s** (first token in **1.2 s**) |
 | the first turn of a 34,000-token agent prompt, cold | **19 s** |
-| decode: editing code / an agent's tool call / six other languages | **113 / 81 / 60 tok/s** |
+| decode: editing code / an agent's tool call / six other languages | **116 / 80 / 63 tok/s** |
 
 **What each row is.** The agent turns are three sessions of a coding agent
 fixing a bug in a Python repository: each turn sends the whole conversation
 back with the model's last tool call and a tool result of 800 to 3,000
 tokens appended, and the time runs from the request to the last byte of the
-answer, on the client's clock (the median over the three sessions, about 80
-tokens of answer each). Decode is measured on the kind of text each row names. The
-best case is five short prompts whose answer repeats itself ("print the word
-red ten times" and four like it), shown so it can be compared like for like
-with other figures of that kind. Prefill is the image's own `sweep`, on a
+answer, on the client's clock (the median over the three sessions, about 105
+tokens of answer each). Decode is measured on the kind of text each row names.
+Prefill is the image's own `sweep`, on a
 synthetic prompt; real text through the chat template runs slower, which is
 why the cold first turn takes 19 s for 34,000 tokens.
 
-All of it is the published 0.20.5 image at its defaults (the v2 checkpoint,
+All of it is the published 0.20.6 image at its defaults (the v2 checkpoint,
 the prompt cache on, greedy, thinking off) on an AMD Ryzen AI Max+ 395 with
 128 GB, at about 85 W of sustained package power. [Measured](docs/performance.md#measured) has
 every number for both checkpoints. The prefill rows, and a decode mean over
