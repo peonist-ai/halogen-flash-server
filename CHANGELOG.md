@@ -27,9 +27,10 @@ checkpoints are 0.20.5's.
   8-bit) and about 41 after 32,768 tokens (35 and 24), and reads a prompt as fast as the other two.
 - A concurrency mode for servers that run many requests at once (opt-in). Start the container with
   `HALOGEN_CONC_MODE=1` (and `HALOGEN_KV_SLOTS=16` for more than four requests at a time). Up to eight requests draft
-  together instead of four, and nine to sixteen requests share one pass: total throughput at four to sixteen
-  concurrent requests is about 9 to 20% higher than the default mode. A single request is about 7 to 9% slower in
-  this mode, so leave it off for one conversation at a time. A temperature-0 reply in the mode does not change with
+  together instead of four, and nine to sixteen requests share one pass: writing code, total throughput at four to
+  sixteen concurrent requests is 5 to 14% higher than the default mode, and sampled prose gains 12 to 15% at twelve
+  and sixteen (about level at four and eight). One or two requests are 3 to 10% slower in this mode, so leave it off
+  for one conversation at a time. The table is on the configuration page. A temperature-0 reply in the mode does not change with
   the number of concurrent requests or their arrival order; it can differ in wording from the default mode's, with
   the same measured quality. The startup log says `concurrency mode on` when it is active.
 
