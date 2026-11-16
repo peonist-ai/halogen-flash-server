@@ -531,7 +531,7 @@ podman run --rm --name halogen -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
   -v ~/halogen-records:/records -e HALOGEN_RECORD_DIR=/records \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.5
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.6
 ```
 
 The startup log then says `request records ON in /records`, with the text

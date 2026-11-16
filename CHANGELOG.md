@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.20.6
+
+Faster generation from a new draft head, images read about four times faster, slightly faster prompt reading on ht43,
+a third LFM3-1.7B format on the NPU, and fixes for shared long prompts and for busy multi-agent sessions. The Flash
+checkpoints are 0.20.5's.
+
+### Changed
+
+- Faster single-request generation, most of all in agent and tool-calling sessions: a new draft head
+  (`qwen38-flash-next-drafter-r2.hgn`, 1.4 GiB, fetched beside the checkpoint on first start when `HALOGEN_DOWNLOAD`
+  is set) raises decode speed by about 4% on a single request across chat, code, every supported language and tool
+  calls, on both checkpoints. Answers are unchanged. `HALOGEN_CK_OVERLAY=none` keeps the previous head.
+- Images are read about 4x faster. The vision encoder now takes about 0.5 s on a 1280x1280 image (was about 2 s) and
+  about 1.8 s on the largest accepted frame (was about 7 s), with the same reading accuracy on our screenshot tests.
+  Text requests are unchanged. `HALOGEN_VISION_ATTN=3` restores the previous encoder.
+- Faster prompt processing on ht43: prompts of 2,048 tokens are processed about 2% faster, 8,192 tokens about 1.5%
+  faster and 32,768 tokens about 1% faster. Short follow-up turns of 128 to 512 tokens are about 1-3% faster on both
+  v2 and ht43. Outputs are unchanged, token for token.
+
+### Added
+
+- LFM3-1.7B on the NPU has a third format, `:qad`, for Liquid's own 4-bit file. Put `LFM3-1.7B-QAD-Q4_0.gguf` (from
+  `LiquidAI/LFM3-1.7B-GGUF`) in your LFM3-1.7B directory and add `/models/LFM3-1.7B:qad` to `HALOGEN_NPU_MODELS`; it is
+  served as `LFM3-1.7B-qad`. It decodes about 48 tokens a second after a 1,024-token prompt (42 with `:fast`, 30 at
+  8-bit) and about 41 after 32,768 tokens (35 and 24), and reads a prompt as fast as the other two.
+
+### Fixed
+
+- A group of requests that share a long prompt no longer recompute it when the shared part ends just past a
+  32,768-token boundary. Requests that start from the same long system prompt (an agent's subagents, parallel calls
+  over one document) read it once and share it. When the shared part ended in the 64 tokens after a multiple of
+  32,768 tokens, every request read it again from the start, with no error: in our test 16 such requests took about
+  six minutes where they now take about a minute and a half. `HALOGEN_CACHE_EDGE=0` restores the previous behaviour.
+- A reply in a busy multi-agent session could be computed from another conversation's context. When many
+  conversations ran at once and the server's context memory was full, a conversation's next turn could, rarely,
+  continue from a saved point whose stored context had meanwhile been reused by a different conversation. The reply
+  was wrong for that turn and no error was shown. Fixed. `HALOGEN_REPLY_RELEASE=0` restores the previous behaviour.
+
 ## 0.20.5
 
 Faster decoding with several requests at once, Hindi, Thai and other Indic-script prompts read the way the model was

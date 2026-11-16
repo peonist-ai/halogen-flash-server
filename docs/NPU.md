@@ -77,7 +77,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.5
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.6
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -614,6 +614,18 @@ the conversion; a changed checkpoint, or an update of the server, converts it ag
 `HALOGEN_DOWNLOAD` (the programs only; no LFM3 weights are downloaded or shipped). A read-only volume works, but then
 the conversion runs at every start.
 
+A third format runs Liquid's own 4-bit file, which Liquid trained for 4-bit weights. Download `LFM3-1.7B-QAD-Q4_0.gguf`
+from `LiquidAI/LFM3-1.7B-GGUF` into the same directory and add the path with `:qad`:
+
+```
+-e HALOGEN_NPU_MODELS=/models/LFM3-1.7B,/models/LFM3-1.7B:fast,/models/LFM3-1.7B:qad
+```
+
+It is served as `LFM3-1.7B-qad`, converts in about ten seconds at the first start (`halogen-npu-qad.hnpw`, beside the
+others) and is the fastest of the three. Its weights are that file's, not your checkpoint's, so a fine-tune keeps to
+the first two formats. A directory that holds only the GGUF with the model's `config.json`, `tokenizer.json` and
+`generation_config.json` also works, and is served under the directory's name.
+
 ```
 curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -d '{
   "model": "LFM3-1.7B-fast",
@@ -625,17 +637,19 @@ curl -s localhost:8731/v1/chat/completions -H 'Content-Type: application/json' -
 Chat completions follow OpenAI's format, streamed or not, with tool calls; a base checkpoint takes raw text on
 `/v1/completions`. A prompt may be as long as the model's 262,144-token context (since 0.19.0; before it, about 220,000), and
 near that length it reads for about 2 minutes and takes about 20 GiB of host memory at its peak. On a short prompt it decodes about
-30 tokens a second at full quality and 42 with `:fast` (about 24 and 35 at 32k tokens, 19 and 24 at 130k), and reads
+30 tokens a second at full quality, 42 with `:fast` and 48 with `:qad` (about 24, 35 and 41 at 32k tokens; 19, 24 and
+27 at 130k), and reads
 a prompt at about 6,800 tokens a second. It shares the NPU with the other NPU models as `qwen3.5-2b` does (a request
 to another model runs between two of its tokens). The weights stay yours, under their own license (LFM Open License v1.0).
 
-| Prompt or context | Prefill, `LFM3-1.7B` | Prefill, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B` | Decode, `LFM3-1.7B-fast` |
-|---|---|---|---|---|
-| 1,024 tokens | 6,850 | 6,800 | 29.6 | 41.9 |
-| 32,768 tokens | 5,342 | 5,326 | 24.1 | 35.0 |
-| 130,000 tokens | 3,092 | 3,099 | 18.7 | 23.8 |
+| Prompt or context | Prefill, `LFM3-1.7B` | Prefill, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B` | Decode, `LFM3-1.7B-fast` | Decode, `LFM3-1.7B-qad` |
+|---|---|---|---|---|---|
+| 1,024 tokens | 6,850 | 6,800 | 29.6 | 41.9 | 48.1 |
+| 32,768 tokens | 5,342 | 5,326 | 24.1 | 35.0 | 40.6 |
+| 130,000 tokens | 3,092 | 3,099 | 18.7 | 23.8 | 27 |
 
-Tokens a second, one request alone, greedy decoding. Prefill includes handing the prompt to the decode program.
+Tokens a second, one request alone, greedy decoding. Prefill includes handing the prompt to the decode program; `:qad`
+reads a prompt at the full-quality format's rate.
 
 Naming `lfm3-1.7b` alone is refused: there is no LFM3 checkpoint in the image, only the programs that run yours.
 

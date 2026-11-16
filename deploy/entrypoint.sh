@@ -544,6 +544,9 @@ work_split() {
 }
 
 NGRAM_TABLE_NAME="qwen38-flash-next-ngram.hgn"
+
+DRAFTER_NAME="qwen38-flash-next-drafter-r2.hgn"
+DRAFTER_BYTES=1523800000
 check_ngram_table() {
   ckpt_facts || return 0
   [ "$CK_HAS_TABLE" = "0" ] || return 0
@@ -593,6 +596,7 @@ need_ckpt() {
     echo "  mount it:  -v /path/to/models:/models:ro" >&2
     echo "  or point:  -e HALOGEN_CHECKPOINT=/models/<file>.hgn (or any shard of a GGUF)" >&2
     exit 1; }
+  is_gguf || drafter_head
   if is_gguf; then check_gguf; else check_sidecar; fi
   legacy_note
   check_ngram_table
@@ -709,6 +713,35 @@ legacy_note() {
     echo "  can be removed."
   fi
 }
+
+drafter_head() {
+  [ -z "${HALOGEN_CK_OVERLAY:-}" ] || return 0
+  [ "${HALOGEN_MTP:-1}" = "0" ] && return 0
+  case "$(basename "$HALOGEN_CHECKPOINT")" in
+    qwen38-flash-next-w4b.hgn) return 0 ;;
+    qwen38-flash-next-*.hgn) ;;
+    *) return 0 ;;
+  esac
+  local dir f; dir="$(dirname "$HALOGEN_CHECKPOINT")"; f="$dir/$DRAFTER_NAME"
+  if [ ! -f "$f" ] && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$dir" ]; then
+    if download_room_check "$dir" "$DRAFTER_BYTES"; then
+      echo "halogen: fetching the draft head $DRAFTER_NAME from $HALOGEN_DOWNLOAD (1.4 GiB)"
+      HF_HUB_OFFLINE=0 "${_hg_hf:-hf}" download "$HALOGEN_DOWNLOAD" "$DRAFTER_NAME" --local-dir "$dir" > /dev/null 2>&1 \
+        || echo "halogen: the draft head was not fetched; the checkpoint's own head drafts." >&2
+    fi
+  fi
+  if [ -f "$f" ] && [ "$(head -c 4 "$f" 2>/dev/null)" = "HGN1" ]; then
+    export HALOGEN_CK_OVERLAY="$f"
+    export HALOGEN_MTP_GATE_RULE="${HALOGEN_MTP_GATE_RULE:-cost}"
+    export HALOGEN_SAMPLED_GATE="${HALOGEN_SAMPLED_GATE:-cost}"
+    echo "halogen: draft head $DRAFTER_NAME (HALOGEN_CK_OVERLAY=none for the checkpoint's own)"
+  elif [ -f "$f" ]; then
+    echo "halogen: $f is not a draft head file (its first bytes are not HGN1); the checkpoint's own head drafts." >&2
+  else
+    echo "halogen: draft head: the checkpoint's own ($DRAFTER_NAME is not in $dir$([ -n "${HALOGEN_DOWNLOAD:-}" ] || echo '; HALOGEN_DOWNLOAD fetches it'))"
+  fi
+}
+
 check_sidecar() {
   case "${HALOGEN_CK_OVERLAY:-}" in
     none|0)
@@ -1408,8 +1441,11 @@ PINS
 }
 
 npu_finetune_ready() {
-  local p="${1%:fast}" fast=0 bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own vb ab
-  [ "$p" != "$1" ] && fast=1
+  local p="$1" fast=0 qad=0 form="" bin="${_hg_npu_bin:-/usr/local/bin/halogen-npu}" info rc=0 task base name out f own vb ab
+  case "$p" in
+    *:fast) fast=1; p="${p%:fast}" ;;
+    *:qad) qad=1; p="${p%:qad}"; form=qad ;;
+  esac
   p="${p%/}"
   if [ ! -d "$p" ]; then
     echo "halogen npu: $p is not a directory. A path in HALOGEN_NPU_MODELS is your own model: a directory on the models volume holding config.json, model.safetensors and tokenizer.json." >&2
@@ -1424,7 +1460,7 @@ npu_finetune_ready() {
   for f in config.json tokenizer.json; do
     [ -f "$p/$f" ] || { echo "halogen npu: $p has no $f (a Hugging Face checkpoint holds config.json, model.safetensors and tokenizer.json)" >&2; return 1; }
   done
-  info=$("$bin" probe "$p") || rc=$?
+  info=$("$bin" probe "$p" ${form:+--form "$form"}) || rc=$?
   [ "$rc" = 0 ] || return 1
   task=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "task" {print $2}')
   base=$(printf '%s\n' "$info" | tr ' ' '\n' | awk -F= '$1 == "base" {print $2}')
@@ -1435,6 +1471,15 @@ npu_finetune_ready() {
     fi
     base="$base-fast"; name="$name-fast"
   fi
+
+  case "$base" in
+    *-qad)
+      if [ -z "$(npu_pin_get "$base" task)" ]; then
+        echo "halogen npu: $1: this image has no program for the QAD-Q4_0 file of ${base%-qad}$([ "$qad" = 1 ] && echo " (drop ':qad')")" >&2
+        return 1
+      fi
+      [ "$qad" = 1 ] && name="$name-qad" ;;
+  esac
   own=$(npu_devices_of "$base")
   npu_model_ready "$own" "$NPU_DIR" devices || return 1
 
@@ -1453,14 +1498,14 @@ npu_finetune_ready() {
     npu_model_ready "$ab" "$NPU_DIR" aud || return 1
     NPU_FT_AUD="$NPU_DIR/$ab/aud"
   fi
-  if [ -w "$p" ]; then out="$p/halogen-npu$([ "$fast" = 1 ] && echo -fast).hnpw"
+  if [ -w "$p" ]; then out="$p/halogen-npu$([ "$fast" = 1 ] && echo -fast)$([ "$qad" = 1 ] && echo -qad).hnpw"
   else
     out="/tmp/halogen-npu/$name.hnpw"; mkdir -p /tmp/halogen-npu
     echo "halogen npu: $p is read-only, so $name is converted into the container at every start; mount the models volume read-write once to keep the result beside it"
   fi
   case "$task" in decision) task=decisions ;; embedding) task=embeddings ;; score) task=rerank ;; classify) task=moderation ;; seqcls) task=classification ;; generate) task="chat completions" ;; image) task=images ;; esac
   echo "halogen npu: $name ($p): a fine-tune of $base, served for $task"
-  "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale ${NPU_FT_VIS:+--vis "$NPU_FT_VIS"} ${NPU_FT_AUD:+--aud "$NPU_FT_AUD"} || {
+  "$bin" convert "$p" "$NPU_DIR/$own/devices" "$out" --name "$name" --source "$p" --if-stale ${form:+--form "$form"} ${NPU_FT_VIS:+--vis "$NPU_FT_VIS"} ${NPU_FT_AUD:+--aud "$NPU_FT_AUD"} || {
     echo "halogen npu: converting $p for the NPU failed (above); nothing was started" >&2; return 1; }
   NPU_FT_NAME="$name"; NPU_FT_DEV="$NPU_DIR/$own/devices"; NPU_FT_W="$out"
   NPU_NEED_K=$(( ${NPU_NEED_K:-0} + $(wc -c < "$out" | tr -d ' ') / 1024 + $(du -sk "$NPU_FT_DEV" | awk '{print $1}') ))
@@ -1628,7 +1673,7 @@ start_npu_engine() {
     enc=""; vis=""; aud=""
     case "$id" in
       /*) npu_finetune_ready "$id" || exit 1
-          dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%:fast}"; tokd="${tokd%/}"
+          dev="$NPU_FT_DEV"; w="$NPU_FT_W"; tokd="${id%:fast}"; tokd="${tokd%:qad}"; tokd="${tokd%/}"
 
           vis="$NPU_FT_VIS"; aud="$NPU_FT_AUD" ;;
       *) if { [ -n "$(npu_pin_files "$id")" ] || [ -n "$(npu_pin_get "$id" vis)" ]; } && ! npu_pin_files "$id" | awk '{print $1}' | grep -qxF -- "$id.hnpw"; then

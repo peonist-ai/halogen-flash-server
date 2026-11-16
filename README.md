@@ -56,7 +56,7 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.20.5: faster decoding with several requests at once, Hindi, Thai and other Indic-script prompts read the way the model was trained, LFM3 on the NPU reads long prompts about twice as fast and generates faster, and fixes for structured output, the answer guard, Claude Code's mid-session tool changes and model names. The checkpoints are 0.20.4's
+0.20.6: faster generation from a new draft head (most of all in agent and tool-calling sessions), images read about four times faster, slightly faster prompt reading on ht43, a third LFM3-1.7B format on the NPU, and fixes for shared long prompts and busy multi-agent sessions. The checkpoints are 0.20.5's
 ([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
@@ -104,7 +104,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.5
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.6
 ```
 
 The weights come from
