@@ -43,12 +43,15 @@ area and not detail. And a **densely filled page is harder than a sparse one**
 at the same point size, which is a matter of finding the right row rather than
 resolving it.
 
-**What it costs.** One image adds roughly 5.5, 11.8 or 25.3 seconds at
-1280x800, 1920x1080 or 2560x1440. `HALOGEN_VISION_MAX_PIXELS` (default
+**What it costs.** One image adds roughly 1.0, 2.2 or 4.2 seconds at
+1280x800, 1920x1080 or 2560x1440 (0.20.6, the time to the first token of a
+request carrying one new image and a short question, the median of three on
+each of two machines). `HALOGEN_VISION_MAX_PIXELS` (default
 2560x1440) is the size an image is scaled down to fit, preserving aspect ratio;
 larger images are downscaled rather than refused, and nothing is refused until
-four times that. 3840x2160 costs about 105 seconds and reads no better than
-1440p, which is why the default sits where it does. There is no fixed aspect
+four times that. 3840x2160 is scaled down to 2560x1440, so it costs the same
+4.3 seconds and reads no better than 1440p, which is why the default sits where
+it does. There is no fixed aspect
 ratio anywhere in the path: tall, wide and square crops all work, and a crop
 under 256x256 is scaled up, which helps small text rather than hurting it. A
-1920x1080 frame occupies about 2,040 tokens of the context.
+1920x1080 frame with a short question takes about 2,100 tokens of the context.

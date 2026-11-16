@@ -6,6 +6,52 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.20.6, both checkpoints
+
+The published 0.20.6 image at its defaults (the prompt cache on unless a row says otherwise, greedy, thinking off, the
+new draft head beside the checkpoint), one checkpoint a machine, two machines a checkpoint, each figure the mean of the
+two: 128 GB, Ubuntu with kernel 7.0 and the GPU's memory limit raised to 100 GiB on the kernel command line
+(`ttm.pages_limit`), 85 W of sustained package power, the GPU clock at a median 2,230 to 2,290 MHz during prefill and
+2,580 to 2,740 MHz during decode. The rows are measured as the [0.20.5 rows below](#0205-both-checkpoints) are, on
+other machines.
+
+| | v2 (the default) | ht43 |
+|---|---|---|
+| agent turn, 30,000 to 96,000 tokens of context: median turn | **2.6 s** | **3.1 s** |
+| agent turn: median first token (90th percentile) | **1.2 s** (1.9 s) | **1.6 s** (2.5 s) |
+| agent turn: median answer, and its decode | 105 tokens at 114 tok/s | 214 tokens at 120 tok/s |
+| first turn of a 34,174-token agent prompt, cold | 19.1 s | 20.3 s |
+| decode, writing code | 92.5 tok/s | 90.5 tok/s |
+| decode, editing ~8,000 tokens of code | 116.2 tok/s | 117.0 tok/s |
+| decode, an agent's tool call after reading a ~3,000-token file | 79.8 tok/s | 78.0 tok/s |
+| decode, English prose | 66.9 tok/s | 66.2 tok/s |
+| decode, six other languages | 62.8 tok/s | 62.3 tok/s |
+| decode, explaining an ~8,000-token document | 65.3 tok/s | 63.7 tok/s |
+| decode, repetitive output, five prompts | 105 to 135 tok/s; 67 on one word 300 times | 105 to 134 tok/s; 66 on one word 300 times |
+| prefill, `sweep`, cache off: 8,192 / 32,768 / 131,072 | 1,961 / 1,870 / 1,793 tok/s | 1,822 / 1,752 / 1,685 tok/s |
+| prefill, `sweep`, cache on (a cold request): 8,192 / 32,768 | 1,850 / 1,903 tok/s | 1,727 / 1,785 tok/s |
+| `sweep` decode over ten prompt shapes (tg128) | 68.6 tok/s | 67.0 tok/s |
+| `bench` with drafting over ten prompt shapes, mean (one machine) | 68.6 tok/s | 68.2 tok/s |
+| three requests at once, greedy code, total | 112.8 tok/s (78.6 without drafting) | 110.3 tok/s (77.8) |
+| four requests at once, greedy code, total | 113.4 tok/s (89.3 without drafting) | 112.9 tok/s (88.7) |
+
+**Against 0.20.5 on one machine** (each image twice, alternating, one machine a checkpoint; 0.20.5 is the left
+figure of each pair). Generation with drafting is about 3% faster on both checkpoints and the `sweep` decode 4.6% (v2)
+and 7.6% (ht43); ht43 reads prompts 1.3 to 2.2% faster, and v2's prefill is unchanged (within 0.5%), so the v2
+prefill rows above differ from 0.20.5's by the machines, not the release:
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 66.72 / 68.57 tok/s | 66.18 / 68.18 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,957 / 1,864 vs 1,954 / 1,867 | 1,800 / 1,741 vs 1,839 / 1,764 |
+
+**The agent turns** are the same three sessions as 0.20.5's, from the same first prompts. A session follows the tool
+calls the model chooses, and on 0.20.6 v2 answers at more length than on 0.20.5 (105 tokens against 81), so its
+median turn is longer for that reason; the first-token and decode rows compare like for like. **Requests at once** use
+`HALOGEN_KV_SLOTS=8`, 384 tokens a stream, the prompt cache off, and the same request without drafting
+(`HALOGEN_SPEC_GROUP=0`) beside it; sampled prose (temperature 0.7) gains 28% at three requests and 17% at four from
+drafting together. Every greedy reply was identical across runs.
+
 ## 0.20.5, both checkpoints
 
 The published 0.20.5 image at its defaults (the prompt cache on unless a row says otherwise, greedy, thinking off),

@@ -150,22 +150,23 @@ or more. `HALOGEN_KV_POOL_POSITIONS=262144` leaves more of the table cached;
 `786432` buys a third resident conversation where the machine has the
 headroom.
 
-**Speed by concurrency.** Measured on the published 0.20.5 image over the
-OpenAI-compatible API, in the conditions of [0.20.5, both
-checkpoints](performance.md#0205-both-checkpoints), with `HALOGEN_KV_SLOTS=8`
+**Speed by concurrency.** Measured on the published 0.20.6 image over the
+OpenAI-compatible API, in the conditions of [0.20.6, both
+checkpoints](performance.md#0206-both-checkpoints), with `HALOGEN_KV_SLOTS=8`
 so that all eight streams are admitted at once. Each stream has its own
 short prompt and generates 384 tokens with thinking off; greedy streams
 write code, sampled streams (temperature 0.7) write English prose. The
 total counts every stream's tokens over the window in which all of them are
 generating; the per-stream figure is the slowest stream's. Each figure is the
-mean of four runs on two machines.
+mean of the runs on two machines (one run whose machine was still reading the
+n-gram table from a cold drive is left out).
 
 | streams generating | v2 total, code (greedy) | v2 per stream | v2 total, prose (sampled) | ht43 total, code / prose |
 |---|---|---|---|---|
-| 1 | 84 tok/s | 84 | 59 tok/s | 84 / 58 |
-| 2 | 105 tok/s | 51 | 82 tok/s | 96 / 81 |
-| 4 | 113 tok/s | 28 | 99 tok/s | 110 / 98 |
-| 8 | 117 tok/s | 14 | 114 tok/s | 118 / 114 |
+| 1 | 85 tok/s | 85 | 59 tok/s | 87 / 61 |
+| 2 | 105 tok/s | 51 | 84 tok/s | 104 / 84 |
+| 4 | 113 tok/s | 28 | 100 tok/s | 113 / 100 |
+| 8 | 115 tok/s | 14 | 112 tok/s | 118 / 114 |
 
 Every stream emits byte-identical tokens to the same request run alone,
 which is gated on every release (see the identity properties under
@@ -196,10 +197,25 @@ when more slots would fit.
 **The concurrency mode (0.20.6, opt-in).** A server that runs many requests at
 once can start in a mode tuned for that: `-e HALOGEN_CONC_MODE=1`, usually with
 `-e HALOGEN_KV_SLOTS=16`. Up to eight requests then draft together instead of
-four, and nine to sixteen requests share one pass. In our measurements total
-throughput at four to sixteen concurrent requests was about 9 to 20% higher than
-the default mode's, and a single request about 7 to 9% slower, so leave it off
-for one conversation at a time. In the mode a temperature-0 reply is the same
+four, and nine to sixteen requests share one pass. Writing code, total
+throughput at four to sixteen concurrent requests is 5 to 14% higher than the
+default mode's; for sampled prose the gain starts past eight requests (12 to 15%
+at twelve and sixteen), and four or eight sampled requests run about level. One
+or two requests are 3 to 10% slower, so leave it off for one conversation at a
+time. Measured on the published 0.20.6 image with `HALOGEN_KV_SLOTS=16` in both
+modes, otherwise as the table above (two machines a checkpoint, the two modes
+alternating on each machine); total tok/s, the slowest stream's in brackets:
+
+| requests generating | v2 code, default / mode | v2 prose, default / mode | ht43 code, default / mode | ht43 prose, default / mode |
+|---|---|---|---|---|
+| 1 | 86 / 84 | 61 / 57 | 87 / 84 | 61 / 55 |
+| 2 | 107 (51) / 103 (51) | 85 (41) / 81 (39) | 104 (52) / 101 (50) | 85 (41) / 81 (39) |
+| 4 | 114 (28) / 124 (30) | 99 (24) / 100 (24) | 113 (28) / 119 (29) | 101 (25) / 99 (24) |
+| 8 | 117 (14) / 133 (16) | 113 (14) / 116 (14) | 118 (15) / 130 (16) | 115 (14) / 115 (14) |
+| 12 | 121 (10) / 136 (11) | 110 (9) / 125 (10) | 118 (10) / 133 (11) | 109 (9) / 126 (10) |
+| 16 | 139 (9) / 155 (10) | 124 (8) / 139 (9) | 134 (8) / 152 (9) | 122 (8) / 137 (8) |
+
+In the mode a temperature-0 reply is the same
 whatever else the server is doing (the number of requests or their arrival
 order); it can differ in wording from the default mode's reply, with the same
 measured quality. The mode is chosen when the server starts and holds for the
