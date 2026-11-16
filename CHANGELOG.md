@@ -40,8 +40,8 @@ checkpoints are 0.20.5's.
   over one document) read it once and share it. When the shared part ended in the 64 tokens after a multiple of
   32,768 tokens, every request read it again from the start, with no error: in our test 16 such requests took about
   six minutes where they now take about a minute and a half. `HALOGEN_CACHE_EDGE=0` restores the previous behaviour.
-- A reply in a busy multi-agent session could be computed from another conversation's context. When many
-  conversations ran at once and the server's context memory was full, a conversation's next turn could, rarely,
+- A reply in a busy multi-agent session could be computed from another conversation's context. When several
+  conversations ran at once (at the default four slots too) and the server's context memory was full, a conversation's next turn could, rarely,
   continue from a saved point whose stored context had meanwhile been reused by a different conversation. The reply
   was wrong for that turn and no error was shown. Fixed. `HALOGEN_REPLY_RELEASE=0` restores the previous behaviour.
 
