@@ -14,7 +14,7 @@ checkpoints are 0.20.5's.
   calls, on both checkpoints. Answers are unchanged. `HALOGEN_CK_OVERLAY=none` keeps the previous head.
 - Images are read about 4x faster. The vision encoder now takes about 0.5 s on a 1280x1280 image (was about 2 s) and
   about 1.8 s on the largest accepted frame (was about 7 s), with the same reading accuracy on our screenshot tests.
-  Text requests are unchanged. `HALOGEN_VISION_ATTN=3` restores the previous encoder.
+  Text requests are unchanged.
 - Faster prompt processing on ht43: prompts of 2,048 tokens are processed about 2% faster, 8,192 tokens about 1.5%
   faster and 32,768 tokens about 1% faster. Short follow-up turns of 128 to 512 tokens are about 1-3% faster on both
   v2 and ht43. Outputs are unchanged, token for token.
@@ -39,11 +39,11 @@ checkpoints are 0.20.5's.
   32,768-token boundary. Requests that start from the same long system prompt (an agent's subagents, parallel calls
   over one document) read it once and share it. When the shared part ended in the 64 tokens after a multiple of
   32,768 tokens, every request read it again from the start, with no error: in our test 16 such requests took about
-  six minutes where they now take about a minute and a half. `HALOGEN_CACHE_EDGE=0` restores the previous behaviour.
+  six minutes where they now take about a minute and a half.
 - A reply in a busy multi-agent session could be computed from another conversation's context. When several
   conversations ran at once (at the default four slots too) and the server's context memory was full, a conversation's next turn could, rarely,
   continue from a saved point whose stored context had meanwhile been reused by a different conversation. The reply
-  was wrong for that turn and no error was shown. Fixed. `HALOGEN_REPLY_RELEASE=0` restores the previous behaviour.
+  was wrong for that turn and no error was shown. Fixed.
 
 ## 0.20.5
 
