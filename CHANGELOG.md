@@ -11,7 +11,10 @@ checkpoints are 0.20.5's.
 - Faster single-request generation, most of all in agent and tool-calling sessions: a new draft head
   (`qwen38-flash-next-drafter-r2.hgn`, 1.4 GiB, fetched beside the checkpoint on first start when `HALOGEN_DOWNLOAD`
   is set) raises decode speed by about 4% on a single request across chat, code, every supported language and tool
-  calls, on both checkpoints. Answers are unchanged. `HALOGEN_CK_OVERLAY=none` keeps the previous head.
+  calls, on both checkpoints. A request's answer is unchanged. In a long conversation under the default prompt cache,
+  a later turn can read slightly differently where two words were nearly tied, because each turn resumes from the
+  state the last reply left; `HALOGEN_PROMPT_CACHE=1` keeps every turn identical whichever head drafts.
+  `HALOGEN_CK_OVERLAY=none` keeps the previous head.
 - Images are read about 4x faster. The vision encoder now takes about 0.5 s on a 1280x1280 image (was about 2 s) and
   about 1.8 s on the largest accepted frame (was about 7 s), with the same reading accuracy on our screenshot tests.
   Text requests are unchanged.
