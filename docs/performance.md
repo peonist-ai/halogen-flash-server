@@ -49,7 +49,7 @@ calls the model chooses, and on 0.20.7 v2 answers more briefly than on 0.20.6 (8
 tool on 0.20.6's own runs, whose median turn there is 2.6 s at 113 tok/s), so its median turn is shorter for that
 reason; the first-token and decode rows compare like for like. One machine's `sweep` decode on v2 read 58.1 tok/s
 during a phase in which its GPU clock fell to 680 MHz, and is left out. **Requests at once** are on the
-[configuration page](configuration.md#speed-by-concurrency-the-previous-default-mode): the concurrency mode is the
+[configuration page](configuration.md#context-and-memory-one-kv-pool-several-conversations): the concurrency mode is the
 default now, and its table compares it with the previous default mode at one to sixteen requests.
 
 ## 0.20.6, both checkpoints
