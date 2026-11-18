@@ -1,7 +1,11 @@
 {
-  "version": "0.20.6",
-  "release_date": "2026-11-16",
+  "version": "0.20.7",
+  "release_date": "2026-11-18",
   "patch_notes": [
+    {
+      "version": "0.20.7",
+      "text": "The concurrency mode is now the default, with a new arithmetic that keeps a single request at least as fast as before: several requests at once get up to about 30% more total throughput than the previous default mode, and a temperature-0 reply no longer changes with the number of concurrent requests. A faster draft head (a 1.39 GiB file fetched beside the checkpoint) and faster single-request decode on both checkpoints. HALOGEN_CONC_MODE=0 starts the previous default mode."
+    },
     {
       "version": "0.20.6",
       "text": "Faster generation from a new draft head, most of all in agent and tool-calling sessions (a 1.4 GiB file fetched beside the checkpoint). Images are read about four times faster. Prompts are read slightly faster on ht43. LFM3-1.7B on the NPU gains a third format for Liquid's own 4-bit file. An opt-in concurrency mode (HALOGEN_CONC_MODE=1) serves many requests at once with more total throughput. Fixes for requests that share a long prompt ending just past a 32,768-token boundary, and for busy multi-agent sessions where a turn could rarely continue from another conversation's context."
@@ -9,10 +13,6 @@
     {
       "version": "0.20.5",
       "text": "Faster decoding with several requests at once, and saved conversations take less memory. Hindi, Thai and other Indic-script prompts are tokenized the way the model was trained. LFM3 on the NPU reads long prompts about twice as fast and generates faster. Fixes for structured output, the answer guard, Claude Code's mid-session tool changes and model names. A prompt cache saved to disk by an earlier version is rebuilt on first use. At temperature 0 a reply can read slightly differently from 0.20.4 where two words were nearly tied."
-    },
-    {
-      "version": "0.20.4",
-      "text": "Short follow-up turns start sooner, 15 to 50% on their prompt, more on long conversations. Servers with more than 8 slots generate faster with many requests at once. A request with tool_choice \"none\" now gets a prose answer even when the conversation already holds tool calls."
     }
   ],
   "figures": {

@@ -150,7 +150,8 @@ or more. `HALOGEN_KV_POOL_POSITIONS=262144` leaves more of the table cached;
 `786432` buys a third resident conversation where the machine has the
 headroom.
 
-**Speed by concurrency.** Measured on the published 0.20.6 image over the
+**Speed by concurrency, the previous default mode.** This is the mode `HALOGEN_CONC_MODE=0` selects since 0.20.7
+(the default up to 0.20.6; the current default follows below). Measured on the published 0.20.6 image over the
 OpenAI-compatible API, in the conditions of [0.20.6, both
 checkpoints](performance.md#0206-both-checkpoints), with `HALOGEN_KV_SLOTS=8`
 so that all eight streams are admitted at once. Each stream has its own
@@ -194,34 +195,31 @@ two, and 14.9 t/s per stream on eight slots against 18.7 on four; for
 reply-heavy, cache-hostile clients the default is the right setting even
 when more slots would fit.
 
-**The concurrency mode (0.20.6, opt-in).** A server that runs many requests at
-once can start in a mode tuned for that: `-e HALOGEN_CONC_MODE=1`, usually with
-`-e HALOGEN_KV_SLOTS=16`. Up to eight requests then draft together instead of
-four, and nine to sixteen requests share one pass. Writing code, total
-throughput at four to sixteen concurrent requests is 5 to 14% higher than the
-default mode's; for sampled prose the gain starts past eight requests (12 to 15%
-at twelve and sixteen), and four or eight sampled requests run about level. One
-or two requests are 3 to 10% slower, so leave it off for one conversation at a
-time. Measured on the published 0.20.6 image with `HALOGEN_KV_SLOTS=16` in both
-modes, otherwise as the table above (two machines a checkpoint, the two modes
-alternating on each machine); total tok/s, the slowest stream's in brackets:
+**The concurrency mode, the default since 0.20.7.** With `HALOGEN_CONC_MODE` unset the server runs in a mode tuned
+for many requests at once (it was opt-in in 0.20.6): up to eight requests draft together instead of four, and nine
+to sixteen requests share one pass. Since 0.20.7 it runs the model's main weights in an arithmetic that keeps a
+single request as fast as the previous default mode or faster. More than four requests at once need
+`-e HALOGEN_KV_SLOTS=16`. Writing code, total throughput at two to sixteen concurrent requests is 3 to 29% higher
+than the previous default mode's (`HALOGEN_CONC_MODE=0`); for sampled prose it is 3 to 19% higher from four requests
+up, and one or two sampled requests run about level. Measured on the 0.20.7 image with `HALOGEN_KV_SLOTS=16` in both
+modes, otherwise as the table above (two machines a checkpoint, the two modes alternating on each machine); total
+tok/s, the slowest stream's in brackets:
 
-| requests generating | v2 code, default / mode | v2 prose, default / mode | ht43 code, default / mode | ht43 prose, default / mode |
+| requests generating | v2 code, default / `=0` | v2 prose, default / `=0` | ht43 code, default / `=0` | ht43 prose, default / `=0` |
 |---|---|---|---|---|
-| 1 | 86 / 84 | 61 / 57 | 87 / 84 | 61 / 55 |
-| 2 | 107 (51) / 103 (51) | 85 (41) / 81 (39) | 104 (52) / 101 (50) | 85 (41) / 81 (39) |
-| 4 | 114 (28) / 124 (30) | 99 (24) / 100 (24) | 113 (28) / 119 (29) | 101 (25) / 99 (24) |
-| 8 | 117 (14) / 133 (16) | 113 (14) / 116 (14) | 118 (15) / 130 (16) | 115 (14) / 115 (14) |
-| 12 | 121 (10) / 136 (11) | 110 (9) / 125 (10) | 118 (10) / 133 (11) | 109 (9) / 126 (10) |
-| 16 | 139 (9) / 155 (10) | 124 (8) / 139 (9) | 134 (8) / 152 (9) | 122 (8) / 137 (8) |
+| 1 | 93 / 92 | 63 / 64 | 94 / 92 | 62 / 62 |
+| 2 | 116 (57) / 112 (55) | 89 (43) / 90 (44) | 115 (56) / 109 (54) | 88 (43) / 89 (43) |
+| 4 | 151 (36) / 118 (29) | 112 (27) / 106 (26) | 142 (35) / 118 (29) | 109 (26) / 106 (26) |
+| 8 | 154 (19) / 119 (15) | 128 (16) / 117 (14) | 148 (18) / 121 (15) | 124 (15) / 118 (15) |
+| 12 | 145 (12) / 124 (10) | 136 (11) / 116 (10) | 141 (12) / 122 (10) | 134 (11) / 115 (9) |
+| 16 | 164 (10) / 140 (9) | 151 (9) / 129 (8) | 156 (10) / 135 (8) | 147 (9) / 124 (8) |
 
-In the mode a temperature-0 reply is the same
-whatever else the server is doing (the number of requests or their arrival
-order); it can differ in wording from the default mode's reply, with the same
-measured quality. The mode is chosen when the server starts and holds for the
-life of the process; the startup log says `concurrency mode on`. The server
-refuses to start with it beside a GGUF or the older w4b checkpoint, or with
-drafting turned off (`HALOGEN_MTP=0`), and says why.
+In the mode a temperature-0 reply is the same whatever else the server is doing (the number of requests or their
+arrival order); it can differ in wording from the previous default mode's reply, with the same measured quality.
+The mode is chosen when the server starts and holds for the life of the process; the startup log says
+`concurrency mode on`. Beside a GGUF or the older w4b checkpoint, or with drafting turned off (`HALOGEN_MTP=0`), the
+server starts in the previous default mode and says why in one startup line (`HALOGEN_CONC_MODE=1` refuses to start
+there instead). `HALOGEN_HT_INT=0` keeps the mode with its 0.20.6 arithmetic, for comparisons.
 
 **Chunked admission.** A prompt that arrives while other conversations are
 generating is read in pieces with a generation step for the others between
@@ -561,7 +559,7 @@ podman run --rm --name halogen -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
   -v ~/halogen-records:/records -e HALOGEN_RECORD_DIR=/records \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.6
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.7
 ```
 
 The startup log then says `request records ON in /records`, with the text

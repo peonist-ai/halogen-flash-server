@@ -545,8 +545,9 @@ work_split() {
 
 NGRAM_TABLE_NAME="qwen38-flash-next-ngram.hgn"
 
-DRAFTER_NAME="qwen38-flash-next-drafter-r2.hgn"
-DRAFTER_BYTES=1523800000
+DRAFTER_NAME="qwen38-flash-next-drafter-r2-ht4.hgn"
+DRAFTER_BYTES=1488500000
+DRAFTER_PREV="qwen38-flash-next-drafter-r2.hgn"
 check_ngram_table() {
   ckpt_facts || return 0
   [ "$CK_HAS_TABLE" = "0" ] || return 0
@@ -591,9 +592,27 @@ conc_mode_file_refuse() {
   echo "  Unset HALOGEN_CONC_MODE, or point HALOGEN_CHECKPOINT at a current file. Not starting." >&2
   exit 2
 }
+
+conc_mode_auto() {
+  local why=""
+  if [ -n "${HALOGEN_HT_TG_DEC:-}" ] && [ "${HALOGEN_HT_TG_DEC}" != 1 ]; then why="HALOGEN_HT_TG_DEC=${HALOGEN_HT_TG_DEC} is set"; fi
+  if [ -z "$why" ] && [ -n "${HALOGEN_TICK_TG:-}" ] && [ "${HALOGEN_TICK_TG}" != 1 ]; then why="HALOGEN_TICK_TG=${HALOGEN_TICK_TG} is set"; fi
+  if [ -z "$why" ]; then case "${HALOGEN_MTP:-1}" in 0*) why="HALOGEN_MTP=${HALOGEN_MTP} turns drafting off" ;; esac; fi
+  if [ -z "$why" ]; then case "${HALOGEN_CHECKPOINT:-}" in
+    *.gguf|*/qwen38-flash-next-w4b.hgn) why="$(basename "$HALOGEN_CHECKPOINT") is not in this server's current format" ;; esac; fi
+  CONC_AUTO=1
+  if [ -n "$why" ]; then
+    export HALOGEN_CONC_MODE=0
+    echo "halogen: the concurrency mode is off for this start: ${why} (HALOGEN_CONC_MODE=0 says so explicitly)." >&2
+  else
+    export HALOGEN_CONC_MODE=1
+  fi
+  return 0
+}
 conc_mode_check() {
   case "${HALOGEN_CONC_MODE:-}" in
-    ""|0) return 0 ;;
+    "") conc_mode_auto; return 0 ;;
+    0) return 0 ;;
     1) ;;
     *) echo "halogen: HALOGEN_CONC_MODE=${HALOGEN_CONC_MODE} is not a setting: use 1 for the concurrency mode, or leave it unset" >&2
        exit 1 ;;
@@ -620,16 +639,35 @@ conc_mode_check() {
   return 0
 }
 conc_mode_note() {
+  case "${HALOGEN_CONC_MODE:-}" in 1) ;; *) conc_mode_defaults; return 0 ;; esac
+  local off=""
+  if is_gguf 2>/dev/null; then off=1; elif ckpt_facts && [ "$CK_OWN_PREC" != "1" ]; then off=1; fi
+  if [ -n "$off" ]; then
+    if [ "${CONC_AUTO:-0}" = 1 ]; then
+      export HALOGEN_CONC_MODE=0
+      echo "halogen: the concurrency mode is off for this start: $(basename "$HALOGEN_CHECKPOINT") is not in this server's current format (HALOGEN_CONC_MODE=0 says so explicitly)." >&2
+      conc_mode_defaults
+      return 0
+    fi
+    conc_mode_file_refuse "$HALOGEN_CHECKPOINT"
+  fi
+  local slots="this start has ${ENG_SLOTS} slots (HALOGEN_KV_SLOTS: how many requests are served at once)"
+  echo "halogen: concurrency mode ON ($([ "${CONC_AUTO:-0}" = 1 ] && echo "the default; HALOGEN_CONC_MODE=0 turns it off" || echo "HALOGEN_CONC_MODE=1")): up to 8 requests at a time are served with drafting, 9 to 16 together without it; ${slots}." \
+       "A reply can differ from the reply of a start with HALOGEN_CONC_MODE=0."
+  conc_mode_defaults
+  return 0
+}
+
+conc_mode_defaults() {
+
+  local cur=1
+  if is_gguf 2>/dev/null; then cur=0; elif ckpt_facts && [ "$CK_OWN_PREC" != "1" ]; then cur=0; fi
+  case "${HALOGEN_CHECKPOINT:-}" in *.gguf|*/qwen38-flash-next-w4b.hgn) cur=0 ;; esac
+  [ "$cur" = 1 ] && export HALOGEN_NGRAM_DEC_EARLY="${HALOGEN_NGRAM_DEC_EARLY:-1}"
   case "${HALOGEN_CONC_MODE:-}" in 1) ;; *) return 0 ;; esac
-  if is_gguf 2>/dev/null; then conc_mode_file_refuse "$HALOGEN_CHECKPOINT"; fi
-  if ckpt_facts && [ "$CK_OWN_PREC" != "1" ]; then conc_mode_file_refuse "$HALOGEN_CHECKPOINT"; fi
-  local slots="this start has ${ENG_SLOTS} slots"
-  case "$ENG_SLOTS" in
-    ""|*[!0-9]*) ;;
-    *) if [ "$ENG_SLOTS" -lt 8 ] || [ "$ENG_SLOTS" -gt 16 ]; then slots="this start has ${ENG_SLOTS} slot(s) and the mode is meant for 8 to 16 (HALOGEN_KV_SLOTS)"; fi ;;
-  esac
-  echo "halogen: concurrency mode ON (HALOGEN_CONC_MODE=1): up to 8 requests at a time are served with drafting (the default mode: up to 4), 9 to 16 together without it; ${slots}." \
-       "A reply can differ from the default mode's reply to the same request, and one request alone runs slower than in the default mode."
+  export HALOGEN_CONC_HEADS="${HALOGEN_CONC_HEADS:-1}" HALOGEN_TICK_ONE="${HALOGEN_TICK_ONE:-3}" \
+         HALOGEN_HT_TG_RING="${HALOGEN_HT_TG_RING:-1}" HALOGEN_CONC_SHAPE="${HALOGEN_CONC_SHAPE:-mode}" \
+         HALOGEN_JHEAD_LAST_ROW="${HALOGEN_JHEAD_LAST_ROW:-1}" HALOGEN_HT_INT="${HALOGEN_HT_INT:-3}"
   return 0
 }
 
@@ -772,19 +810,22 @@ drafter_head() {
     qwen38-flash-next-*.hgn) ;;
     *) return 0 ;;
   esac
-  local dir f; dir="$(dirname "$HALOGEN_CHECKPOINT")"; f="$dir/$DRAFTER_NAME"
+  local dir f name why; dir="$(dirname "$HALOGEN_CHECKPOINT")"; name="$DRAFTER_NAME"; f="$dir/$name"
   if [ ! -f "$f" ] && [ -n "${HALOGEN_DOWNLOAD:-}" ] && [ -w "$dir" ]; then
     if download_room_check "$dir" "$DRAFTER_BYTES"; then
       echo "halogen: fetching the draft head $DRAFTER_NAME from $HALOGEN_DOWNLOAD (1.4 GiB)"
       HF_HUB_OFFLINE=0 "${_hg_hf:-hf}" download "$HALOGEN_DOWNLOAD" "$DRAFTER_NAME" --local-dir "$dir" > /dev/null 2>&1 \
-        || echo "halogen: the draft head was not fetched; the checkpoint's own head drafts." >&2
+        || { if [ -f "$dir/$DRAFTER_PREV" ]; then why="; $DRAFTER_PREV beside the checkpoint drafts"; else why="; the checkpoint's own head drafts"; fi
+             echo "halogen: the draft head was not fetched$why." >&2; }
     fi
   fi
+
+  if [ ! -f "$f" ] && [ -f "$dir/$DRAFTER_PREV" ]; then name="$DRAFTER_PREV"; f="$dir/$name"; fi
   if [ -f "$f" ] && [ "$(head -c 4 "$f" 2>/dev/null)" = "HGN1" ]; then
     export HALOGEN_CK_OVERLAY="$f"
     export HALOGEN_MTP_GATE_RULE="${HALOGEN_MTP_GATE_RULE:-cost}"
     export HALOGEN_SAMPLED_GATE="${HALOGEN_SAMPLED_GATE:-cost}"
-    echo "halogen: draft head $DRAFTER_NAME (HALOGEN_CK_OVERLAY=none for the checkpoint's own)"
+    echo "halogen: draft head $name (HALOGEN_CK_OVERLAY=none for the checkpoint's own)"
   elif [ -f "$f" ]; then
     echo "halogen: $f is not a draft head file (its first bytes are not HGN1); the checkpoint's own head drafts." >&2
   else

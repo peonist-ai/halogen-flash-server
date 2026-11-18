@@ -7,7 +7,7 @@ The checkpoint is one file, with the model's lookup table beside it:
 ```
 qwen38-flash-next-v2.hgn        62.1 GiB   the checkpoint
 qwen38-flash-next-ngram.hgn     47.7 GiB   the lookup table (paged, not held in memory)
-qwen38-flash-next-drafter-r2.hgn 1.42 GiB  the draft head (0.20.6 on; proposes tokens, answers unchanged)
+qwen38-flash-next-drafter-r2-ht4.hgn 1.39 GiB  the draft head (0.20.7 on, its largest projections at 4 bits; proposes tokens, answers unchanged)
 ```
 
 Its weights are 4.16 bits each on average: the experts and the rest of the
