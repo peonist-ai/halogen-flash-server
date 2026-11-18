@@ -197,8 +197,8 @@ when more slots would fit.
 
 **The concurrency mode, the default since 0.20.7.** With `HALOGEN_CONC_MODE` unset the server runs in a mode tuned
 for many requests at once (it was opt-in in 0.20.6): up to eight requests draft together instead of four, and nine
-to sixteen requests share one pass. Since 0.20.7 it runs the model's main weights in an arithmetic that keeps a
-single request as fast as the previous default mode or faster. More than four requests at once need
+to sixteen requests share one pass. Since 0.20.7 a single request runs as fast in it as in the previous default mode
+or faster. More than four requests at once need
 `-e HALOGEN_KV_SLOTS=16`. Writing code, total throughput at two to sixteen concurrent requests is 3 to 29% higher
 than the previous default mode's (`HALOGEN_CONC_MODE=0`); for sampled prose it is 3 to 19% higher from four requests
 up, and one or two sampled requests run about level. Measured on the 0.20.7 image with `HALOGEN_KV_SLOTS=16` in both
@@ -219,7 +219,7 @@ arrival order); it can differ in wording from the previous default mode's reply,
 The mode is chosen when the server starts and holds for the life of the process; the startup log says
 `concurrency mode on`. Beside a GGUF or the older w4b checkpoint, or with drafting turned off (`HALOGEN_MTP=0`), the
 server starts in the previous default mode and says why in one startup line (`HALOGEN_CONC_MODE=1` refuses to start
-there instead). `HALOGEN_HT_INT=0` keeps the mode with its 0.20.6 arithmetic, for comparisons.
+there instead).
 
 **Chunked admission.** A prompt that arrives while other conversations are
 generating is read in pieces with a generation step for the others between

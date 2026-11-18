@@ -4,7 +4,7 @@
   "patch_notes": [
     {
       "version": "0.20.7",
-      "text": "The concurrency mode is now the default, with a new arithmetic that keeps a single request at least as fast as before: several requests at once get up to about 30% more total throughput than the previous default mode, and a temperature-0 reply no longer changes with the number of concurrent requests. A faster draft head (a 1.39 GiB file fetched beside the checkpoint) and faster single-request decode on both checkpoints. HALOGEN_CONC_MODE=0 starts the previous default mode."
+      "text": "The concurrency mode is now the default, and a single request is at least as fast as before: several requests at once get up to about 30% more total throughput than the previous default mode, and a temperature-0 reply no longer changes with the number of concurrent requests. A faster draft head (a 1.39 GiB file fetched beside the checkpoint) and faster single-request decode on both checkpoints. HALOGEN_CONC_MODE=0 starts the previous default mode."
     },
     {
       "version": "0.20.6",

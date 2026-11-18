@@ -2,26 +2,22 @@
 
 ## 0.20.7
 
-The concurrency mode is now the default, with a new arithmetic that keeps a single request at least as fast as
-before; a faster draft head; faster single-request decode. The Flash checkpoints are 0.20.5's.
+The concurrency mode is now the default and a single request is at least as fast as before; a faster draft head. The
+Flash checkpoints are 0.20.5's.
 
 ### Changed
 
-- The concurrency mode is the default (it was opt-in in 0.20.6). Up to eight requests draft together instead of
-  four, and nine to sixteen share one pass. It now runs the model's main weights in a new arithmetic that keeps a
-  single request at least as fast as the previous default mode: one request decodes about 1-2% faster writing code
-  and level on sampled prose. Several requests at once get more total throughput than the previous default mode:
-  writing code 3 to 29% at two to sixteen requests, sampled prose 3 to 19% from four requests up
-  (`HALOGEN_KV_SLOTS=16` for more than four at a time). A temperature-0 reply no longer changes with the number of
-  concurrent requests or their arrival order; it can differ in wording from 0.20.6's, with the same measured
-  quality. `HALOGEN_CONC_MODE=0` starts the previous default mode. Beside a GGUF, w4b or `HALOGEN_MTP=0` the server
-  starts in the previous mode and says why in one startup line.
-- Faster drafting: the draft head's largest projections use the same 4-bit format as the model's trunk, in a new
-  head file (`qwen38-flash-next-drafter-r2-ht4.hgn`, 1.39 GiB, fetched beside the checkpoint on first start when
-  `HALOGEN_DOWNLOAD` is set; until it is there, 0.20.6's `qwen38-flash-next-drafter-r2.hgn` keeps drafting).
-  Answers are unchanged.
-- Faster single-request decode on both checkpoints: about 4 to 6% against 0.20.6 in the server's own benchmark with
-  drafting on, and level to 3% faster with drafting off.
+- The concurrency mode is the default (it was opt-in in 0.20.6), and a single request now runs at least as fast in it
+  as in the previous default mode. Several requests at once get more total throughput: writing code 3 to 29% at two
+  to sixteen requests, sampled prose 3 to 19% from four requests up (`HALOGEN_KV_SLOTS=16` for more than four at a
+  time). A temperature-0 reply no longer changes with the number of concurrent requests or their arrival order; it
+  can differ in wording from 0.20.6's, with the same measured quality. `HALOGEN_CONC_MODE=0` starts the previous
+  default mode. Beside a GGUF, w4b or `HALOGEN_MTP=0` the server starts in the previous mode and says why in one
+  startup line.
+- A faster draft head, in a new file (`qwen38-flash-next-drafter-r2-ht4.hgn`, 1.39 GiB, fetched beside the checkpoint
+  on first start when `HALOGEN_DOWNLOAD` is set; until it is there, 0.20.6's `qwen38-flash-next-drafter-r2.hgn` keeps
+  drafting). Answers are unchanged.
+- Faster single-request decode on both checkpoints, about 4 to 6% against 0.20.6.
 
 ## 0.20.6
 
