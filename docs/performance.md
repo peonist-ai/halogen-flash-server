@@ -6,6 +6,52 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.20.7, both checkpoints
+
+The 0.20.7 image at its defaults (the concurrency mode, the prompt cache on unless a row says otherwise, greedy,
+thinking off, the new draft head beside the checkpoint), one checkpoint a machine, two machines a checkpoint, each
+figure the mean of the two, measured on the release candidate whose bytes are the published image: 128 GB, Ubuntu
+with kernel 7.0 and the GPU's memory limit raised to 100 GiB on the kernel command line (`ttm.pages_limit`), 85 W of
+sustained package power, the GPU clock at a median 2,245 to 2,362 MHz during prefill and 2,542 to 2,774 MHz during
+decode. The rows are measured as the [0.20.6 rows below](#0206-both-checkpoints) are, on other machines.
+
+| | v2 (the default) | ht43 |
+|---|---|---|
+| agent turn, 30,000 to 96,000 tokens of context: median turn | **2.1 s** | **3.5 s** |
+| agent turn: median first token (90th percentile) | **1.2 s** (1.8 s) | **1.4 s** (1.9 s) |
+| agent turn: median answer, and its decode | 85 tokens at 129 tok/s | 227 tokens at 110 tok/s |
+| first turn of a 34,174-token agent prompt, cold | 18.8 s | 19.9 s |
+| decode, writing code | 100.2 tok/s | 97.9 tok/s |
+| decode, editing ~8,000 tokens of code | 121.4 tok/s | 126.3 tok/s |
+| decode, an agent's tool call after reading a ~3,000-token file | 87.6 tok/s | 93.5 tok/s |
+| decode, English prose | 70.2 tok/s | 68.6 tok/s |
+| decode, six other languages | 66.7 tok/s | 64.0 tok/s |
+| decode, explaining an ~8,000-token document | 67.8 tok/s | 69.3 tok/s |
+| decode, repetitive output, five prompts | 113 to 147 tok/s; 70 on one word 300 times | 113 to 147 tok/s; 71 on one word 300 times |
+| prefill, `sweep`, cache off: 8,192 / 32,768 / 131,072 | 1,983 / 1,876 / 1,796 tok/s | 1,843 / 1,766 / 1,703 tok/s |
+| prefill, `sweep`, cache on (a cold request): 8,192 / 32,768 | 1,870 / 1,945 tok/s | 1,737 / 1,802 tok/s |
+| `sweep` decode over ten prompt shapes (tg128) | 74.9 tok/s (one machine) | 71.3 tok/s |
+
+**Against 0.20.6 on one machine** (each image three times, alternating, on each of two machines; 0.20.6 is the left
+figure of each pair, the mean of the two machines). Generation with drafting is 4 to 6% faster on both checkpoints
+and the `sweep` decode 4 to 8%; with drafting off a single request runs level to 3% faster; prompt reading is
+unchanged (within 0.3%):
+
+| | v2 | ht43 |
+|---|---|---|
+| `bench` with drafting over ten prompt shapes, greedy, mean | 71.20 / 74.57 tok/s | 71.35 / 74.81 tok/s |
+| `bench` without drafting, mean | 40.73 / 41.07 tok/s | 40.85 / 41.63 tok/s |
+| prefill cache off, 8,192 / 32,768 | 1,952 / 2,009 vs 1,953 / 2,011 | 1,829 / 1,890 vs 1,831 / 1,893 |
+| `sweep` decode over ten prompt shapes (tg128) | 71.66 / 76.37 tok/s | 71.32 / 74.66 tok/s |
+
+**The agent turns** are the same three sessions as 0.20.6's, from the same first prompts. A session follows the tool
+calls the model chooses, and on 0.20.7 v2 answers more briefly than on 0.20.6 (85 tokens against 123, read by the same
+tool on 0.20.6's own runs, whose median turn there is 2.6 s at 113 tok/s), so its median turn is shorter for that
+reason; the first-token and decode rows compare like for like. One machine's `sweep` decode on v2 read 58.1 tok/s
+during a phase in which its GPU clock fell to 680 MHz, and is left out. **Requests at once** are on the
+[configuration page](configuration.md#speed-by-concurrency-the-previous-default-mode): the concurrency mode is the
+default now, and its table compares it with the previous default mode at one to sixteen requests.
+
 ## 0.20.6, both checkpoints
 
 The published 0.20.6 image at its defaults (the prompt cache on unless a row says otherwise, greedy, thinking off, the
