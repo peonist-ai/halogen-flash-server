@@ -76,6 +76,7 @@ nav:
       - NPU host details: NPU.md
       - Agent guard (preview): agent-guard.md
       - Flint preview: flint-preview.md
+      - Inkling-2-Mini preview: inkling-preview.md
   - Numbers:
       - Measured: performance.md
       - Quality: quality.md

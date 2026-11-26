@@ -40,6 +40,7 @@ what that leaves for anything else.
 - [Small models on the NPU](npu-small-models.md) and the
   [NPU host details](NPU.md)
 - [Flint preview](flint-preview.md): RecursiveSI's Flint on its own image tag
+- [Inkling-2-Mini preview](inkling-preview.md): Thinking Machines Lab's Inkling-2-Mini on its own image tag, with images and the full context
 
 **Understanding the numbers:**
 

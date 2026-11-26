@@ -137,6 +137,28 @@ It is a preview: prefill slows past roughly 80-90k tokens of context, and
 speculative decoding is opt-in (`HALOGEN_FLINT_SPEC=1`) and greedy-only.
 Speeds, options and limits: [Flint preview](docs/flint-preview.md).
 
+### Inkling-2-Mini preview
+
+A separate image tag serves Thinking Machines Lab's Inkling-2-Mini (Apache-2.0,
+with the model's Acceptable Use Policy) as a preview, with image input and the
+model's full 1,048,576-token context; `:latest` above is unchanged. Download
+the converted weights (about 19 GB), then start it:
+
+```bash
+hf download peonist-ai/halogen-inkling-2-mini --local-dir ~/halogen-models
+
+podman run --rm -p 8731:8731 \
+  --device /dev/kfd --device /dev/dri --group-add keep-groups \
+  --security-opt seccomp=unconfined --ipc=host --ulimit memlock=-1:-1 \
+  -v ~/halogen-models:/models:ro \
+  ghcr.io/peonist-ai/halogen-flash-server:0.20.7-inkling-preview
+```
+
+It is a preview: no generative benchmark was run on it, it serves
+`/v1/chat/completions` and `/v1/models` only, and stop strings, logprobs and
+the penalties are refused for now.
+Speeds, options and limits: [Inkling-2-Mini preview](docs/inkling-preview.md).
+
 ---
 
 ## Community
