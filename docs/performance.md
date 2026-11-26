@@ -6,6 +6,30 @@ checkpoint a machine, with the conditions each table names. Decode depends
 on how predictable the text is: quote the row for the kind of text you
 run, never one number for all of them.
 
+## 0.21.0, Qwen3.8-27B (new) and Flash-Next (unchanged)
+
+Flash-Next's numbers are 0.20.7's: its engine is the same code (every kernel it runs is 0.20.7's, and its next-token
+probabilities on the quality checks are 0.20.7's exactly), so the [0.20.7 section below](#0207-both-checkpoints) stands.
+
+Qwen3.8-27B at the image's defaults (`qwen38-27b-ht4.hgn`, the prompt cache at its default, four slots, context
+262,144), the image's own `bench` and `sweep`, three machines (AMD Ryzen AI Max+ 395, 128 GB, about 85 W of sustained
+package power), the mean:
+
+| Qwen3.8-27B, 0.21.0 | tok/s | the earlier 27B image, `halogen:0.1.4`, same machines |
+|---|---|---|
+| decode, one request, drafting on (the default; `sweep` tg128) | 37.9 | 26.5 |
+| decode, one request, no drafting (`bench` serial) | 15.1 | 10.5 |
+| prefill, 2,048-token prompt (cold, after the longer prompts) | 578 | 610 |
+| prefill, 8,192-token prompt (cold) | 605 | 583 |
+| prefill, 32,768-token prompt (cold) | 530 | 500 |
+
+Decode is the image's `bench` shapes (code, proofs, prose: 256 tokens each, greedy); prefill is `sweep` with the prompt
+cache on, each prompt new to it (what a first request pays). 0.1.4 serves its own checkpoint
+(`qwen3.8-27b-p1w4d-d2.hgn`, 33.4 GiB with its two draft heads); 0.21.0 serves the new 12.8 GiB one, so the two rows differ in file as well as engine. Against 0.1.4 the 27B decodes about 43% faster and prefills
+4-6% faster at 8,192 and 32,768 tokens; a 2,048-token prompt that follows longer ones is about 5% slower (the first one
+after an idle spell is about as fast). With a LoRA adapter in use, decode
+is about 2.5% slower; requests without one are unchanged.
+
 ## 0.20.7, both checkpoints
 
 The 0.20.7 image at its defaults (the concurrency mode, the prompt cache on unless a row says otherwise, greedy,
@@ -540,8 +564,8 @@ produced byte-identical output on every case**, on both checkpoints.
 Reproduce the numbers with the benchmarks baked into the image:
 
 ```bash
-podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.20.7 bench serial,mtp 256 low 3
-podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.20.7 sweep -p 8192,32768 -n 128
+podman run ... ghcr.io/peonist-ai/halogen-flash-server:0.21.0 bench serial,mtp 256 low 3
+podman run ... -e HALOGEN_PROMPT_CACHE=0 ghcr.io/peonist-ai/halogen-flash-server:0.21.0 sweep -p 8192,32768 -n 128
 ```
 
 Run the sweep with the prompt cache off, as above. It repeats one prompt per

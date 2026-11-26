@@ -54,7 +54,13 @@ a quality trade. Since 0.6.0 there are two draft sources, the model's own
 draft head and the request's own text (prompt lookup), and the guarantee
 covers both.
 
-0.20.7: the concurrency mode is now the default: several requests at once get up to about 30% more total throughput than the previous default mode, a single request decodes as fast as before or faster on both checkpoints, and a temperature-0 reply no longer depends on how many other requests are running; plus a faster draft head. The checkpoints are 0.20.5's
+**Qwen3.8-27B** runs in the same image: put `qwen38-27b-ht4.hgn` (12.8 GiB) in your models folder and name it with
+`HALOGEN_CHECKPOINT`. Decode 37.9 tok/s on one request with drafting (15.1 without), prefill 578 / 605 / 530 tok/s at 2,048 /
+8,192 / 32,768 tokens, measured on the published image at its defaults on three machines, the mean (see
+[Measured](docs/performance.md#0210-qwen38-27b-new-and-flash-next-unchanged)). Images and LoRA adapters work on it too;
+[the Qwen3.8-27B page](docs/qwen3.8-27b.md) has the files and the setup.
+
+0.21.0: Qwen3.8-27B now runs in the same image as Qwen3.8-Flash-Next, with image input and LoRA adapters; name its checkpoint and the server serves it. Flash-Next is unchanged
 ([CHANGELOG](CHANGELOG.md)).
 
 Since 0.7.0 the engine also opens a **llama.cpp GGUF** of this model directly:
@@ -102,7 +108,7 @@ podman run --rm -p 8731:8731 \
   --ipc=host --ulimit memlock=-1:-1 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.21.0
 ```
 
 The weights come from

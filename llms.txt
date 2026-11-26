@@ -36,6 +36,7 @@ need below. All links are raw markdown, readable without a browser.
 
 - [Configuration](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/configuration.md): cache modes, KV pool and context, prompt cache on disk, 1M context, attention budget, composable context, API key, request records
 - [Precision](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/precision.md): what you get, and how to trade it
+- [Qwen3.8-27B](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/qwen3.8-27b.md): serve Qwen3.8-27B from the same image: the files, starting it, images, LoRA adapters, memory
 - [Bring your own GGUF](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/gguf.md): run a llama.cpp GGUF of this model on these kernels, and what that costs and buys
 - [Measuring a checkpoint](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/checkpoint-tools.md): verify, inspect, ppl and niah as modes of the image
 - [Small models on the NPU](https://raw.githubusercontent.com/peonist-ai/halogen-flash-server/main/docs/npu-small-models.md): the NPU sidecar models

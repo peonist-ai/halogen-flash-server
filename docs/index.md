@@ -36,6 +36,7 @@ what that leaves for anything else.
   cache on disk, 1M context, the attention budget, composable context, an
   API key, request records
 - [Precision: what you get, and how to trade it](precision.md)
+- [Qwen3.8-27B](qwen3.8-27b.md): the same image serves it, with images and LoRA adapters
 - [Bring your own GGUF](gguf.md)
 - [Small models on the NPU](npu-small-models.md) and the
   [NPU host details](NPU.md)

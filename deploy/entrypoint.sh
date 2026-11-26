@@ -53,6 +53,10 @@ export HALOGEN_VERBOSE="${HALOGEN_VERBOSE:-0}"
 default_checkpoint() {
   if [ ! -f "$1/qwen38-flash-next-v2.hgn" ] && [ -f "$1/qwen38-flash-next-w4b.hgn" ]; then
     echo "$1/qwen38-flash-next-w4b.hgn"
+  elif [ ! -f "$1/qwen38-flash-next-v2.hgn" ] && [ -f "$1/qwen38-27b-ht4.hgn" ]; then
+    echo "$1/qwen38-27b-ht4.hgn"
+  elif [ ! -f "$1/qwen38-flash-next-v2.hgn" ] && case "${HALOGEN_DOWNLOAD:-}" in *27b*|*27B*) true ;; *) false ;; esac; then
+    echo "$1/qwen38-27b-ht4.hgn"
   else
     echo "$1/qwen38-flash-next-v2.hgn"
   fi
@@ -66,6 +70,66 @@ resolve_checkpoint() {
 }
 resolve_checkpoint /models
 export HALOGEN_CHECKPOINT
+
+hgn_model_id() {
+  [ -r "$1" ] || return 0
+  [ "$(head -c 4 "$1" 2>/dev/null)" = "HGN1" ] || return 0
+  dd if="$1" bs=1 skip=40 count=64 2>/dev/null | tr -d '\000'
+}
+ENGINE_GEOM="" ENGINE_BIN="" ENGINE_TOOLS=""
+engine_refuse() {
+  [ "${ENGINE_SOFT:-0}" = 1 ] && return 0
+  echo "halogen: $(basename "$1") $2" >&2
+  echo "  this image serves Qwen3.8-Flash-Next (qwen38-flash-next-v2.hgn and its other published files) and Qwen3.8-27B" >&2
+  echo "  (qwen38-27b-ht4.hgn, from peonist-ai/halogen-qwen3.8-27b-ht4); name one with -e HALOGEN_CHECKPOINT=/models/<file>" >&2
+  exit 1
+}
+engine_for_checkpoint() {
+  local f="$1" id="" geom=""
+  ENGINE_GEOM=flash_next; ENGINE_BIN=/usr/local/bin/flash_serve; ENGINE_TOOLS=/usr/local/bin/halogen-tools
+  if [ -z "${HALOGEN_IMAGE_ENGINES:-}" ]; then
+    ENGINE_GEOM="${HALOGEN_IMAGE_GEOM:-flash_next}"
+    return 0
+  fi
+  case "$f" in
+    *.gguf) geom=flash_next ;;
+    *)
+      if [ -f "$f" ]; then
+        id="$(hgn_model_id "$f")"
+        [ -n "$id" ] || { engine_refuse "$f" "is not a halogen checkpoint (no HGN1 header) nor a GGUF."; return 0; }
+      fi
+      case "$id" in
+        qwen3.8-flash-next-mtp*|qwen3.8-flash-next-ngram*|qwen3.8-flash-next-vision*|qwen3.8-flash-next-drafter*|qwen3.8-27b-vision*)
+
+          if [ "${ENGINE_COMPANION_OK:-0}" = 1 ]; then
+            case "$id" in qwen3.8-27b-*) geom=dense27 ;; *) geom=flash_next ;; esac
+          else
+            engine_refuse "$f" "is a companion file ($id), not a model checkpoint."; return 0
+          fi ;;
+        qwen3.8-flash-next*) geom=flash_next ;;
+        qwen3.8-27b-*) geom=dense27 ;;
+        Qwen/Qwen3.8-27B*|Qwen3.8-27B*)
+          engine_refuse "$f" "is a Qwen3.8-27B file in halogen 0.1.x's format ($id); the halogen:0.1.4 image serves it, this one serves the 27B from qwen38-27b-ht4.hgn."; return 0 ;;
+        "")
+          case "$(basename "$f")" in
+            qwen38-27b-*.hgn) geom=dense27 ;;
+            *) geom=flash_next ;;
+          esac ;;
+        *) engine_refuse "$f" "declares the model \"$id\", which no engine in this image serves."; return 0 ;;
+      esac ;;
+  esac
+  case " ${HALOGEN_IMAGE_ENGINES} " in *" $geom "*) ;; *)
+    engine_refuse "$f" "needs the $geom engine, which this image does not carry."; return 0 ;; esac
+  ENGINE_GEOM="$geom"
+  if [ "$geom" != flash_next ]; then
+    ENGINE_BIN="/usr/local/bin/flash_serve-$geom"; ENGINE_TOOLS="/usr/local/bin/halogen-tools-$geom"
+  fi
+  export HALOGEN_IMAGE_GEOM="$geom" HALOGEN_TOOLS_BIN="$ENGINE_TOOLS"
+
+  if [ "$geom" = dense27 ] && [ -z "${HALOGEN_MODEL_ID:-}" ]; then export HALOGEN_MODEL_ID=halogen-qwen3.8-27b; fi
+  return 0
+}
+ENGINE_SOFT=1 engine_for_checkpoint "$HALOGEN_CHECKPOINT"
 
 ENG_SLOTS="${HALOGEN_KV_SLOTS:-4}"
 ENG_CTX="${HALOGEN_CTX:-262144}"
@@ -100,19 +164,27 @@ if [ -n "$ROPE_YARN" ] && [ "$ENG_CTX" -le 262144 ]; then
   echo "halogen: WARNING: HALOGEN_ROPE_YARN=$ROPE_YARN with HALOGEN_CTX=$ENG_CTX at or"        "under the native 262144. Static YaRN rescales every position; the model"        "card advises it only when the context needs it." >&2
 fi
 
+kv_rates() {
+  if [ "${ENGINE_GEOM:-flash_next}" = dense27 ]; then
+    KV_PP=74816; KV_ROWS=69632; SLOT_B=160781653
+    if [ "${HALOGEN_KV8:-}" = 1 ]; then KV_PP=41360; KV_ROWS=36176; fi
+  else
+    KV_PP=29500; KV_ROWS=26624; SLOT_B=120586240
+    if [ "${HALOGEN_KV8:-}" = 1 ]; then KV_PP=16712; KV_ROWS=13832; fi
+  fi
+}
 kv_budget_note() {
 
-  local KV_PP=29500 KV_ROWS=26624
-  if [ "${HALOGEN_KV8:-}" = 1 ]; then KV_PP=16712; KV_ROWS=13832; fi
+  local KV_PP KV_ROWS SLOT_B; kv_rates
   local kv_gib avail_gib
 
-  kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v pp="$KV_PP" -v rr="$KV_ROWS" 'BEGIN{printf "%.1f", (pool=="0"?s*c*rr:p*pp+s*120586240)/1073741824}')
+  kv_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v pp="$KV_PP" -v rr="$KV_ROWS" -v sb="$SLOT_B" 'BEGIN{printf "%.1f", (pool=="0"?s*c*rr:p*pp+s*sb)/1073741824}')
 
-  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-}" -v s="$ENG_SLOTS" -v br="${HALOGEN_CACHE_BRANCHES:-2}" -v s3="${HALOGEN_CACHE_SNAP3:-1}" -v rr="$KV_ROWS" -v fu="${HALOGEN_CACHE_FULL:-1}" -v rp="${HALOGEN_CACHE_REPLY:-1}" -v pm="${HALOGEN_PROMPT_CACHE:-2}" 'BEGIN{if (n=="") n = s * (1 + br*((s3=="0")?1:2) + ((fu=="0")?0:1) + ((rp=="0" || pm=="1")?0:1)); printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*115*1048576/1073741824:c*rr/1073741824)}')
+  cache_gib=$(awk -v c="$ENG_CTX" -v on="${HALOGEN_PROMPT_CACHE:-2}" -v ip="${HALOGEN_CACHE_INPLACE:-1}" -v f="${HALOGEN_CACHE_FILE:-}" -v n="${HALOGEN_CACHE_ENTRIES:-}" -v s="$ENG_SLOTS" -v br="${HALOGEN_CACHE_BRANCHES:-2}" -v s3="${HALOGEN_CACHE_SNAP3:-1}" -v rr="$KV_ROWS" -v fu="${HALOGEN_CACHE_FULL:-1}" -v rp="${HALOGEN_CACHE_REPLY:-1}" -v pm="${HALOGEN_PROMPT_CACHE:-2}" -v sb="$SLOT_B" 'BEGIN{if (n=="") n = s * (1 + br*((s3=="0")?1:2) + ((fu=="0")?0:1) + ((rp=="0" || pm=="1")?0:1)); printf "%.1f", (on==0 || f!="")?0:(ip!="0"?n*sb/1073741824:c*rr/1073741824)}')
 
   local mi="${_hg_proc:-/proc}/meminfo" cma_gib=0 free_gib=""
-  avail_gib=$(awk '/^MemAvailable/{a=$2} /^CmaFree/{c=$2} END{if (a != "") printf "%.1f", (a-c)/1048576}' "$mi" 2>/dev/null || echo "?")
-  cma_gib=$(awk '/^CmaFree/{printf "%.1f", $2/1048576; f=1} END{if (!f) print "0.0"}' "$mi" 2>/dev/null || echo 0)
+  avail_gib=$(awk '/^MemAvailable/{a=$2} /^CmaFree/{c=$2} /^CmaTotal/{ct=$2; hc=1} END{if (hc && c > ct) c = ct; if (a != "") printf "%.1f", (a-c)/1048576}' "$mi" 2>/dev/null || echo "?")
+  cma_gib=$(awk '/^CmaFree/{c=$2; f=1} /^CmaTotal/{ct=$2; hc=1} END{if (!f) print "0.0"; else {if (hc && c > ct) c = ct; printf "%.1f", c/1048576}}' "$mi" 2>/dev/null || echo 0)
   free_gib=$(awk '/^MemFree/{printf "%.1f", $2/1048576}' "$mi" 2>/dev/null || echo "")
 
   local wt="68 GiB" w_gib=68 ft=""
@@ -131,8 +203,9 @@ kv_budget_note() {
   ws=$(work_split)
   scratch_gib=$(echo "$ws" | awk '{printf "%.1f", $1 + $2}')
   [ -n "${HALOGEN_VISION_TOWER:-}" ] && [ "${HALOGEN_VISION_TOWER:-0}" != "0" ] && tower_gib=0.84
+  [ "$tower_gib" = 0.84 ] && [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && tower_gib=0.86
   w_gib=$(awk -v w="$w_gib" -v s="$scratch_gib" -v t="$tower_gib" 'BEGIN{printf "%.1f", w + s + t}')
-  used_gib=$(awk '/^MemTotal/{t=$2} /^MemAvailable/{a=$2} /^CmaFree/{c=$2} END{printf "%.1f", (t-a+c)/1048576}' "$mi" 2>/dev/null || echo "0")
+  used_gib=$(awk '/^MemTotal/{t=$2} /^MemAvailable/{a=$2} /^CmaFree/{c=$2} /^CmaTotal/{ct=$2; hc=1} END{if (hc && c > ct) c = ct; printf "%.1f", (t-a+c)/1048576}' "$mi" 2>/dev/null || echo "0")
 
   if [ -n "$free_gib" ] && [ "$avail_gib" != "?" ] && [ -n "$avail_gib" ] \
      && awk -v f="$free_gib" -v a="$avail_gib" 'BEGIN{exit !(f < 1.5 && a >= 4)}'; then
@@ -141,22 +214,25 @@ kv_budget_note() {
   if awk -v c="$cma_gib" 'BEGIN{exit !(c >= 1)}'; then
     echo "halogen: NOTE ${cma_gib} GiB of the memory counted as available is a contiguous-allocator pool the GPU cannot use; the budget below leaves it out." >&2
   fi
-  if awk -v u="$used_gib" 'BEGIN{exit !(u >= 10)}'; then
+
+  if [ "${ENGINE_GEOM:-flash_next}" != dense27 ] && awk -v u="$used_gib" 'BEGIN{exit !(u >= 10)}'; then
     echo "halogen: WARNING ${used_gib} GiB of host RAM is in use before this server starts. The server sizes itself from the machine's total and leaves a fixed" \
          "reserve for the OS and the model's 47.7 GiB lookup table, which is read through the file cache; whatever is already using those ${used_gib} GiB comes out of that cache." \
          "Expect every prompt to read the table from disk, prefill to run several times slower than published, and pauses of a minute or more. Stop the other" \
          "workloads, or run this server on a host of its own." >&2
   fi
+  local tbl_note="including the large lookup table it reads from disk and never holds. "
+  [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && tbl_note="in its startup ledger. "
   if [ "${HALOGEN_KV_POOL:-1}" = "0" ]; then
     echo "halogen: KV budget ${ENG_SLOTS} slot(s) x ${ENG_CTX} ctx = ${kv_gib} GiB" \
          "(~$((KV_ROWS / 1024)) KiB/position/slot, HALOGEN_KV_POOL=0) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of roughly ${wt}" \
          "of weights and ${scratch_gib} GiB of working memory (HALOGEN_MAX_TOK ${ENG_MAX_TOK}). Those last two are estimates for this pre-flight check; the engine prints its measured figures once loaded," \
-         "including the large lookup table it reads from disk and never holds. MemAvailable now ${avail_gib} GiB."
+         "${tbl_note}MemAvailable now ${avail_gib} GiB."
   else
     echo "halogen: KV budget ${ENG_SLOTS} slot(s) over one ${ENG_POOL}-position pool (each request up to ${ENG_CTX}) = ${kv_gib} GiB" \
-         "(~$((KV_PP / 1024)) KiB/position incl. block scratch + ~115 MiB/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of roughly ${wt}" \
+         "(~$((KV_PP / 1024)) KiB/position incl. block scratch + ~$((SLOT_B / 1048576)) MiB/slot) + ${cache_gib} GiB prompt cache in RAM${HALOGEN_CACHE_FILE:+ (snapshot on file)}, on top of roughly ${wt}" \
          "of weights and ${scratch_gib} GiB of working memory (HALOGEN_MAX_TOK ${ENG_MAX_TOK}). Those last two are estimates for this pre-flight check; the engine prints its measured figures once loaded," \
-         "including the large lookup table it reads from disk and never holds. MemAvailable now ${avail_gib} GiB."
+         "${tbl_note}MemAvailable now ${avail_gib} GiB."
   fi
 
   awk -v kv="$kv_gib" -v cg="$cache_gib" -v av="$avail_gib" -v w="$w_gib" -v pp="$KV_PP" -v k8="${HALOGEN_KV8:-}" 'BEGIN{ if (av != "?" && kv+cg+w+16 > av)
@@ -210,8 +286,7 @@ PY
 }
 
 gtt_note() {
-  local KV_PP=29500 KV_ROWS=26624
-  if [ "${HALOGEN_KV8:-}" = 1 ]; then KV_PP=16712; KV_ROWS=13832; fi
+  local KV_PP KV_ROWS SLOT_B; kv_rates
   local sys="${_hg_sys:-/sys}" f used="" total="" holders
   for f in "$sys"/class/drm/card*/device/mem_info_gtt_used; do
     [ -r "$f" ] || continue
@@ -227,7 +302,7 @@ gtt_note() {
   local need_gib arena_gib
   arena_gib=$(work_split | awk '{print $1}')
   need_gib=$(awk -v s="$ENG_SLOTS" -v c="$ENG_CTX" -v p="$ENG_POOL" -v pool="${HALOGEN_KV_POOL:-1}" -v a="$arena_gib" \
-    -v pp="$KV_PP" -v rr="$KV_ROWS" 'BEGIN{printf "%.1f", (pool=="0"?s*c*rr:p*pp+s*120586240)/1073741824 + a}')
+    -v pp="$KV_PP" -v rr="$KV_ROWS" -v sb="$SLOT_B" 'BEGIN{printf "%.1f", (pool=="0"?s*c*rr:p*pp+s*sb)/1073741824 + a}')
   local used_gib total_gib free_gib
   used_gib=$(awk -v u="$used" 'BEGIN{printf "%.1f", u/1073741824}')
   total_gib=$(awk -v t="$total" 'BEGIN{printf "%.1f", t/1073741824}')
@@ -345,7 +420,9 @@ tokenizer_present() {
 
 companions_missing() {
   local dir base; dir="$(dirname "$HALOGEN_CHECKPOINT")"; base="$(basename "$HALOGEN_CHECKPOINT")"
-  if [ "$base" = "qwen38-flash-next-w4b.hgn" ]; then
+  if [ "${ENGINE_GEOM:-flash_next}" = dense27 ]; then
+    :
+  elif [ "$base" = "qwen38-flash-next-w4b.hgn" ]; then
     [ -f "$dir/${base%.hgn}.overlay.hgn" ] || echo "${base%.hgn}.overlay.hgn"
   elif [ -z "${HALOGEN_NGRAM_TABLE:-}" ] && ckpt_facts && [ "$CK_HAS_TABLE" = "0" ]; then
     [ -f "$dir/$NGRAM_TABLE_NAME" ] || echo "$NGRAM_TABLE_NAME"
@@ -358,6 +435,11 @@ download_plan() {
   base="$(basename "$HALOGEN_CHECKPOINT")"
   side="${base%.hgn}.overlay.hgn"
   echo "$base"
+  if [ "${ENGINE_GEOM:-flash_next}" = dense27 ]; then
+    if [ -n "$listing" ]; then printf '%s\n' "$listing" | awk -v v="$(vision_name)" '$1 == v {print $1}'
+    else vision_name; fi
+    return 0
+  fi
   if [ -n "$listing" ]; then
     printf '%s\n' "$listing" | awk -v s="$side" '$1 == s {print $1}'
     [ "$base" = "qwen38-flash-next-w4b.hgn" ] || [ -n "${HALOGEN_NGRAM_TABLE:-}" ] \
@@ -502,6 +584,8 @@ update_sidecar() {
 tuning_plan_copy() {
   local baked=/opt/halogen/flash-tune.plan
   [ "${HALOGEN_MATMUL_TUNING_FILE:-}" = "$baked" ] || return 0
+
+  if [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && [ -r /opt/halogen/dense27-tune.plan ]; then baked=/opt/halogen/dense27-tune.plan; fi
   [ -r "$baked" ] || return 0
   if cp -p "$baked" /tmp/halogen-tune.plan 2>/dev/null; then
     export HALOGEN_MATMUL_TUNING_FILE=/tmp/halogen-tune.plan
@@ -520,7 +604,7 @@ ckpt_facts() {
   [ -f "${HALOGEN_CHECKPOINT:-}" ] || return 1
   is_gguf && return 1
   local out line
-  out=$("${_hg_flash_serve:-/usr/local/bin/flash_serve}" --resident-gib "$HALOGEN_CHECKPOINT" 2>/dev/null) || return 1
+  out=$("${_hg_flash_serve:-${ENGINE_BIN:-/usr/local/bin/flash_serve}}" --resident-gib "$HALOGEN_CHECKPOINT" 2>/dev/null) || return 1
 
   line=$(echo "$out" | grep -E '^[0-9]+\.[0-9] [01]( [01]){0,2}( [0-9]+\.[0-9])?$' | tail -n 1)
   [ -n "$line" ] || return 1
@@ -549,6 +633,7 @@ DRAFTER_NAME="qwen38-flash-next-drafter-r2-ht4.hgn"
 DRAFTER_BYTES=1488500000
 DRAFTER_PREV="qwen38-flash-next-drafter-r2.hgn"
 check_ngram_table() {
+  [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && return 0
   ckpt_facts || return 0
   [ "$CK_HAS_TABLE" = "0" ] || return 0
   if [ -n "${HALOGEN_NGRAM_TABLE:-}" ]; then
@@ -600,6 +685,9 @@ conc_mode_auto() {
   if [ -z "$why" ]; then case "${HALOGEN_MTP:-1}" in 0*) why="HALOGEN_MTP=${HALOGEN_MTP} turns drafting off" ;; esac; fi
   if [ -z "$why" ]; then case "${HALOGEN_CHECKPOINT:-}" in
     *.gguf|*/qwen38-flash-next-w4b.hgn) why="$(basename "$HALOGEN_CHECKPOINT") is not in this server's current format" ;; esac; fi
+
+  if [ -z "$why" ]; then case "${HALOGEN_IMAGE_GEOM:-flash_next}" in flash_next) ;; *)
+    why="the mode has not been measured on this model (the ${HALOGEN_IMAGE_GEOM} engine)" ;; esac; fi
   CONC_AUTO=1
   if [ -n "$why" ]; then
     export HALOGEN_CONC_MODE=0
@@ -665,18 +753,78 @@ conc_mode_defaults() {
   case "${HALOGEN_CHECKPOINT:-}" in *.gguf|*/qwen38-flash-next-w4b.hgn) cur=0 ;; esac
   [ "$cur" = 1 ] && export HALOGEN_NGRAM_DEC_EARLY="${HALOGEN_NGRAM_DEC_EARLY:-1}"
   case "${HALOGEN_CONC_MODE:-}" in 1) ;; *) return 0 ;; esac
+
+  local int=3
+  case "${HALOGEN_IMAGE_GEOM:-flash_next}" in flash_next) ;; *) int=0 ;; esac
   export HALOGEN_CONC_HEADS="${HALOGEN_CONC_HEADS:-1}" HALOGEN_TICK_ONE="${HALOGEN_TICK_ONE:-3}" \
          HALOGEN_HT_TG_RING="${HALOGEN_HT_TG_RING:-1}" HALOGEN_CONC_SHAPE="${HALOGEN_CONC_SHAPE:-mode}" \
-         HALOGEN_JHEAD_LAST_ROW="${HALOGEN_JHEAD_LAST_ROW:-1}" HALOGEN_HT_INT="${HALOGEN_HT_INT:-3}"
+         HALOGEN_JHEAD_LAST_ROW="${HALOGEN_JHEAD_LAST_ROW:-1}" HALOGEN_HT_INT="${HALOGEN_HT_INT:-$int}"
   return 0
 }
 
+adapters_setup() {
+  local dir
+  dir="$(dirname "$HALOGEN_CHECKPOINT")/adapters"
+  [ -d "$dir" ] || return 0
+  is_gguf 2>/dev/null && return 0
+  if [ "${HALOGEN_IMAGE_GEOM:-flash_next}" = flash_next ]; then
+    echo "halogen: adapters are served on Qwen3.8-27B only; $dir is not read on this model" >&2
+    return 0
+  fi
+  local bad=""
+  [ "${HALOGEN_CONC_MODE:-}" = 1 ] && bad="HALOGEN_CONC_MODE=1"
+  case "${HALOGEN_HT_INT:-0}" in ""|0) ;; *) bad="${bad:+$bad and }HALOGEN_HT_INT=${HALOGEN_HT_INT}" ;; esac
+  [ "${HALOGEN_COMPOSABLE_CONTEXT:-}" = 1 ] && bad="${bad:+$bad and }HALOGEN_COMPOSABLE_CONTEXT=1"
+  [ -n "${HALOGEN_LORA:-}" ] && bad="${bad:+$bad and }HALOGEN_LORA"
+  if [ -n "$bad" ]; then
+    echo "halogen: $dir holds adapters, and they cannot be served together with $bad." >&2
+    echo "  Unset $bad (HALOGEN_CONC_MODE=0 keeps the default mode), or move the adapters/ folder away. Not starting." >&2
+    exit 1
+  fi
+  local cache="$dir/.halogen" out last
+  mkdir -p "$cache" 2>/dev/null && [ -w "$cache" ] || cache=/tmp/halogen-adapters
+  rm -f /tmp/halogen-adapters.json
+  if out=$("${_hg_python:-python3}" -I /halogen/tools/lora_to_hgn.py --scan "$dir" --base "$HALOGEN_CHECKPOINT" \
+        --cache "$cache" --max 8 --json /tmp/halogen-adapters.json 2>&1); then
+    last=$(printf '%s\n' "$out" | tail -n 1)
+    printf '%s\n' "$out" | sed '$d' >&2
+    [ -n "$last" ] && export HALOGEN_ADAPTERS="$last"
+    export HALOGEN_ADAPTERS_INFO=/tmp/halogen-adapters.json
+    local summ
+    summ=$("${_hg_python:-python3}" -I -c 'import json,sys
+j=json.load(open(sys.argv[1])); l=[a["name"] for a in j["loaded"]]
+print("%s: %d loaded (%s), %d refused" % (j["dir"], len(l), ", ".join(l), len(j["refused"])))' /tmp/halogen-adapters.json 2>/dev/null) \
+      || summ="$dir: scan finished"
+    echo "halogen: adapters: $summ" >&2
+  else
+    printf '%s\n' "$out" | tail -n 5 >&2
+    echo "halogen: the adapters/ scan failed; starting without adapters (see above)" >&2
+  fi
+  return 0
+}
+
+dense_stack_defaults() {
+  [ "${ENGINE_GEOM:-flash_next}" = dense27 ] || return 0
+  local int=3
+  [ -n "${HALOGEN_ADAPTERS:-}" ] && int=0
+  export HALOGEN_HT_INT="${HALOGEN_HT_INT:-$int}" HALOGEN_MATMUL_NEAR="${HALOGEN_MATMUL_NEAR:-1}" \
+         HALOGEN_HT_TRUNK_GEMM="${HALOGEN_HT_TRUNK_GEMM:-3072}" HALOGEN_HT_DOWN_DIRECT="${HALOGEN_HT_DOWN_DIRECT:-1}" \
+         HALOGEN_ATTN_FA="${HALOGEN_ATTN_FA:-32}"
+  return 0
+}
 need_ckpt() {
   host_preflight || {
     echo "halogen: this container cannot run the server as started; nothing was downloaded or loaded." >&2
     exit 1; }
   conc_mode_check
   maybe_download
+  engine_for_checkpoint "$HALOGEN_CHECKPOINT"
+
+  [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && export HALOGEN_FORK_GIB="${HALOGEN_FORK_GIB:-3}"
+  if [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && [ "${HALOGEN_COMPOSABLE_CONTEXT:-}" = 1 ]; then
+    echo "halogen: HALOGEN_COMPOSABLE_CONTEXT=1 is not available on Qwen3.8-27B in this release; unset it (the prompt cache works as usual)." >&2
+    exit 1
+  fi
   tuning_plan_copy
   [ -f "$HALOGEN_CHECKPOINT" ] || {
     echo "halogen: no checkpoint at $HALOGEN_CHECKPOINT" >&2
@@ -689,6 +837,8 @@ need_ckpt() {
   check_ngram_table
   check_vision
   conc_mode_note
+  adapters_setup
+  dense_stack_defaults
   kv_budget_note
   gtt_note
 }
@@ -753,8 +903,11 @@ text_only_mode() {
   fi
 }
 
+vision_name() {
+  if [ "${ENGINE_GEOM:-flash_next}" = dense27 ]; then echo qwen38-27b-vision.hgn; else echo qwen38-flash-next-vision.hgn; fi
+}
 check_vision() {
-  local side="$(dirname "$HALOGEN_CHECKPOINT")/qwen38-flash-next-vision.hgn"
+  local side="$(dirname "$HALOGEN_CHECKPOINT")/$(vision_name)"
   case "${HALOGEN_VISION_TOWER:-}" in
     "")
       if [ -f "$side" ]; then
@@ -771,14 +924,14 @@ check_vision() {
 
       [ -f "$side" ] || {
         echo "halogen: HALOGEN_VISION_TOWER=${HALOGEN_VISION_TOWER} but there is no sidecar at $side" >&2
-        echo "  give the full path, or fetch the file (0.84 GiB) beside the checkpoint" >&2
+        echo "  give the full path, or fetch the file ($(vision_name), under 1 GiB) beside the checkpoint" >&2
         exit 1; }
       export HALOGEN_VISION_TOWER="$side"
       echo "halogen: vision ON, tower $side (resolved from HALOGEN_VISION_TOWER=1)" ;;
     *)
       [ -f "$HALOGEN_VISION_TOWER" ] || {
         echo "halogen: HALOGEN_VISION_TOWER=$HALOGEN_VISION_TOWER does not exist." >&2
-        echo "  It is the vision sidecar (0.84 GiB), converted by tools/convert_vision.py" >&2
+        echo "  It is the vision sidecar ($(vision_name), under 1 GiB), converted by tools/convert_vision.py" >&2
         echo "  and normally mounted beside the checkpoint." >&2
         exit 1; }
       echo "halogen: vision ON, tower $HALOGEN_VISION_TOWER ($(du -h "$HALOGEN_VISION_TOWER" | cut -f1))" ;;
@@ -803,6 +956,7 @@ legacy_note() {
 }
 
 drafter_head() {
+  [ "${ENGINE_GEOM:-flash_next}" = dense27 ] && return 0
   [ -z "${HALOGEN_CK_OVERLAY:-}" ] || return 0
   [ "${HALOGEN_MTP:-1}" = "0" ] && return 0
   case "$(basename "$HALOGEN_CHECKPOINT")" in
@@ -1111,7 +1265,8 @@ engine_watchdog() {
     if [ "$silent" -ge "$limit" ]; then
       echo "halogen: the engine process is alive and has answered nothing for ${silent}s." >&2
       echo "  PING is answered between decode rounds, between the layers of a prefill, and" >&2
-      echo "  while the lookup table is being read. Its threads are not inside the kernel" >&2
+      if [ "${ENGINE_GEOM:-flash_next}" = dense27 ]; then echo "  and while the weights load. Its threads are not inside the kernel" >&2
+      else echo "  while the lookup table is being read. Its threads are not inside the kernel" >&2; fi
       echo "  and the kernel is not compacting memory for it, so this is a wedge, not a" >&2
       echo "  stall. GTT in use now: $(wd_gtt_gib) GiB." >&2
       echo "  Shutting the container down so a restart policy can recover it. If the next" >&2
@@ -1166,7 +1321,7 @@ start_engine() {
   need_ckpt
   memlock_note
 
-  env "${ENGINE_ENV_U[@]}" /usr/local/bin/flash_serve \
+  env "${ENGINE_ENV_U[@]}" "${_hg_flash_serve:-$ENGINE_BIN}" \
     --ck "$HALOGEN_CHECKPOINT" --port "$ENG_PORT" --bind "$BIND" \
     --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
@@ -1814,10 +1969,27 @@ start_npu_engine() {
   NPU_STALL_PID=$!
 }
 
+api_key_count() {
+  local raw=""
+  if [ -n "${HALOGEN_API_KEY_FILE:-}" ]; then
+    raw=$(head -c 65536 "$HALOGEN_API_KEY_FILE" 2>/dev/null) || raw=""
+  else
+    raw="${HALOGEN_API_KEY:-}"
+  fi
+  printf '%s\n' "$raw" | tr ',' '\n' | tr -d ' \t\r' | grep -v '^$' | sort -u | grep -c . || true
+}
+
 npu_launch() {
   local t0=$SECONDS last=$SECONDS
+  local npu_env=()
+
+  if [ "$(api_key_count)" -ge 2 ]; then
+    npu_env=(HALOGEN_NPU_LGEN_PREFIX_MIB=0)
+    [ -n "${_hg_npu_tenant_said:-}" ] || echo "halogen npu: several API keys: the LFM3 generation prefix store is off (it is shared by every key)" >&2
+    _hg_npu_tenant_said=1
+  fi
   : > "$NPU_OUT"
-  "$NPU_BIN" "${NPU_ARGS[@]}" > >(tee -a "$NPU_OUT") &
+  env ${npu_env[@]+"${npu_env[@]}"} "$NPU_BIN" "${NPU_ARGS[@]}" > >(tee -a "$NPU_OUT") &
   NPU_PID=$!
   NPU_UP=$SECONDS
   echo "$NPU_PID" > "${_hg_npu_pidfile:-/tmp/halogen-npu.pid}" 2>/dev/null || true
@@ -1977,7 +2149,7 @@ all)
 
   NPU_PID=""; NPU_API_ARGS=()
   [ -n "${HALOGEN_NPU_MODELS:-}" ] && start_npu_engine 1
-  env "${ENGINE_ENV_U[@]}" "${_hg_flash_serve:-/usr/local/bin/flash_serve}" --ck "$HALOGEN_CHECKPOINT" \
+  env "${ENGINE_ENV_U[@]}" "${_hg_flash_serve:-$ENGINE_BIN}" --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
       --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" &
   ENGINE_PID=$!
@@ -2026,7 +2198,7 @@ bench|sweep)
   BENCH_LOG=/tmp/halogen-api.log
   : > "$BENCH_LOG"
 
-  env "${ENGINE_ENV_U[@]}" /usr/local/bin/flash_serve --ck "$HALOGEN_CHECKPOINT" \
+  env "${ENGINE_ENV_U[@]}" "${_hg_flash_serve:-$ENGINE_BIN}" --ck "$HALOGEN_CHECKPOINT" \
       --port "$ENG_PORT" --bind 127.0.0.1 \
       --slots "$ENG_SLOTS" --ctx "$ENG_CTX" --max-tok "$ENG_MAX_TOK" --kv-pool "$ENG_POOL" \
       > /tmp/halogen-engine.log 2>&1 &
@@ -2107,6 +2279,7 @@ inspect|verify|ppl|niah)
   if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then FILE="$1"; shift; fi
   [ -n "$FILE" ] || FILE="$HALOGEN_CHECKPOINT"
   [ -f "$FILE" ] || { echo "halogen $MODE: $FILE is not there (mount the models volume and name a file inside it, or set HALOGEN_CHECKPOINT)" >&2; exit 1; }
+  ENGINE_COMPANION_OK=1 engine_for_checkpoint "$FILE"
   if [ "$MODE" = ppl ] || [ "$MODE" = niah ]; then
     tuning_plan_copy
     if [ "$(head -c 4 "$FILE" 2>/dev/null)" = "GGUF" ]; then need_head "$(dirname "$FILE")"
@@ -2117,7 +2290,7 @@ inspect|verify|ppl|niah)
     need_tokenizer
     exec python3 /halogen/tools/halogen_tools.py "$MODE" "$FILE" --tokenizer "$HALOGEN_TOKENIZER" "$@"
   fi
-  exec /usr/local/bin/halogen-tools "$MODE" "$FILE" "$@"
+  exec "$ENGINE_TOOLS" "$MODE" "$FILE" "$@"
   ;;
 *) [ "${1:-}" = npu ] && echo "halogen: there is no npu mode any more: the NPU's models run in the default mode beside the Flash model; set HALOGEN_NPU_MODELS (and drop the npu argument)." >&2
    echo "usage: entrypoint.sh [all|engine|api|bench|sweep|convert IN.gguf OUT.hgn|inspect|verify|ppl|niah [FILE] ...]" >&2; exit 2 ;;

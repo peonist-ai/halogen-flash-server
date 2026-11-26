@@ -77,7 +77,7 @@ podman run --rm -p 8731:8731 \
   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b \
   -v ~/halogen-models:/models \
-  ghcr.io/peonist-ai/halogen-flash-server:0.20.7
+  ghcr.io/peonist-ai/halogen-flash-server:0.21.0
 ```
 
 `HALOGEN_DOWNLOAD` fetches the files of the NPU models that `HALOGEN_NPU_MODELS` names, into `/models/npu`, and the
@@ -456,6 +456,8 @@ curl -s localhost:8731/v1/images/generations -H 'Content-Type: application/json'
 - `quality`: `low` is refused for now. Every other value draws the same image.
 - The prompt is written into the model's chat template and cut to 512 tokens.
 
+There is no `GET /v1/images/models`: `/v1/models` lists every model the server holds, `flux2-klein-4b` among them.
+
 The model holds about 8 GB of the host's memory while it is loaded. One image request runs at a time on the NPU,
 queued with the other NPU models' work.
 
@@ -550,7 +552,7 @@ curl -s localhost:8731/v1/audio/speech -H 'Content-Type: application/json' \
 - `stream`: with `pcm`, the audio comes as it is made.
 - `instructions`: how to speak it, for example "read this like a calm audiobook narrator". The 1.7B takes it, and the
   0.6B refuses it.
-- `seed`: optional, the same audio again for the same request. A `speed` other than 1 is refused.
+- `seed`: optional, an integer: the same audio again for the same request. A `speed` other than 1 is refused.
 
 The talker runs on the NPU and the audio is decoded on the CPU. On a Strix Halo the 0.6B speaks about 1.5 times faster
 than real time and the 1.7B a little faster than real time, with the first audio in about 300 and 400 ms. One
@@ -792,9 +794,11 @@ curl -s localhost:8731/v1/audio/speech -H 'Content-Type: application/json' \
 
 `voice` is `female` or `male` (OpenAI's voice names map to them), `language` one of 19 locales by name or code (American
 English by default; Arabic, Danish, German, Greek, British English, Finnish, French, Hebrew, Italian, Japanese, Korean, Dutch,
-Polish, Portuguese, Spanish, Swedish, Turkish and Chinese are the others), `seed` fixes the draw. `response_format` is `wav`
+Polish, Portuguese, Spanish, Swedish, Turkish and Chinese are the others), `seed` (an integer) fixes the draw. `response_format` is `wav`
 (the default) or `pcm` (24 kHz, 16-bit, mono), and `"stream": true` with `pcm` sends the audio as it is made. A reply is up
-to about 5 minutes of speech. `instructions` and a `speed` other than 1 are refused. A chat completion with
+to about 5 minutes of speech. Four fields set how the speech is drawn, named as in the model's own code:
+`audio_temperature` (0 to 5, default 1.0), `audio_top_k` (0 to 2017, default 128, 0 for none), `audio_repetition_penalty`
+(above 0 to 10, default 1.1) and `audio_repetition_window` (0 to 65,536 frames, default 4,096). `instructions` and a `speed` other than 1 are refused. A chat completion with
 `"modalities": ["text", "audio"]` and `"audio": {"voice": "female", "format": "wav"}` answers in speech: the audio and its
 transcript are in `message.audio` (`"format": "pcm16"` streams on a streamed request). `/v1/messages` and `/v1/responses` do
 not make speech.

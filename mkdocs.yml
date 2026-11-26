@@ -70,6 +70,7 @@ nav:
   - Configuration and checkpoints:
       - Configuration: configuration.md
       - Precision: precision.md
+      - Qwen3.8-27B: qwen3.8-27b.md
       - Bring your own GGUF: gguf.md
       - Measuring a checkpoint: checkpoint-tools.md
       - Small models on the NPU: npu-small-models.md

@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.21.0
+
+Qwen3.8-27B now runs in the same image as Qwen3.8-Flash-Next: name its checkpoint and the server serves it, with vision
+and LoRA adapters. Flash-Next is unchanged: same engine, same answers, same speed.
+
+### Added
+
+- **Qwen3.8-27B.** Put `qwen38-27b-ht4.hgn` (12.8 GiB, from `peonist-ai/halogen-qwen3.8-27b-ht4`) in your models folder
+  and start with `-e HALOGEN_CHECKPOINT=/models/qwen38-27b-ht4.hgn` (a folder that holds only this file serves it with no
+  setting). The model id is `halogen-qwen3.8-27b`, as in halogen 0.1.x. It uses the same tokenizer folder as
+  Flash-Next. Decode 37.9 tok/s on one request with drafting (15.1 without); prefill 578 / 605 / 530 tok/s on a cold 2k / 8k / 32k-token prompt.
+  The server picks the engine from the file itself and refuses, by name and before loading anything, a file it has no
+  engine for (including halogen 0.1.x's 27B files, which the `halogen:0.1.4` image still serves).
+- **Images on Qwen3.8-27B.** Put `qwen38-27b-vision.hgn` (0.86 GiB, same repository) beside the checkpoint and set
+  `HALOGEN_VISION_TOWER=1`, as for Flash-Next.
+- **LoRA adapters for Qwen3.8-27B.** Put PEFT LoRA adapters in a folder named `adapters` next to the model file and call
+  each one as `<model id>:<adapter name>`; up to 8 are served at once, converted when the server starts, and
+  `/v1/models` lists them. Requests without an adapter are answered exactly as before; a request with one decodes about
+  2.5% slower. An adapter the server cannot use is skipped at start and named, with the reason, in the log and in
+  `/health`.
+- Opt-in web search: set `HALOGEN_WEB_SEARCH_URL` to your own SearXNG instance and `/v1/messages` serves the
+  `web_search` server tool (Claude Code's built-in WebSearch) through it: queries go only to that URL, the server
+  fetches no pages, and a failed search is reported to the model, which still answers. (#270, thanks @Para-FR)
+
+### Changed
+
+- **Several API keys now get separate prompt caches.** With two or more keys in `HALOGEN_API_KEY` (or
+  `HALOGEN_API_KEY_FILE`), a request only reuses cache entries, kept replies and disk cache records made under its own
+  key, including after a restart; named kept replies (`X-Halogen-Keep` / `X-Halogen-From`, `/halogen/handles`) are
+  separate per key; `HALOGEN_COMPOSABLE_CONTEXT=1` is refused at start and the NPU's LFM3 prefix store is off, since
+  both are shared by every request. With no key or a single key nothing changes. One cost for teams: people who share
+  a long system prompt under different keys each pay its first prefill once.
+- `/v1/messages` now answers a request whose only tool is the `web_search` server tool with a 400 that says this server
+  runs no web search (unless `HALOGEN_WEB_SEARCH_URL` is set), instead of dropping the tool and letting the model answer
+  from memory. (#270)
+- On Qwen3.8-Flash-Next the container log is quieter: a per-start line about the server's internal arithmetic no longer prints.
+
+### Fixed
+
+- When the model ended its turn inside its reasoning and then started writing a new conversation turn, a reply could
+  consist of an invented `<|im_start|>user` header (#276, thanks @lev-medien-sandkasten), and an end-of-turn kept inside an open tool call could be
+  followed by invented user and assistant turns in the reply (#275, thanks @diniket). The reply now ends where the model ended its turn,
+  and usage reports `end_of_turn_in_reasoning` or `end_of_turn_in_answer`.
+- `/v1/audio/speech` ignored a `seed` sent as a string (`"seed": "42"`), so the same request drew a different voice each
+  time. A string of digits is now read as that number, and any other value is refused with a message. (#271, thanks @kraftwerk2020)
+- On a host whose kernel reports free contiguous-allocator memory with no such pool reserved (`CmaTotal: 0` in
+  `/proc/meminfo`), the server no longer counts that memory as in use: the start no longer warns about memory nothing
+  holds, and no longer refuses a configuration that fits.
+
+### Documentation
+
+- New page: [Qwen3.8-27B](docs/qwen3.8-27b.md): getting the files, starting it, vision, adapters, what it costs in memory (about 73 KiB of KV a position; at the defaults, 262,144-token context and four slots, 12.8 GiB of weights, a 36.5 GiB KV pool and about 12 GiB of working memory).
+- The NPU page lists LFM3-Audio-2B's speech sampling fields (`audio_temperature`, `audio_top_k`,
+  `audio_repetition_penalty`, `audio_repetition_window`) and notes that `/v1/models` lists the image model. (#271, #268)
+
 ## 0.20.7
 
 The concurrency mode is now the default and a single request is at least as fast as before; a faster draft head. The
